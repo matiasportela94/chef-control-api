@@ -1,0 +1,41 @@
+spring:
+  datasource:
+    url: ${DATABASE_URL}
+    username: ${DATABASE_USERNAME}
+    password: ${DATABASE_PASSWORD}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      pool-name: ChefControlPool
+
+server:
+  port: ${PORT:8080}
+
+app:
+  jwt:
+    secret: ${JWT_SECRET}
+
+  frontend:
+    url: ${FRONTEND_URL}
+
+  token:
+    password-reset-expiration-minutes: ${TOKEN_RESET_EXPIRATION_MINUTES:15}
+    set-password-expiration-hours: ${TOKEN_SET_PASSWORD_EXPIRATION_HOURS:48}
+
+  ai-service:
+    url: ${AI_SERVICE_URL}
+    secret: ${AI_SERVICE_SECRET}
+
+  whatsapp:
+    verify-token: ${WHATSAPP_VERIFY_TOKEN}
+    access-token: ${WHATSAPP_ACCESS_TOKEN}
+    phone-number-id: ${WHATSAPP_PHONE_NUMBER_ID}
+
+logging:
+  level:
+    com.chefcontrol: DEBUG
+    org.springframework.security: INFO
+    org.flywaydb: INFO
