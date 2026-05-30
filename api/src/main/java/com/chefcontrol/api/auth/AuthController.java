@@ -19,9 +19,13 @@ import com.chefcontrol.domain.security.ChefControlPrincipal;
 import com.chefcontrol.domain.user.User;
 import com.chefcontrol.domain.user.UserRestaurant;
 import com.chefcontrol.infrastructure.security.JwtTokenProvider;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -46,8 +50,15 @@ public class AuthController {
     private final RestaurantRegistrationService registrationService;
     private final AuditService auditService;
 
+    @Value("${app.cookie.secure}")
+    private boolean cookieSecure;
+
+    @Value("${app.jwt.expiration-ms}")
+    private long jwtExpirationMs;
+
     @PostMapping("/register")
-    public ResponseEntity<LoginResponse> register(@Valid @RequestBody RegisterRequest request) {
+    public ResponseEntity<LoginResponse> register(@Valid @RequestBody RegisterRequest request,
+                                                  HttpServletResponse response) {
         var cmd = new RegisterCommand(
                 request.restaurantName(), request.ownerName(),
                 request.ownerEmail(), request.ownerPassword(),
@@ -55,12 +66,14 @@ public class AuthController {
 
         var result = registrationService.register(cmd);
         String token = jwtTokenProvider.generateToken(result.owner(), result.restaurant().getId(), result.memberships());
+        setAuthCookie(response, token);
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(buildLoginResponse(token, result.owner(), result.restaurant().getId(), result.memberships()));
+                .body(buildLoginResponse(result.owner(), result.restaurant().getId(), result.memberships()));
     }
 
     @PostMapping("/login")
-    public ResponseEntity<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
+    public ResponseEntity<LoginResponse> login(@Valid @RequestBody LoginRequest request,
+                                               HttpServletResponse response) {
         try {
             authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(request.email(), request.password()));
@@ -80,18 +93,20 @@ public class AuthController {
 
         UUID activeRestaurantId = memberships.getFirst().getRestaurantId();
         String token = jwtTokenProvider.generateToken(user, activeRestaurantId, memberships);
-        LoginResponse response = buildLoginResponse(token, user, activeRestaurantId, memberships);
+        LoginResponse loginResponse = buildLoginResponse(user, activeRestaurantId, memberships);
 
         auditService.log(AuditAction.USER_LOGIN, "User", user.getId(),
-                Map.of("restaurantId", activeRestaurantId, "role", response.role()));
+                Map.of("restaurantId", activeRestaurantId, "role", loginResponse.role()));
 
-        return ResponseEntity.ok(response);
+        setAuthCookie(response, token);
+        return ResponseEntity.ok(loginResponse);
     }
 
     @PostMapping("/switch-restaurant")
     public ResponseEntity<LoginResponse> switchRestaurant(
             @Valid @RequestBody SwitchRestaurantRequest request,
-            @AuthenticationPrincipal ChefControlPrincipal principal) {
+            @AuthenticationPrincipal ChefControlPrincipal principal,
+            HttpServletResponse response) {
 
         User user = userRepository.findByEmailAndIsActiveTrue(principal.email())
                 .orElseThrow(() -> AppException.notFound(ErrorCode.USER_NOT_FOUND, "User not found"));
@@ -106,12 +121,18 @@ public class AuthController {
         }
 
         String token = jwtTokenProvider.generateToken(user, request.restaurantId(), memberships);
-        LoginResponse response = buildLoginResponse(token, user, request.restaurantId(), memberships);
 
         auditService.log(AuditAction.USER_RESTAURANT_SWITCHED, "Restaurant", request.restaurantId(),
                 Map.of("from", principal.activeRestaurantId(), "to", request.restaurantId()));
 
-        return ResponseEntity.ok(response);
+        setAuthCookie(response, token);
+        return ResponseEntity.ok(buildLoginResponse(user, request.restaurantId(), memberships));
+    }
+
+    @PostMapping("/logout")
+    public ResponseEntity<Void> logout(HttpServletResponse response) {
+        clearAuthCookie(response);
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/forgot-password")
@@ -126,7 +147,33 @@ public class AuthController {
         return ResponseEntity.noContent().build();
     }
 
-    private LoginResponse buildLoginResponse(String token, User user, UUID activeRestaurantId,
+    // ── Cookie helpers ──────────────────────────────────────────────────────
+
+    private void setAuthCookie(HttpServletResponse response, String token) {
+        ResponseCookie cookie = ResponseCookie.from("auth_token", token)
+                .httpOnly(true)
+                .secure(cookieSecure)
+                .sameSite("Strict")
+                .path("/")
+                .maxAge(jwtExpirationMs / 1000)
+                .build();
+        response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
+    }
+
+    private void clearAuthCookie(HttpServletResponse response) {
+        ResponseCookie cookie = ResponseCookie.from("auth_token", "")
+                .httpOnly(true)
+                .secure(cookieSecure)
+                .sameSite("Strict")
+                .path("/")
+                .maxAge(0)
+                .build();
+        response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
+    }
+
+    // ── Response builder ────────────────────────────────────────────────────
+
+    private LoginResponse buildLoginResponse(User user, UUID activeRestaurantId,
                                              List<UserRestaurant> memberships) {
         UserRestaurant active = memberships.stream()
                 .filter(ur -> ur.getRestaurantId().equals(activeRestaurantId))
@@ -141,7 +188,6 @@ public class AuthController {
                 .toList();
 
         return new LoginResponse(
-                token,
                 user.getId(),
                 user.getName(),
                 user.getEmail(),

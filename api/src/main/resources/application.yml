@@ -25,6 +25,9 @@ app:
   jwt:
     expiration-ms: 86400000
 
+  cookie:
+    secure: ${COOKIE_SECURE:false}
+
   token:
     password-reset-expiration-minutes: 15
     set-password-expiration-hours: 48
