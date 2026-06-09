@@ -33,7 +33,7 @@ public class PasswordResetService {
     @Value("${app.token.set-password-expiration-hours:48}")
     private int setPasswordExpirationHours;
 
-    @Value("${app.frontend.url:http://localhost:3000}")
+    @Value("${app.frontend.url:http://localhost:4200}")
     private String frontendUrl;
 
     private final UserRepository userRepository;

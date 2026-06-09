@@ -26,6 +26,8 @@ public interface JpaStockMovementRepository extends JpaRepository<StockMovementJ
 
     Page<StockMovementJpaEntity> findByRestaurantIdOrderByCreatedAtDesc(UUID restaurantId, Pageable pageable);
 
+    Page<StockMovementJpaEntity> findByProductIdAndRestaurantIdOrderByCreatedAtDesc(UUID productId, UUID restaurantId, Pageable pageable);
+
     Optional<StockMovementJpaEntity> findByIdAndRestaurantId(UUID id, UUID restaurantId);
 
     List<StockMovementJpaEntity> findByReferenceIdAndReferenceType(UUID referenceId, String referenceType);
@@ -54,4 +56,20 @@ public interface JpaStockMovementRepository extends JpaRepository<StockMovementJ
     BigDecimal sumSalesCost(@Param("restaurantId") UUID restaurantId,
                             @Param("from") Instant from,
                             @Param("to") Instant to);
+
+    @Query(value = """
+            SELECT COALESCE(SUM(sm.quantity * sm.cost_per_unit), 0)
+            FROM stock_movements sm
+            JOIN sale_items si ON si.id = sm.reference_id AND sm.reference_type = 'sale_item'
+            JOIN sales s ON s.id = si.sale_id
+            WHERE sm.restaurant_id = :restaurantId
+              AND sm.type = 'SALE'
+              AND sm.cost_per_unit IS NOT NULL
+              AND si.menu_item_id = :menuItemId
+              AND s.sold_at BETWEEN :from AND :to
+            """, nativeQuery = true)
+    BigDecimal sumSalesCostByMenuItemAndPeriod(@Param("menuItemId") UUID menuItemId,
+                                               @Param("restaurantId") UUID restaurantId,
+                                               @Param("from") Instant from,
+                                               @Param("to") Instant to);
 }

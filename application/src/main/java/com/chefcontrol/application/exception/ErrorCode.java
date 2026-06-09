@@ -44,12 +44,16 @@ public enum ErrorCode {
     SALE_NOT_FOUND          (Category.NOT_FOUND),
 
     // Business rules
+    UNIT_CONVERSION_NOT_FOUND  (Category.BAD_REQUEST),
+    MISSING_PURCHASE_COST      (Category.BAD_REQUEST),
     INSUFFICIENT_STOCK      (Category.UNPROCESSABLE),
+    INVALID_EXPIRATION_DATE (Category.BAD_REQUEST),
     DUPLICATE_EMAIL         (Category.CONFLICT),
     DUPLICATE_PHONE         (Category.CONFLICT),
     DUPLICATE_SLUG          (Category.CONFLICT),
     DUPLICATE_SKU           (Category.CONFLICT),
-    CATEGORY_HAS_PRODUCTS   (Category.CONFLICT),
+    CATEGORY_HAS_PRODUCTS       (Category.CONFLICT),
+    SYSTEM_CATEGORY_IMMUTABLE   (Category.FORBIDDEN),
 
     // Input
     VALIDATION_ERROR        (Category.BAD_REQUEST),

@@ -16,6 +16,8 @@ public interface StockMovementRepository {
 
     Page<StockMovement> findByRestaurantIdOrderByCreatedAtDesc(UUID restaurantId, PageRequest pageRequest);
 
+    Page<StockMovement> findByProductIdAndRestaurantIdOrderByCreatedAtDesc(UUID productId, UUID restaurantId, PageRequest pageRequest);
+
     Optional<StockMovement> findByIdAndRestaurantId(UUID id, UUID restaurantId);
 
     List<StockMovement> findByReferenceIdAndReferenceType(UUID referenceId, String referenceType);
@@ -27,4 +29,6 @@ public interface StockMovementRepository {
     BigDecimal getWeightedAvgPurchaseCost(UUID productId, UUID restaurantId);
 
     BigDecimal sumSalesCost(UUID restaurantId, Instant from, Instant to);
+
+    BigDecimal sumSalesCostByMenuItemAndPeriod(UUID menuItemId, UUID restaurantId, Instant from, Instant to);
 }

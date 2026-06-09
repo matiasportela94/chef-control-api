@@ -25,6 +25,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -39,6 +41,8 @@ public class PurchaseService {
     private final SupplierRepository supplierRepository;
     private final ProductRepository productRepository;
     private final UnitRepository unitRepository;
+    private final StockBatchService stockBatchService;
+    private final UnitConversionService unitConversionService;
     private final AlertEvaluationService alertEvaluationService;
     private final AuditService auditService;
     private final CurrentUserProvider currentUserProvider;
@@ -79,6 +83,14 @@ public class PurchaseService {
                 .setScale(2, RoundingMode.HALF_UP);
 
         Instant purchasedAt = cmd.purchasedAt() != null ? cmd.purchasedAt() : ChefControlTime.nowInstant();
+        LocalDate purchaseDate = purchasedAt.atZone(ZoneOffset.UTC).toLocalDate();
+
+        for (ResolvedItem item : resolvedItems) {
+            if (item.expirationDate() != null && !item.expirationDate().isAfter(purchaseDate)) {
+                throw AppException.badRequest(ErrorCode.INVALID_EXPIRATION_DATE,
+                        "Expiration date must be after the purchase date for product " + item.product().getId());
+            }
+        }
 
         Purchase purchase = Purchase.builder()
                 .restaurantId(restaurantId)
@@ -107,7 +119,11 @@ public class PurchaseService {
                     restaurantId, item.product().getId(),
                     item.quantity(), item.unit().getId(), item.pricePerUnit(),
                     stockBefore, purchaseItem.getId(), userId);
-            stockMovementRepository.save(movement);
+            movement = stockMovementRepository.save(movement);
+
+            stockBatchService.createBatch(restaurantId, item.product().getId(), purchaseItem.getId(),
+                    item.quantity(), item.expirationDate(), item.pricePerUnit(), movement.getId());
+
             alertEvaluationService.evaluate(item.product().getId(), restaurantId, movement.getStockAfter());
         }
 
@@ -122,7 +138,16 @@ public class PurchaseService {
                 .orElseThrow(() -> AppException.notFound(ErrorCode.PRODUCT_NOT_FOUND, "Product not found: " + item.productId()));
         Unit unit = unitRepository.findById(item.unitId())
                 .orElseThrow(() -> AppException.notFound(ErrorCode.UNIT_NOT_FOUND, "Unit not found: " + item.unitId()));
-        return new ResolvedItem(product, unit, item.quantity(), item.pricePerUnit());
+
+        // Normalize to the product's default unit so stock and batches are always in one canonical unit
+        UUID defaultUnitId = product.getDefaultUnitId();
+        BigDecimal quantity     = unitConversionService.convert(item.quantity(), unit.getId(), defaultUnitId);
+        BigDecimal pricePerUnit = unitConversionService.convertPrice(item.pricePerUnit(), unit.getId(), defaultUnitId);
+        Unit defaultUnit = defaultUnitId.equals(unit.getId()) ? unit
+                : unitRepository.findById(defaultUnitId)
+                        .orElseThrow(() -> AppException.notFound(ErrorCode.UNIT_NOT_FOUND, "Default unit not found"));
+
+        return new ResolvedItem(product, defaultUnit, quantity, pricePerUnit, item.expirationDate());
     }
 
     // ── Commands ─────────────────────────────────────────────────────────────
@@ -138,8 +163,10 @@ public class PurchaseService {
             UUID productId,
             UUID unitId,
             BigDecimal quantity,
-            BigDecimal pricePerUnit
+            BigDecimal pricePerUnit,
+            LocalDate expirationDate
     ) {}
 
-    private record ResolvedItem(Product product, Unit unit, BigDecimal quantity, BigDecimal pricePerUnit) {}
+    private record ResolvedItem(Product product, Unit unit, BigDecimal quantity, BigDecimal pricePerUnit,
+                                LocalDate expirationDate) {}
 }

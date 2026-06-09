@@ -28,7 +28,8 @@ public class SaleController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size) {
         return ResponseEntity.ok(PagedResponse.of(
-                saleService.listSales(PageRequest.of(page, size)).map(SaleResponse::summary)));
+                saleService.listSales(PageRequest.of(page, size))
+                        .map(sale -> SaleResponse.summary(sale, saleService.getItemCount(sale.getId())))));
     }
 
     @GetMapping("/{id}")

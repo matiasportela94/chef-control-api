@@ -33,35 +33,33 @@ public class ProductService {
     // ── Categories ──────────────────────────────────────────────────────────
 
     public List<ProductCategory> listCategories() {
-        return categoryRepository.findAllByRestaurantIdOrderByName(TenantContext.require());
+        return categoryRepository.findAllAccessibleToRestaurant(TenantContext.require());
     }
 
     @Transactional
-    public ProductCategory createCategory(String name, String color) {
+    public ProductCategory createCategory(String name, String color, UUID parentId) {
+        UUID restaurantId = TenantContext.require();
+        if (parentId != null) {
+            categoryRepository.findByIdAccessibleTo(parentId, restaurantId)
+                    .orElseThrow(() -> AppException.notFound(ErrorCode.CATEGORY_NOT_FOUND, "Parent category not found"));
+        }
         ProductCategory category = new ProductCategory();
-        category.setRestaurantId(TenantContext.require());
+        category.setRestaurantId(restaurantId);
         category.setName(name);
         category.setColor(color);
+        category.setParentId(parentId);
         ProductCategory saved = categoryRepository.save(category);
         auditService.log(AuditAction.PRODUCT_CREATED, "ProductCategory", saved.getId());
         return saved;
     }
 
     @Transactional
-    public ProductCategory updateCategory(UUID id, String name, String color) {
+    public void deleteCategory(UUID id) {
         ProductCategory category = categoryRepository.findByIdAndRestaurantId(id, TenantContext.require())
                 .orElseThrow(() -> AppException.notFound(ErrorCode.CATEGORY_NOT_FOUND, "Category not found"));
-        category.setName(name);
-        category.setColor(color);
-        ProductCategory saved = categoryRepository.save(category);
-        auditService.log(AuditAction.PRODUCT_UPDATED, "ProductCategory", id);
-        return saved;
-    }
-
-    @Transactional
-    public void deleteCategory(UUID id) {
-        categoryRepository.findByIdAndRestaurantId(id, TenantContext.require())
-                .orElseThrow(() -> AppException.notFound(ErrorCode.CATEGORY_NOT_FOUND, "Category not found"));
+        if (category.isSystem()) {
+            throw AppException.forbidden(ErrorCode.SYSTEM_CATEGORY_IMMUTABLE, "System categories cannot be deleted");
+        }
         if (productRepository.existsByCategoryId(id)) {
             throw AppException.conflict(ErrorCode.CATEGORY_HAS_PRODUCTS,
                     "Cannot delete a category that has products assigned to it");
@@ -155,7 +153,7 @@ public class ProductService {
 
     private ProductCategory resolveCategory(UUID categoryId, UUID restaurantId) {
         if (categoryId == null) return null;
-        return categoryRepository.findByIdAndRestaurantId(categoryId, restaurantId)
+        return categoryRepository.findByIdAccessibleTo(categoryId, restaurantId)
                 .orElseThrow(() -> AppException.notFound(ErrorCode.CATEGORY_NOT_FOUND, "Category not found"));
     }
 

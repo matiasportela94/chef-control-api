@@ -7,12 +7,16 @@ import java.util.UUID;
 public record CategoryResponse(
         UUID id,
         String name,
-        String color
+        String color,
+        boolean isSystem,
+        UUID parentId
 ) {
     public static CategoryResponse from(ProductCategory category) {
         return new CategoryResponse(
                 category.getId(),
                 category.getName(),
-                category.getColor());
+                category.getColor(),
+                category.isSystem(),
+                category.getParentId());
     }
 }

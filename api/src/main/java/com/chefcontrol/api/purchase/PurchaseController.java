@@ -52,7 +52,7 @@ public class PurchaseController {
                 request.purchasedAt(),
                 request.items().stream()
                         .map(i -> new PurchaseItemCommand(
-                                i.productId(), i.unitId(), i.quantity(), i.pricePerUnit()))
+                                i.productId(), i.unitId(), i.quantity(), i.pricePerUnit(), i.expirationDate()))
                         .toList());
 
         Purchase purchase = purchaseService.createPurchase(command);

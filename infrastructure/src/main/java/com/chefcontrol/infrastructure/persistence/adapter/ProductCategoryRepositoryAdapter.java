@@ -19,8 +19,8 @@ public class ProductCategoryRepositoryAdapter implements ProductCategoryReposito
     private final JpaProductCategoryRepository jpa;
 
     @Override
-    public List<ProductCategory> findAllByRestaurantIdOrderByName(UUID restaurantId) {
-        return jpa.findAllByRestaurantIdOrderByName(restaurantId).stream()
+    public List<ProductCategory> findAllAccessibleToRestaurant(UUID restaurantId) {
+        return jpa.findAllAccessibleToRestaurant(restaurantId).stream()
                 .map(ProductCategoryJpaEntity::toDomain)
                 .collect(Collectors.toList());
     }
@@ -28,6 +28,11 @@ public class ProductCategoryRepositoryAdapter implements ProductCategoryReposito
     @Override
     public Optional<ProductCategory> findByIdAndRestaurantId(UUID id, UUID restaurantId) {
         return jpa.findByIdAndRestaurantId(id, restaurantId).map(ProductCategoryJpaEntity::toDomain);
+    }
+
+    @Override
+    public Optional<ProductCategory> findByIdAccessibleTo(UUID id, UUID restaurantId) {
+        return jpa.findByIdAccessibleTo(id, restaurantId).map(ProductCategoryJpaEntity::toDomain);
     }
 
     @Override

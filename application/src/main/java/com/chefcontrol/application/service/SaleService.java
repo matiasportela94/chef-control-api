@@ -25,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -38,6 +39,7 @@ public class SaleService {
     private final MenuItemRepository menuItemRepository;
     private final RecipeRepository recipeRepository;
     private final StockMovementRepository stockMovementRepository;
+    private final StockBatchService stockBatchService;
     private final AlertEvaluationService alertEvaluationService;
     private final AuditService auditService;
     private final CurrentUserProvider currentUserProvider;
@@ -56,6 +58,10 @@ public class SaleService {
         return saleItemRepository.findBySaleId(saleId);
     }
 
+    public int getItemCount(UUID saleId) {
+        return saleItemRepository.countBySaleId(saleId);
+    }
+
     @Transactional
     public Sale recordSale(CreateSaleCommand cmd) {
         UUID restaurantId = TenantContext.require();
@@ -64,6 +70,8 @@ public class SaleService {
         List<ResolvedItem> resolvedItems = cmd.items().stream()
                 .map(item -> resolveItem(item, restaurantId))
                 .toList();
+
+        validateIngredientCosts(resolvedItems, restaurantId);
 
         BigDecimal totalAmount = resolvedItems.stream()
                 .map(i -> i.menuItem().getPrice()
@@ -84,13 +92,12 @@ public class SaleService {
         sale = saleRepository.save(sale);
 
         for (ResolvedItem resolved : resolvedItems) {
-            SaleItem saleItem = SaleItem.builder()
+            SaleItem saleItem = saleItemRepository.save(SaleItem.builder()
                     .saleId(sale.getId())
                     .menuItemId(resolved.menuItem().getId())
                     .quantity(resolved.cmd().quantity())
                     .unitPrice(resolved.menuItem().getPrice())
-                    .build();
-            saleItemRepository.save(saleItem);
+                    .build());
 
             applyRecipeStockMovements(resolved.menuItem(), resolved.cmd().quantity(),
                     restaurantId, userId, saleItem.getId());
@@ -115,10 +122,31 @@ public class SaleService {
                                 restaurantId, ingredient.productId(),
                                 ingredient.quantity(), ingredient.unitId(), avgCost,
                                 stockBefore, saleItemId, userId);
-                        stockMovementRepository.save(movement);
+                        movement = stockMovementRepository.save(movement);
+
+                        stockBatchService.consumeFifo(restaurantId, ingredient.productId(),
+                                ingredient.quantity(), movement.getId());
+
                         alertEvaluationService.evaluate(ingredient.productId(), restaurantId, movement.getStockAfter());
                     }
                 });
+    }
+
+    private void validateIngredientCosts(List<ResolvedItem> resolvedItems, UUID restaurantId) {
+        List<String> missing = new ArrayList<>();
+        for (ResolvedItem resolved : resolvedItems) {
+            recipeRepository.findByMenuItemIdAndRestaurantId(resolved.menuItem().getId(), restaurantId)
+                    .ifPresent(recipe -> recipe.getItems().stream()
+                            .filter(item -> stockMovementRepository
+                                    .getWeightedAvgPurchaseCost(item.getProductId(), restaurantId)
+                                    .compareTo(BigDecimal.ZERO) == 0)
+                            .map(item -> item.getProductName())
+                            .forEach(missing::add));
+        }
+        if (!missing.isEmpty()) {
+            throw AppException.badRequest(ErrorCode.MISSING_PURCHASE_COST,
+                    "Sin historial de compras para: " + String.join(", ", missing));
+        }
     }
 
     private ResolvedItem resolveItem(SaleItemCommand cmd, UUID restaurantId) {

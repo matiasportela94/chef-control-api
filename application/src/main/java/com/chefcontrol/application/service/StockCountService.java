@@ -29,6 +29,7 @@ public class StockCountService {
     private final StockMovementRepository stockMovementRepository;
     private final ProductRepository productRepository;
     private final UnitRepository unitRepository;
+    private final StockBatchService stockBatchService;
     private final AlertEvaluationService alertEvaluationService;
     private final AuditService auditService;
     private final CurrentUserProvider currentUserProvider;
@@ -77,7 +78,18 @@ public class StockCountService {
                     restaurantId, product.getId(),
                     currentStock, item.countedQuantity(),
                     unit.getId(), count.getId(), userId);
-            movements.add(stockMovementRepository.save(movement));
+            movement = stockMovementRepository.save(movement);
+
+            if (movement.getDirection() == MovementDirection.OUT) {
+                stockBatchService.consumeFifo(restaurantId, product.getId(), movement.getQuantity(), movement.getId());
+            } else {
+                // Surplus found during a physical count has no known lot or expiration —
+                // tracked as an untracked batch so it still counts toward FIFO consumption.
+                stockBatchService.createBatch(restaurantId, product.getId(), null,
+                        movement.getQuantity(), null, null, movement.getId());
+            }
+
+            movements.add(movement);
             alertEvaluationService.evaluate(product.getId(), restaurantId, movement.getStockAfter());
         }
 

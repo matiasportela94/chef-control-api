@@ -20,9 +20,12 @@ public class StockMovementController {
     @GetMapping
     public ResponseEntity<PagedResponse<StockMovementResponse>> list(
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "50") int size) {
-        return ResponseEntity.ok(PagedResponse.of(
-                stockService.listMovements(PageRequest.of(page, size)).map(StockMovementResponse::from)));
+            @RequestParam(defaultValue = "50") int size,
+            @RequestParam(required = false) UUID productId) {
+        var movements = productId != null
+                ? stockService.listMovementsByProduct(productId, PageRequest.of(page, size))
+                : stockService.listMovements(PageRequest.of(page, size));
+        return ResponseEntity.ok(PagedResponse.of(movements.map(StockMovementResponse::from)));
     }
 
     @PostMapping("/{id}/reverse")

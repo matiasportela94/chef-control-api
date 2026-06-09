@@ -19,7 +19,7 @@ app:
     secret: ${JWT_SECRET}
 
   frontend:
-    url: ${FRONTEND_URL:http://localhost:3000}
+    url: ${FRONTEND_URL:http://localhost:4200}
 
   ai-service:
     url: ${AI_SERVICE_URL:http://localhost:8001}

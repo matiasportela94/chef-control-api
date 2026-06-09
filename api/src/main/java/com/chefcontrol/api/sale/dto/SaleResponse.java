@@ -15,6 +15,7 @@ public record SaleResponse(
         String notes,
         Instant soldAt,
         Instant createdAt,
+        Integer itemCount,
         List<SaleItemResponse> items
 ) {
     public record SaleItemResponse(
@@ -37,9 +38,9 @@ public record SaleResponse(
         }
     }
 
-    public static SaleResponse summary(Sale sale) {
+    public static SaleResponse summary(Sale sale, int itemCount) {
         return new SaleResponse(sale.getId(), sale.getTotalAmount(), sale.getSource(),
-                sale.getNotes(), sale.getSoldAt(), sale.getCreatedAt(), null);
+                sale.getNotes(), sale.getSoldAt(), sale.getCreatedAt(), itemCount, null);
     }
 
     public static SaleResponse from(Sale sale, List<SaleItem> items) {
@@ -50,6 +51,7 @@ public record SaleResponse(
                 sale.getNotes(),
                 sale.getSoldAt(),
                 sale.getCreatedAt(),
+                items.size(),
                 items.stream().map(SaleItemResponse::from).toList()
         );
     }

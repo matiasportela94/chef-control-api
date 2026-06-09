@@ -11,6 +11,5 @@ public record CreateWasteEventRequest(
         @NotNull UUID productId,
         @NotNull UUID unitId,
         @NotNull @DecimalMin("0.001") BigDecimal quantity,
-        WasteReason reason,
-        @DecimalMin("0") BigDecimal cost
+        WasteReason reason
 ) {}

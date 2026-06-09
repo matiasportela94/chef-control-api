@@ -44,8 +44,7 @@ public class WasteEventController {
                 request.productId(),
                 request.unitId(),
                 request.quantity(),
-                request.reason(),
-                request.cost());
+                request.reason());
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(WasteEventResponse.from(wasteService.createWasteEvent(command)));
     }

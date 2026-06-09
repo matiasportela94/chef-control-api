@@ -38,6 +38,14 @@ public class StockMovementRepositoryAdapter implements StockMovementRepository {
     }
 
     @Override
+    public Page<StockMovement> findByProductIdAndRestaurantIdOrderByCreatedAtDesc(UUID productId, UUID restaurantId, PageRequest pageRequest) {
+        return PersistenceUtils.toDomain(
+                jpa.findByProductIdAndRestaurantIdOrderByCreatedAtDesc(productId, restaurantId,
+                        PersistenceUtils.toSpring(pageRequest, Sort.by("createdAt").descending()))
+                   .map(StockMovementJpaEntity::toDomain));
+    }
+
+    @Override
     public Optional<StockMovement> findByIdAndRestaurantId(UUID id, UUID restaurantId) {
         return jpa.findByIdAndRestaurantId(id, restaurantId).map(StockMovementJpaEntity::toDomain);
     }
@@ -67,5 +75,10 @@ public class StockMovementRepositoryAdapter implements StockMovementRepository {
     @Override
     public BigDecimal sumSalesCost(UUID restaurantId, Instant from, Instant to) {
         return jpa.sumSalesCost(restaurantId, from, to);
+    }
+
+    @Override
+    public BigDecimal sumSalesCostByMenuItemAndPeriod(UUID menuItemId, UUID restaurantId, Instant from, Instant to) {
+        return jpa.sumSalesCostByMenuItemAndPeriod(menuItemId, restaurantId, from, to);
     }
 }

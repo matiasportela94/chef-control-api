@@ -3,7 +3,10 @@
     "allow": [
       "mcp__codegraph__codegraph_files",
       "Bash(git add *)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Read(//c/dev/chefcito/git/chef-control-frontend/**)",
+      "Bash(node_modules\\\\.bin\\\\tailwindcss init *)",
+      "Bash(dir \"C:\\\\dev\\\\chefcito\\\\discovery\\\\pages\")"
     ]
   }
 }

@@ -14,5 +14,7 @@ public class ProductCategory {
     private UUID restaurantId;
     private String name;
     private String color;
+    private boolean isSystem;
+    private UUID parentId;
     private Instant createdAt;
 }

@@ -26,6 +26,7 @@ import java.util.UUID;
 public class StockService {
 
     private final StockMovementRepository stockMovementRepository;
+    private final StockBatchService stockBatchService;
     private final AlertEvaluationService alertEvaluationService;
     private final AuditService auditService;
     private final CurrentUserProvider currentUserProvider;
@@ -40,6 +41,11 @@ public class StockService {
 
     public Page<StockMovement> listMovements(PageRequest pageRequest) {
         return stockMovementRepository.findByRestaurantIdOrderByCreatedAtDesc(TenantContext.require(), pageRequest);
+    }
+
+    public Page<StockMovement> listMovementsByProduct(UUID productId, PageRequest pageRequest) {
+        return stockMovementRepository.findByProductIdAndRestaurantIdOrderByCreatedAtDesc(
+                productId, TenantContext.require(), pageRequest);
     }
 
     @Transactional
@@ -82,6 +88,8 @@ public class StockService {
         reversal = stockMovementRepository.save(reversal);
 
         stockMovementRepository.markReversed(original.getId(), reversal.getId());
+
+        stockBatchService.reverseAllocations(restaurantId, original.getId(), reversal.getId());
 
         alertEvaluationService.evaluate(original.getProductId(), restaurantId, stockAfter);
 

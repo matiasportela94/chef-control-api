@@ -1,16 +1,21 @@
 package com.chefcontrol.api.menu;
 
+import com.chefcontrol.api.foodcost.dto.MenuItemFoodCostResponse;
+import com.chefcontrol.api.foodcost.dto.RecipeCostResponse;
 import com.chefcontrol.api.menu.dto.*;
 import com.chefcontrol.api.shared.PagedResponse;
+import com.chefcontrol.application.service.FoodCostService;
 import com.chefcontrol.application.service.MenuItemService;
 import com.chefcontrol.application.service.MenuItemService.*;
 import com.chefcontrol.domain.shared.PageRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Instant;
 import java.util.UUID;
 
 @RestController
@@ -19,6 +24,7 @@ import java.util.UUID;
 public class MenuItemController {
 
     private final MenuItemService menuItemService;
+    private final FoodCostService foodCostService;
 
     @GetMapping
     public ResponseEntity<PagedResponse<MenuItemResponse>> list(
@@ -79,5 +85,18 @@ public class MenuItemController {
     public ResponseEntity<Void> deleteRecipe(@PathVariable UUID id) {
         menuItemService.deleteRecipe(id);
         return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/{id}/recipe/cost")
+    public ResponseEntity<RecipeCostResponse> getRecipeCost(@PathVariable UUID id) {
+        return ResponseEntity.ok(RecipeCostResponse.from(foodCostService.calculateRecipeCost(id)));
+    }
+
+    @GetMapping("/{id}/food-cost")
+    public ResponseEntity<MenuItemFoodCostResponse> getFoodCost(
+            @PathVariable UUID id,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to) {
+        return ResponseEntity.ok(MenuItemFoodCostResponse.from(foodCostService.calculateMenuItemFoodCost(id, from, to)));
     }
 }

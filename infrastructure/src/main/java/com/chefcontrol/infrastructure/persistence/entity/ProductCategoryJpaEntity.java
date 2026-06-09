@@ -18,13 +18,19 @@ public class ProductCategoryJpaEntity {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(name = "restaurant_id", nullable = false)
+    @Column(name = "restaurant_id")
     private UUID restaurantId;
 
     @Column(nullable = false)
     private String name;
 
     private String color;
+
+    @Column(name = "is_system", nullable = false)
+    private boolean isSystem;
+
+    @Column(name = "parent_id")
+    private UUID parentId;
 
     @Column(name = "created_at", updatable = false, nullable = false)
     private Instant createdAt;
@@ -40,6 +46,8 @@ public class ProductCategoryJpaEntity {
         e.setRestaurantId(domain.getRestaurantId());
         e.setName(domain.getName());
         e.setColor(domain.getColor());
+        e.setSystem(domain.isSystem());
+        e.setParentId(domain.getParentId());
         e.setCreatedAt(domain.getCreatedAt());
         return e;
     }
@@ -50,6 +58,8 @@ public class ProductCategoryJpaEntity {
         c.setRestaurantId(restaurantId);
         c.setName(name);
         c.setColor(color);
+        c.setSystem(isSystem);
+        c.setParentId(parentId);
         c.setCreatedAt(createdAt);
         return c;
     }

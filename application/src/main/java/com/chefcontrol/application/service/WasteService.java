@@ -14,9 +14,6 @@ import com.chefcontrol.domain.repository.UnitRepository;
 import com.chefcontrol.domain.repository.WasteEventRepository;
 import com.chefcontrol.domain.shared.Page;
 import com.chefcontrol.domain.shared.PageRequest;
-import com.chefcontrol.domain.stock.MovementDirection;
-import com.chefcontrol.domain.stock.MovementSource;
-import com.chefcontrol.domain.stock.MovementType;
 import com.chefcontrol.domain.stock.StockMovement;
 import com.chefcontrol.domain.waste.WasteEvent;
 import com.chefcontrol.domain.waste.WasteReason;
@@ -36,6 +33,8 @@ public class WasteService {
     private final StockMovementRepository stockMovementRepository;
     private final ProductRepository productRepository;
     private final UnitRepository unitRepository;
+    private final StockBatchService stockBatchService;
+    private final UnitConversionService unitConversionService;
     private final AlertEvaluationService alertEvaluationService;
     private final AuditService auditService;
     private final CurrentUserProvider currentUserProvider;
@@ -58,16 +57,23 @@ public class WasteService {
                 .filter(Product::isActive)
                 .orElseThrow(() -> AppException.notFound(ErrorCode.PRODUCT_NOT_FOUND, "Product not found"));
 
-        Unit unit = unitRepository.findById(cmd.unitId())
+        Unit requestedUnit = unitRepository.findById(cmd.unitId())
                 .orElseThrow(() -> AppException.notFound(ErrorCode.UNIT_NOT_FOUND, "Unit not found"));
+
+        // Convert quantity to the product's default unit if the user entered a different unit
+        UUID defaultUnitId = product.getDefaultUnitId();
+        BigDecimal quantity = unitConversionService.convert(cmd.quantity(), requestedUnit.getId(), defaultUnitId);
+
+        // Auto-calculate cost from FIFO batches (preview before consuming)
+        BigDecimal cost = stockBatchService.calculateFifoCost(restaurantId, product.getId(), quantity);
 
         WasteEvent event = new WasteEvent();
         event.setRestaurantId(restaurantId);
         event.setProductId(product.getId());
-        event.setQuantity(cmd.quantity());
-        event.setUnitId(unit.getId());
+        event.setQuantity(quantity);
+        event.setUnitId(defaultUnitId);
         event.setReason(cmd.reason());
-        event.setCost(cmd.cost());
+        event.setCost(cost);
         event.setUserId(userId);
         event = wasteEventRepository.save(event);
 
@@ -75,13 +81,16 @@ public class WasteService {
 
         StockMovement movement = StockMovement.forWaste(
                 restaurantId, product.getId(),
-                cmd.quantity(), unit.getId(), cmd.cost(),
+                quantity, defaultUnitId, cost,
                 stockBefore, event.getId(), userId);
-        stockMovementRepository.save(movement);
+        movement = stockMovementRepository.save(movement);
+
+        stockBatchService.consumeFifo(restaurantId, product.getId(), quantity, movement.getId());
+
         alertEvaluationService.evaluate(product.getId(), restaurantId, movement.getStockAfter());
 
         auditService.log(AuditAction.WASTE_EVENT_CREATED, "WasteEvent", event.getId(),
-                Map.of("product", product.getName(), "quantity", cmd.quantity()));
+                Map.of("product", product.getName(), "quantity", quantity));
 
         return event;
     }
@@ -92,7 +101,6 @@ public class WasteService {
             UUID productId,
             UUID unitId,
             BigDecimal quantity,
-            WasteReason reason,
-            BigDecimal cost
+            WasteReason reason
     ) {}
 }
