@@ -5,5 +5,3 @@ builder = "dockerfile"
 startCommand = "java -Dspring.profiles.active=staging -jar app.jar"
 healthcheckPath = "/actuator/health"
 healthcheckTimeout = 60
-restartPolicyType = "on-failure"
-restartPolicyMaxRetries = 3
