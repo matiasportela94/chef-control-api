@@ -2,6 +2,6 @@
 builder = "dockerfile"
 
 [deploy]
-startCommand = "java -Dspring.profiles.active=staging -jar app.jar"
+startCommand = "java -jar app.jar"
 healthcheckPath = "/actuator/health"
 healthcheckTimeout = 60
