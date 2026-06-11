@@ -1,10 +1,8 @@
-# Railway Postgres plugin exposes PGHOST / PGPORT / PGDATABASE / PGUSER / PGPASSWORD
-# automáticamente cuando vinculás el servicio con la DB.
+# Railway provee DATABASE_URL en formato postgresql://user:pass@host:port/db
+# El Dockerfile lo transforma a jdbc:postgresql:// en el entrypoint.
 spring:
   datasource:
-    url: jdbc:postgresql://${PGHOST}:${PGPORT}/${PGDATABASE}
-    username: ${PGUSER}
-    password: ${PGPASSWORD}
+    url: ${DATABASE_URL}
     hikari:
       maximum-pool-size: 10
       minimum-idle: 2
