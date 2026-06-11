@@ -4,6 +4,8 @@ import com.chefcontrol.domain.context.TenantContext;
 import com.chefcontrol.domain.repository.ProductRepository;
 import com.chefcontrol.domain.repository.ProductStockProjection;
 import com.chefcontrol.domain.repository.PurchaseRepository;
+import com.chefcontrol.domain.repository.SaleRepository;
+import com.chefcontrol.domain.repository.StockMovementRepository;
 import com.chefcontrol.domain.repository.WasteEventRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -20,23 +22,33 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class DashboardService {
 
-    private final ProductRepository productRepository;
-    private final PurchaseRepository purchaseRepository;
-    private final WasteEventRepository wasteEventRepository;
+    private final ProductRepository        productRepository;
+    private final PurchaseRepository       purchaseRepository;
+    private final SaleRepository           saleRepository;
+    private final WasteEventRepository     wasteEventRepository;
+    private final StockMovementRepository  stockMovementRepository;
 
     @Transactional(readOnly = true)
     public DashboardSummary getSummary() {
-        UUID restaurantId = TenantContext.require();
-        Instant monthStart = firstDayOfCurrentMonth();
+        UUID    restaurantId = TenantContext.require();
+        Instant monthStart   = firstDayOfCurrentMonth();
+        Instant now          = Instant.now();
 
         List<ProductStockProjection> stockRows = productRepository.findProductStockByRestaurant(restaurantId);
 
-        long lowStockCount = stockRows.stream().filter(this::isLowStock).count();
+        long lowStockCount  = stockRows.stream().filter(this::isLowStock).count();
         long overstockCount = stockRows.stream().filter(this::isOverstock).count();
 
-        long purchasesThisMonth = purchaseRepository.countByRestaurantIdAndPurchasedAtGreaterThanEqual(restaurantId, monthStart);
+        long       purchasesThisMonth      = purchaseRepository.countByRestaurantIdAndPurchasedAtGreaterThanEqual(restaurantId, monthStart);
         BigDecimal purchasesTotalThisMonth = purchaseRepository.sumTotalByRestaurantIdAndPurchasedAtSince(restaurantId, monthStart);
-        long wasteEventsThisMonth = wasteEventRepository.countByRestaurantIdAndCreatedAtGreaterThanEqual(restaurantId, monthStart);
+
+        long       salesCountThisMonth     = saleRepository.countByRestaurantIdAndSoldAtBetween(restaurantId, monthStart, now);
+        BigDecimal salesTotalThisMonth     = saleRepository.sumTotalAmountByRestaurantIdAndSoldAtBetween(restaurantId, monthStart, now);
+
+        long       wasteEventsThisMonth    = wasteEventRepository.countByRestaurantIdAndCreatedAtGreaterThanEqual(restaurantId, monthStart);
+        BigDecimal wasteTotalArsThisMonth  = wasteEventRepository.sumCostByRestaurantIdAndCreatedAtBetween(restaurantId, monthStart, now);
+
+        BigDecimal salesCostThisMonth      = stockMovementRepository.sumSalesCost(restaurantId, monthStart, now);
 
         KpiSummary kpis = new KpiSummary(
                 stockRows.size(),
@@ -44,9 +56,13 @@ public class DashboardService {
                 overstockCount,
                 purchasesThisMonth,
                 purchasesTotalThisMonth,
-                wasteEventsThisMonth);
+                salesCountThisMonth,
+                salesTotalThisMonth,
+                wasteEventsThisMonth,
+                wasteTotalArsThisMonth,
+                salesCostThisMonth);
 
-        return new DashboardSummary(stockRows, kpis);
+        return new DashboardSummary(kpis);
     }
 
     private boolean isLowStock(ProductStockProjection row) {
@@ -70,17 +86,18 @@ public class DashboardService {
 
     // ── Result types ──────────────────────────────────────────────────────────
 
-    public record DashboardSummary(
-            List<ProductStockProjection> products,
-            KpiSummary kpis
-    ) {}
+    public record DashboardSummary(KpiSummary kpis) {}
 
     public record KpiSummary(
-            long totalActiveProducts,
-            long lowStockProducts,
-            long overstockProducts,
-            long purchasesThisMonth,
+            long       totalActiveProducts,
+            long       lowStockProducts,
+            long       overstockProducts,
+            long       purchasesThisMonth,
             BigDecimal purchasesTotalThisMonth,
-            long wasteEventsThisMonth
+            long       salesCountThisMonth,
+            BigDecimal salesTotalThisMonth,
+            long       wasteEventsThisMonth,
+            BigDecimal wasteTotalArsThisMonth,
+            BigDecimal salesCostThisMonth
     ) {}
 }

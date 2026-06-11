@@ -12,8 +12,10 @@ import com.chefcontrol.domain.purchase.Purchase;
 import com.chefcontrol.domain.purchase.PurchaseItem;
 import com.chefcontrol.domain.repository.*;
 import com.chefcontrol.domain.shared.Page;
+import com.chefcontrol.domain.repository.StockBatchRepository;
 import com.chefcontrol.domain.shared.PageRequest;
 import com.chefcontrol.domain.shared.time.ChefControlTime;
+import com.chefcontrol.domain.purchase.PurchaseStatus;
 import com.chefcontrol.domain.stock.MovementDirection;
 import com.chefcontrol.domain.stock.MovementSource;
 import com.chefcontrol.domain.stock.MovementType;
@@ -38,6 +40,7 @@ public class PurchaseService {
     private final PurchaseRepository purchaseRepository;
     private final PurchaseItemRepository purchaseItemRepository;
     private final StockMovementRepository stockMovementRepository;
+    private final StockBatchRepository stockBatchRepository;
     private final SupplierRepository supplierRepository;
     private final ProductRepository productRepository;
     private final UnitRepository unitRepository;
@@ -57,9 +60,12 @@ public class PurchaseService {
     }
 
     public List<PurchaseItem> getPurchaseItems(UUID purchaseId) {
-        // Implicitly validates purchase belongs to tenant via getPurchase
         getPurchase(purchaseId);
-        return purchaseItemRepository.findByPurchaseIdOrderByCreatedAtAsc(purchaseId);
+        List<PurchaseItem> items = purchaseItemRepository.findByPurchaseIdOrderByCreatedAtAsc(purchaseId);
+        items.forEach(item ->
+            stockBatchRepository.findByPurchaseItemId(item.getId())
+                .ifPresent(batch -> item.setQuantityRemaining(batch.getQuantityRemaining())));
+        return items;
     }
 
     @Transactional
@@ -143,11 +149,104 @@ public class PurchaseService {
         UUID defaultUnitId = product.getDefaultUnitId();
         BigDecimal quantity     = unitConversionService.convert(item.quantity(), unit.getId(), defaultUnitId);
         BigDecimal pricePerUnit = unitConversionService.convertPrice(item.pricePerUnit(), unit.getId(), defaultUnitId);
+        if (pricePerUnit == null || pricePerUnit.compareTo(BigDecimal.ZERO) <= 0) {
+            throw AppException.badRequest(ErrorCode.VALIDATION_ERROR,
+                    "pricePerUnit must be greater than 0 for product " + item.productId());
+        }
         Unit defaultUnit = defaultUnitId.equals(unit.getId()) ? unit
                 : unitRepository.findById(defaultUnitId)
                         .orElseThrow(() -> AppException.notFound(ErrorCode.UNIT_NOT_FOUND, "Default unit not found"));
 
         return new ResolvedItem(product, defaultUnit, quantity, pricePerUnit, item.expirationDate());
+    }
+
+    @Transactional
+    public Purchase updatePurchase(UUID purchaseId, UpdatePurchaseCommand cmd) {
+        UUID restaurantId = TenantContext.require();
+
+        Purchase purchase = purchaseRepository.findByIdAndRestaurantId(purchaseId, restaurantId)
+                .orElseThrow(() -> AppException.notFound(ErrorCode.PURCHASE_NOT_FOUND, "Purchase not found"));
+
+        purchase.setSupplierId(cmd.supplierId());
+        purchase.setNotes(cmd.notes());
+        if (cmd.purchasedAt() != null) purchase.setPurchasedAt(cmd.purchasedAt());
+
+        if (cmd.items() != null) {
+            for (ItemPriceUpdate update : cmd.items()) {
+                PurchaseItem item = purchaseItemRepository.findById(update.id())
+                        .orElseThrow(() -> AppException.notFound(ErrorCode.VALIDATION_ERROR, "Item not found: " + update.id()));
+
+                BigDecimal newPrice = update.pricePerUnit().setScale(4, RoundingMode.HALF_UP);
+                item.setPricePerUnit(newPrice);
+                purchaseItemRepository.save(item);
+
+                stockMovementRepository.updatePurchaseCostPerUnit(item.getId(), newPrice);
+                stockBatchRepository.updateCostPerUnitByPurchaseItemId(item.getId(), newPrice);
+            }
+        }
+
+        List<PurchaseItem> allItems = purchaseItemRepository.findByPurchaseIdOrderByCreatedAtAsc(purchaseId);
+        BigDecimal newTotal = allItems.stream()
+                .map(i -> i.getPricePerUnit().multiply(i.getQuantity()))
+                .reduce(BigDecimal.ZERO, BigDecimal::add)
+                .setScale(2, RoundingMode.HALF_UP);
+        purchase.setTotal(newTotal);
+
+        return purchaseRepository.save(purchase);
+    }
+
+    @Transactional
+    public Purchase reversePurchase(UUID purchaseId) {
+        UUID restaurantId = TenantContext.require();
+        UUID userId = currentUserProvider.currentUserId();
+
+        Purchase purchase = purchaseRepository.findByIdAndRestaurantId(purchaseId, restaurantId)
+                .orElseThrow(() -> AppException.notFound(ErrorCode.PURCHASE_NOT_FOUND, "Purchase not found"));
+
+        if (purchase.getStatus() == PurchaseStatus.REVERSED) {
+            throw AppException.conflict(ErrorCode.VALIDATION_ERROR, "Purchase already reversed");
+        }
+
+        List<PurchaseItem> items = purchaseItemRepository.findByPurchaseIdOrderByCreatedAtAsc(purchaseId);
+
+        for (PurchaseItem item : items) {
+            List<StockMovement> movements = stockMovementRepository
+                    .findByReferenceIdAndReferenceType(item.getId(), "purchase_item");
+
+            for (StockMovement original : movements) {
+                if (original.getType() == MovementType.REVERSAL || original.getReversedBy() != null) continue;
+
+                BigDecimal stockBefore = stockMovementRepository.getCurrentStock(original.getProductId(), restaurantId);
+                StockMovement reversal = StockMovement.builder()
+                        .restaurantId(restaurantId)
+                        .productId(original.getProductId())
+                        .type(MovementType.REVERSAL)
+                        .direction(MovementDirection.OUT)
+                        .quantity(original.getQuantity())
+                        .unitId(original.getUnitId())
+                        .costPerUnit(original.getCostPerUnit())
+                        .stockBefore(stockBefore)
+                        .stockAfter(stockBefore.subtract(original.getQuantity()))
+                        .referenceId(original.getId())
+                        .referenceType("reversal")
+                        .userId(userId)
+                        .source(MovementSource.DASHBOARD)
+                        .build();
+                reversal = stockMovementRepository.save(reversal);
+                stockMovementRepository.markReversed(original.getId(), reversal.getId());
+
+                stockBatchRepository.zeroQuantityRemainingByPurchaseItemId(item.getId());
+
+                alertEvaluationService.evaluate(original.getProductId(), restaurantId, reversal.getStockAfter());
+            }
+        }
+
+        purchase.setStatus(PurchaseStatus.REVERSED);
+        purchase = purchaseRepository.save(purchase);
+
+        auditService.log(AuditAction.PURCHASE_CREATED, "Purchase", purchase.getId(),
+                Map.of("action", "REVERSED"));
+        return purchase;
     }
 
     // ── Commands ─────────────────────────────────────────────────────────────
@@ -169,4 +268,13 @@ public class PurchaseService {
 
     private record ResolvedItem(Product product, Unit unit, BigDecimal quantity, BigDecimal pricePerUnit,
                                 LocalDate expirationDate) {}
+
+    public record UpdatePurchaseCommand(
+            UUID supplierId,
+            String notes,
+            Instant purchasedAt,
+            List<ItemPriceUpdate> items
+    ) {}
+
+    public record ItemPriceUpdate(UUID id, BigDecimal pricePerUnit) {}
 }

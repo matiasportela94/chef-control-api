@@ -25,6 +25,11 @@ public class PurchaseItemRepositoryAdapter implements PurchaseItemRepository {
     }
 
     @Override
+    public java.util.Optional<PurchaseItem> findById(UUID id) {
+        return jpa.findWithRelationshipsById(id).map(PurchaseItemJpaEntity::toDomain);
+    }
+
+    @Override
     public PurchaseItem save(PurchaseItem item) {
         PurchaseItemJpaEntity saved = jpa.save(PurchaseItemJpaEntity.from(item));
         return jpa.findWithRelationshipsById(saved.getId())

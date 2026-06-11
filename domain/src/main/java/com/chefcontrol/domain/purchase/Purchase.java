@@ -6,7 +6,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
-@Getter @Builder @NoArgsConstructor @AllArgsConstructor
+@Getter @Setter @Builder @NoArgsConstructor @AllArgsConstructor
 public class Purchase {
 
     private UUID id;
@@ -18,4 +18,5 @@ public class Purchase {
     private String notes;
     private Instant purchasedAt;
     private Instant createdAt;
+    private PurchaseStatus status;
 }

@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
@@ -45,5 +46,10 @@ public class WasteEventRepositoryAdapter implements WasteEventRepository {
     @Override
     public long countByRestaurantIdAndCreatedAtGreaterThanEqual(UUID restaurantId, Instant since) {
         return jpa.countByRestaurantIdAndCreatedAtGreaterThanEqual(restaurantId, since);
+    }
+
+    @Override
+    public BigDecimal sumCostByRestaurantIdAndCreatedAtBetween(UUID restaurantId, Instant from, Instant to) {
+        return jpa.sumCostByRestaurantIdAndCreatedAtBetween(restaurantId, from, to);
     }
 }

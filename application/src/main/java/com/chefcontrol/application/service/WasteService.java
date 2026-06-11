@@ -22,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.Map;
 import java.util.UUID;
 
@@ -64,8 +65,17 @@ public class WasteService {
         UUID defaultUnitId = product.getDefaultUnitId();
         BigDecimal quantity = unitConversionService.convert(cmd.quantity(), requestedUnit.getId(), defaultUnitId);
 
-        // Auto-calculate cost from FIFO batches (preview before consuming)
-        BigDecimal cost = stockBatchService.calculateFifoCost(restaurantId, product.getId(), quantity);
+        // Calculate total cost from FIFO batches; fall back to last purchase price if batches have no price data
+        BigDecimal totalCost = stockBatchService.calculateFifoCost(restaurantId, product.getId(), quantity);
+        if (totalCost.compareTo(BigDecimal.ZERO) == 0) {
+            BigDecimal lastCost = stockMovementRepository.findLastPurchaseCostPerUnit(product.getId(), restaurantId);
+            if (lastCost != null && lastCost.compareTo(BigDecimal.ZERO) > 0) {
+                totalCost = quantity.multiply(lastCost).setScale(2, RoundingMode.HALF_UP);
+            }
+        }
+        BigDecimal costPerUnit = quantity.compareTo(BigDecimal.ZERO) > 0
+                ? totalCost.divide(quantity, 4, RoundingMode.HALF_UP)
+                : BigDecimal.ZERO;
 
         WasteEvent event = new WasteEvent();
         event.setRestaurantId(restaurantId);
@@ -73,7 +83,7 @@ public class WasteService {
         event.setQuantity(quantity);
         event.setUnitId(defaultUnitId);
         event.setReason(cmd.reason());
-        event.setCost(cost);
+        event.setCost(totalCost);
         event.setUserId(userId);
         event = wasteEventRepository.save(event);
 
@@ -81,7 +91,7 @@ public class WasteService {
 
         StockMovement movement = StockMovement.forWaste(
                 restaurantId, product.getId(),
-                quantity, defaultUnitId, cost,
+                quantity, defaultUnitId, costPerUnit,
                 stockBefore, event.getId(), userId);
         movement = stockMovementRepository.save(movement);
 

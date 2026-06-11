@@ -57,6 +57,26 @@ public interface JpaStockMovementRepository extends JpaRepository<StockMovementJ
                             @Param("from") Instant from,
                             @Param("to") Instant to);
 
+    @Modifying
+    @Query(value = """
+            UPDATE stock_movements
+            SET cost_per_unit = :cost
+            WHERE reference_id = :purchaseItemId AND reference_type = 'purchase_item'
+            """, nativeQuery = true)
+    void updatePurchaseCostPerUnit(@Param("purchaseItemId") UUID purchaseItemId,
+                                   @Param("cost") java.math.BigDecimal cost);
+
+    @Query(value = """
+            SELECT cost_per_unit
+            FROM stock_movements
+            WHERE product_id = :productId AND restaurant_id = :restaurantId
+              AND type = 'PURCHASE' AND cost_per_unit IS NOT NULL AND cost_per_unit > 0
+            ORDER BY created_at DESC
+            LIMIT 1
+            """, nativeQuery = true)
+    BigDecimal findLastPurchaseCostPerUnit(@Param("productId") UUID productId,
+                                           @Param("restaurantId") UUID restaurantId);
+
     @Query(value = """
             SELECT COALESCE(SUM(sm.quantity * sm.cost_per_unit), 0)
             FROM stock_movements sm

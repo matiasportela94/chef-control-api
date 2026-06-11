@@ -81,4 +81,14 @@ public class StockMovementRepositoryAdapter implements StockMovementRepository {
     public BigDecimal sumSalesCostByMenuItemAndPeriod(UUID menuItemId, UUID restaurantId, Instant from, Instant to) {
         return jpa.sumSalesCostByMenuItemAndPeriod(menuItemId, restaurantId, from, to);
     }
+
+    @Override
+    public BigDecimal findLastPurchaseCostPerUnit(UUID productId, UUID restaurantId) {
+        return jpa.findLastPurchaseCostPerUnit(productId, restaurantId);
+    }
+
+    @Override
+    public void updatePurchaseCostPerUnit(UUID purchaseItemId, BigDecimal newCostPerUnit) {
+        jpa.updatePurchaseCostPerUnit(purchaseItemId, newCostPerUnit);
+    }
 }

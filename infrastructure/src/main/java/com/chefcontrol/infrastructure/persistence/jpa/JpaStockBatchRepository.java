@@ -13,6 +13,12 @@ public interface JpaStockBatchRepository extends JpaRepository<StockBatchJpaEnti
 
     Optional<StockBatchJpaEntity> findByIdAndRestaurantId(UUID id, UUID restaurantId);
 
+    @org.springframework.data.jpa.repository.Modifying
+    @Query(value = "UPDATE stock_batches SET cost_per_unit = :cost WHERE purchase_item_id = :purchaseItemId",
+           nativeQuery = true)
+    void updateCostPerUnitByPurchaseItemId(@Param("purchaseItemId") UUID purchaseItemId,
+                                           @Param("cost") java.math.BigDecimal cost);
+
     @Query("""
             SELECT b FROM StockBatchJpaEntity b
             WHERE b.productId = :productId AND b.restaurantId = :restaurantId
@@ -21,4 +27,12 @@ public interface JpaStockBatchRepository extends JpaRepository<StockBatchJpaEnti
             """)
     List<StockBatchJpaEntity> findAvailableByProductFifo(@Param("productId") UUID productId,
                                                           @Param("restaurantId") UUID restaurantId);
+
+    @Query("SELECT b FROM StockBatchJpaEntity b WHERE b.purchaseItemId = :purchaseItemId")
+    Optional<StockBatchJpaEntity> findByPurchaseItemId(@Param("purchaseItemId") UUID purchaseItemId);
+
+    @org.springframework.data.jpa.repository.Modifying
+    @Query(value = "UPDATE stock_batches SET quantity_remaining = 0 WHERE purchase_item_id = :purchaseItemId",
+           nativeQuery = true)
+    void zeroQuantityRemainingByPurchaseItemId(@Param("purchaseItemId") UUID purchaseItemId);
 }

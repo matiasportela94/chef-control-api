@@ -6,7 +6,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
-@Getter @Builder @NoArgsConstructor @AllArgsConstructor
+@Getter @Setter @Builder @NoArgsConstructor @AllArgsConstructor
 public class PurchaseItem {
 
     private UUID id;
@@ -20,4 +20,5 @@ public class PurchaseItem {
     private String unitAbbreviation;
     private BigDecimal pricePerUnit;
     private Instant createdAt;
+    private BigDecimal quantityRemaining;
 }

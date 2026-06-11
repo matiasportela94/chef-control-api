@@ -3,10 +3,13 @@ package com.chefcontrol.api.purchase;
 import com.chefcontrol.api.purchase.dto.CreatePurchaseRequest;
 import com.chefcontrol.api.purchase.dto.PurchaseDetailResponse;
 import com.chefcontrol.api.purchase.dto.PurchaseResponse;
+import com.chefcontrol.api.purchase.dto.UpdatePurchaseRequest;
 import com.chefcontrol.api.shared.PagedResponse;
 import com.chefcontrol.application.service.PurchaseService;
 import com.chefcontrol.application.service.PurchaseService.CreatePurchaseCommand;
+import com.chefcontrol.application.service.PurchaseService.ItemPriceUpdate;
 import com.chefcontrol.application.service.PurchaseService.PurchaseItemCommand;
+import com.chefcontrol.application.service.PurchaseService.UpdatePurchaseCommand;
 import com.chefcontrol.domain.purchase.Purchase;
 import jakarta.validation.Valid;
 import com.chefcontrol.domain.shared.PageRequest;
@@ -57,6 +60,34 @@ public class PurchaseController {
 
         Purchase purchase = purchaseService.createPurchase(command);
         return ResponseEntity.status(HttpStatus.CREATED).body(
+                PurchaseDetailResponse.from(purchase, purchaseService.getPurchaseItems(purchase.getId())));
+    }
+
+    @PostMapping("/{id}/reverse")
+    @PreAuthorize("hasAnyRole('OWNER', 'MANAGER')")
+    public ResponseEntity<PurchaseDetailResponse> reversePurchase(@PathVariable UUID id) {
+        Purchase purchase = purchaseService.reversePurchase(id);
+        return ResponseEntity.ok(
+                PurchaseDetailResponse.from(purchase, purchaseService.getPurchaseItems(purchase.getId())));
+    }
+
+    @PutMapping("/{id}")
+    @PreAuthorize("hasAnyRole('OWNER', 'MANAGER')")
+    public ResponseEntity<PurchaseDetailResponse> updatePurchase(
+            @PathVariable UUID id,
+            @Valid @RequestBody UpdatePurchaseRequest request) {
+
+        UpdatePurchaseCommand command = new UpdatePurchaseCommand(
+                request.supplierId(),
+                request.notes(),
+                request.purchasedAt(),
+                request.items() == null ? null :
+                        request.items().stream()
+                                .map(i -> new ItemPriceUpdate(i.id(), i.pricePerUnit()))
+                                .toList());
+
+        Purchase purchase = purchaseService.updatePurchase(id, command);
+        return ResponseEntity.ok(
                 PurchaseDetailResponse.from(purchase, purchaseService.getPurchaseItems(purchase.getId())));
     }
 }

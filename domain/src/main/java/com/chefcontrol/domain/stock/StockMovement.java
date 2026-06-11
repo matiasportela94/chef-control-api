@@ -67,7 +67,7 @@ public class StockMovement {
     }
 
     public static StockMovement forWaste(UUID restaurantId, UUID productId,
-                                         BigDecimal quantity, UUID unitId, BigDecimal cost,
+                                         BigDecimal quantity, UUID unitId, BigDecimal costPerUnit,
                                          BigDecimal stockBefore, UUID referenceId, UUID userId) {
         return StockMovement.builder()
                 .restaurantId(restaurantId)
@@ -76,7 +76,7 @@ public class StockMovement {
                 .direction(MovementDirection.OUT)
                 .quantity(quantity)
                 .unitId(unitId)
-                .costPerUnit(cost)
+                .costPerUnit(costPerUnit)
                 .stockBefore(stockBefore)
                 .stockAfter(stockBefore.subtract(quantity))
                 .referenceId(referenceId)

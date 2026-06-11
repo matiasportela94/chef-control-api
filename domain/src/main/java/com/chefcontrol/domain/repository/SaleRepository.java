@@ -18,4 +18,6 @@ public interface SaleRepository {
     Sale save(Sale sale);
 
     BigDecimal sumTotalAmountByRestaurantIdAndSoldAtBetween(UUID restaurantId, Instant from, Instant to);
+
+    long countByRestaurantIdAndSoldAtBetween(UUID restaurantId, Instant from, Instant to);
 }

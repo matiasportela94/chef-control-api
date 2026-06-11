@@ -83,10 +83,11 @@ public class StockCountService {
             if (movement.getDirection() == MovementDirection.OUT) {
                 stockBatchService.consumeFifo(restaurantId, product.getId(), movement.getQuantity(), movement.getId());
             } else {
-                // Surplus found during a physical count has no known lot or expiration —
-                // tracked as an untracked batch so it still counts toward FIFO consumption.
+                // Surplus found during a physical count: use last purchase price as cost estimate
+                // so downstream FIFO cost calculations (waste, food cost) have a reference value.
+                BigDecimal lastCost = stockMovementRepository.findLastPurchaseCostPerUnit(product.getId(), restaurantId);
                 stockBatchService.createBatch(restaurantId, product.getId(), null,
-                        movement.getQuantity(), null, null, movement.getId());
+                        movement.getQuantity(), null, lastCost, movement.getId());
             }
 
             movements.add(movement);

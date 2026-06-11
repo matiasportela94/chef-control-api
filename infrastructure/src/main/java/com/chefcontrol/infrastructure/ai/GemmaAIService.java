@@ -15,8 +15,8 @@ import java.util.Map;
 
 @Slf4j
 @Service
-@ConditionalOnExpression("!'${app.anthropic.api-key:}'.isEmpty()")
-public class ClaudeAIService implements AIService {
+@ConditionalOnExpression("!'${app.google.api-key:}'.isEmpty() && '${app.anthropic.api-key:}'.isEmpty()")
+public class GemmaAIService implements AIService {
 
     private static final String TOOL_NAME = "interpret_inventory";
 
@@ -24,17 +24,16 @@ public class ClaudeAIService implements AIService {
     private final String model;
     private final ObjectMapper objectMapper;
 
-    public ClaudeAIService(
-            @Value("${app.anthropic.api-key}") String apiKey,
-            @Value("${app.anthropic.model:claude-haiku-4-5-20251001}") String model,
+    public GemmaAIService(
+            @Value("${app.google.api-key}") String apiKey,
+            @Value("${app.google.model:gemma-3-27b-it}") String model,
             ObjectMapper objectMapper) {
         this.model = model;
         this.objectMapper = objectMapper;
         this.restClient = RestClient.builder()
-                .baseUrl("https://api.anthropic.com")
-                .defaultHeader("x-api-key", apiKey)
-                .defaultHeader("anthropic-version", "2023-06-01")
-                .defaultHeader("content-type", "application/json")
+                .baseUrl("https://generativelanguage.googleapis.com")
+                .defaultHeader("x-goog-api-key", apiKey)
+                .defaultHeader("Content-Type", "application/json")
                 .build();
     }
 
@@ -43,13 +42,13 @@ public class ClaudeAIService implements AIService {
         try {
             Map<String, Object> body = buildRequestBody(request);
             JsonNode response = restClient.post()
-                    .uri("/v1/messages")
+                    .uri("/v1beta/models/" + model + ":generateContent")
                     .body(body)
                     .retrieve()
                     .body(JsonNode.class);
             return parseResponse(response);
         } catch (Exception e) {
-            log.error("[Claude] interpret failed: {}", e.getMessage());
+            log.error("[Gemma] interpret failed: {}", e.getMessage());
             return new AIInterpretation("unknown", 0, false, null,
                     "No pude interpretar el mensaje. Intentá de nuevo.");
         }
@@ -57,12 +56,21 @@ public class ClaudeAIService implements AIService {
 
     private Map<String, Object> buildRequestBody(InterpretRequest request) {
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("model", model);
-        body.put("max_tokens", 1024);
-        body.put("system", buildSystemPrompt(request.catalog()));
-        body.put("tools", List.of(buildTool()));
-        body.put("tool_choice", Map.of("type", "tool", "name", TOOL_NAME));
-        body.put("messages", List.of(Map.of("role", "user", "content", request.message())));
+        body.put("system_instruction", Map.of(
+                "parts", List.of(Map.of("text", buildSystemPrompt(request.catalog())))
+        ));
+        body.put("contents", List.of(Map.of(
+                "role", "user",
+                "parts", List.of(Map.of("text", request.message()))
+        )));
+        body.put("tools", List.of(Map.of("function_declarations", List.of(buildFunctionDeclaration()))));
+        body.put("tool_config", Map.of(
+                "function_calling_config", Map.of(
+                        "mode", "ANY",
+                        "allowed_function_names", List.of(TOOL_NAME)
+                )
+        ));
+        body.put("generationConfig", Map.of("maxOutputTokens", 1024));
         return body;
     }
 
@@ -103,46 +111,56 @@ public class ClaudeAIService implements AIService {
                 + "  parece razonable — la ambigüedad es lo que importa confirmar.";
     }
 
-    private Map<String, Object> buildTool() {
+    private Map<String, Object> buildFunctionDeclaration() {
         Map<String, Object> properties = new LinkedHashMap<>();
-        properties.put("intent", Map.of("type", "string",
+        properties.put("intent", Map.of(
+                "type", "STRING",
                 "enum", List.of("purchase", "waste", "sale", "stock_adjustment", "query", "multi", "unknown")));
-        properties.put("confidence",         Map.of("type", "integer", "minimum", 0, "maximum", 100));
-        properties.put("needs_confirmation", Map.of("type", "boolean"));
-        properties.put("response_to_user",   Map.of("type", "string"));
-        properties.put("data",               Map.of("type", "object",
+        properties.put("confidence",         Map.of("type", "INTEGER", "minimum", 0, "maximum", 100));
+        properties.put("needs_confirmation", Map.of("type", "BOOLEAN"));
+        properties.put("response_to_user",   Map.of("type", "STRING"));
+        properties.put("data", Map.of(
+                "type", "OBJECT",
+                "nullable", true,
                 "description", "Datos estructurados según el intent. Estructura varía: items[] para purchase/waste/sale, producto+cantidad para stock_adjustment."));
 
-        Map<String, Object> schema = new LinkedHashMap<>();
-        schema.put("type", "object");
-        schema.put("properties", properties);
-        schema.put("required", List.of("intent", "confidence", "needs_confirmation", "response_to_user"));
+        Map<String, Object> parameters = new LinkedHashMap<>();
+        parameters.put("type", "OBJECT");
+        parameters.put("properties", properties);
+        parameters.put("required", List.of("intent", "confidence", "needs_confirmation", "response_to_user"));
 
-        Map<String, Object> tool = new LinkedHashMap<>();
-        tool.put("name", TOOL_NAME);
-        tool.put("description", "Interpreta un mensaje del equipo de cocina y extrae la operación de inventario");
-        tool.put("input_schema", schema);
-        return tool;
+        Map<String, Object> fn = new LinkedHashMap<>();
+        fn.put("name", TOOL_NAME);
+        fn.put("description", "Interpreta un mensaje del equipo de cocina y extrae la operación de inventario");
+        fn.put("parameters", parameters);
+        return fn;
     }
 
     private AIInterpretation parseResponse(JsonNode response) {
-        JsonNode content = response.path("content");
-        for (JsonNode block : content) {
-            if ("tool_use".equals(block.path("type").asText())
-                    && TOOL_NAME.equals(block.path("name").asText())) {
-                JsonNode input         = block.path("input");
-                String intent          = input.path("intent").asText("unknown");
-                int confidence         = input.path("confidence").asInt(0);
-                boolean needsConfirm   = input.path("needs_confirmation").asBoolean(true);
-                String responseToUser  = input.path("response_to_user").asText("");
-                Object data            = input.has("data")
-                        ? objectMapper.convertValue(input.get("data"), Object.class)
-                        : null;
-                log.debug("[Claude] intent={} confidence={}", intent, confidence);
-                return new AIInterpretation(intent, confidence, needsConfirm, data, responseToUser);
+        try {
+            JsonNode parts = response.path("candidates").get(0)
+                    .path("content").path("parts");
+            for (JsonNode part : parts) {
+                JsonNode functionCall = part.path("functionCall");
+                if (!functionCall.isMissingNode()
+                        && TOOL_NAME.equals(functionCall.path("name").asText())) {
+                    JsonNode args         = functionCall.path("args");
+                    String intent         = args.path("intent").asText("unknown");
+                    int confidence        = args.path("confidence").asInt(0);
+                    boolean needsConfirm  = args.path("needs_confirmation").asBoolean(true);
+                    String responseToUser = args.path("response_to_user").asText("");
+                    Object data           = args.has("data")
+                            ? objectMapper.convertValue(args.get("data"), Object.class)
+                            : null;
+                    log.debug("[Gemma] intent={} confidence={}", intent, confidence);
+                    return new AIInterpretation(intent, confidence, needsConfirm, data, responseToUser);
+                }
             }
+            log.warn("[Gemma] No functionCall block in response");
+            return new AIInterpretation("unknown", 0, true, null, "No pude interpretar el mensaje.");
+        } catch (Exception e) {
+            log.warn("[Gemma] Failed to parse response: {}", e.getMessage());
+            return new AIInterpretation("unknown", 0, true, null, "No pude interpretar el mensaje.");
         }
-        log.warn("[Claude] No tool_use block in response");
-        return new AIInterpretation("unknown", 0, true, null, "No pude interpretar el mensaje.");
     }
 }

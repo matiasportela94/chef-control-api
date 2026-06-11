@@ -7,6 +7,7 @@ import com.chefcontrol.infrastructure.persistence.jpa.JpaStockBatchRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -33,5 +34,20 @@ public class StockBatchRepositoryAdapter implements StockBatchRepository {
         return jpa.findAvailableByProductFifo(productId, restaurantId).stream()
                 .map(StockBatchJpaEntity::toDomain)
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    public void updateCostPerUnitByPurchaseItemId(UUID purchaseItemId, BigDecimal newCostPerUnit) {
+        jpa.updateCostPerUnitByPurchaseItemId(purchaseItemId, newCostPerUnit);
+    }
+
+    @Override
+    public Optional<StockBatch> findByPurchaseItemId(UUID purchaseItemId) {
+        return jpa.findByPurchaseItemId(purchaseItemId).map(StockBatchJpaEntity::toDomain);
+    }
+
+    @Override
+    public void zeroQuantityRemainingByPurchaseItemId(UUID purchaseItemId) {
+        jpa.zeroQuantityRemainingByPurchaseItemId(purchaseItemId);
     }
 }

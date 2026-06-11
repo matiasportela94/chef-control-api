@@ -39,6 +39,10 @@ app:
     api-key: ${ANTHROPIC_API_KEY:}
     model: ${ANTHROPIC_MODEL:claude-haiku-4-5-20251001}
 
+  google:
+    api-key: ${GOOGLE_AI_API_KEY:}
+    model: ${GOOGLE_AI_MODEL:gemma-4}
+
 management:
   endpoints:
     web:

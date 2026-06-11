@@ -35,15 +35,15 @@ public class AlertEvaluationService {
         if (product.getMinStock() == null) return;
 
         if (product.isLowStock(stockAfter)) {
-            boolean alreadyOpen = alertRepository
-                    .findByProductIdAndTypeAndResolvedAtIsNull(product.getId(), AlertType.LOW_STOCK)
-                    .isPresent();
-            if (!alreadyOpen) {
-                String msg = String.format("Stock de '%s' (%.3f) está por debajo del mínimo (%.3f)",
-                        product.getName(), stockAfter, product.getMinStock());
-                createAlert(restaurantId, product.getId(), AlertType.LOW_STOCK,
-                        product.lowStockSeverity(stockAfter), msg);
-            }
+            String msg = String.format("Stock de '%s' (%.3f) está por debajo del mínimo (%.3f)",
+                    product.getName(), stockAfter, product.getMinStock());
+            AlertSeverity severity = product.lowStockSeverity(stockAfter);
+            alertRepository.findByProductIdAndTypeAndResolvedAtIsNull(product.getId(), AlertType.LOW_STOCK)
+                    .ifPresentOrElse(existing -> {
+                        existing.setMessage(msg);
+                        existing.setSeverity(severity);
+                        alertRepository.save(existing);
+                    }, () -> createAlert(restaurantId, product.getId(), AlertType.LOW_STOCK, severity, msg));
         } else {
             alertRepository.resolveByProductAndType(product.getId(), AlertType.LOW_STOCK, Instant.now());
         }
@@ -53,15 +53,14 @@ public class AlertEvaluationService {
         if (product.getMaxStock() == null) return;
 
         if (product.isOverstock(stockAfter)) {
-            boolean alreadyOpen = alertRepository
-                    .findByProductIdAndTypeAndResolvedAtIsNull(product.getId(), AlertType.OVERSTOCK)
-                    .isPresent();
-            if (!alreadyOpen) {
-                String msg = String.format("Stock de '%s' (%.3f) supera el máximo (%.3f)",
-                        product.getName(), stockAfter, product.getMaxStock());
-                createAlert(restaurantId, product.getId(), AlertType.OVERSTOCK,
-                        AlertSeverity.WARNING, msg);
-            }
+            String msg = String.format("Stock de '%s' (%.3f) supera el máximo (%.3f)",
+                    product.getName(), stockAfter, product.getMaxStock());
+            alertRepository.findByProductIdAndTypeAndResolvedAtIsNull(product.getId(), AlertType.OVERSTOCK)
+                    .ifPresentOrElse(existing -> {
+                        existing.setMessage(msg);
+                        alertRepository.save(existing);
+                    }, () -> createAlert(restaurantId, product.getId(), AlertType.OVERSTOCK,
+                            AlertSeverity.WARNING, msg));
         } else {
             alertRepository.resolveByProductAndType(product.getId(), AlertType.OVERSTOCK, Instant.now());
         }

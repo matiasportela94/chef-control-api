@@ -23,4 +23,6 @@ public interface JpaSaleRepository extends JpaRepository<SaleJpaEntity, UUID> {
             @Param("restaurantId") UUID restaurantId,
             @Param("from") Instant from,
             @Param("to") Instant to);
+
+    long countByRestaurantIdAndSoldAtBetween(UUID restaurantId, Instant from, Instant to);
 }

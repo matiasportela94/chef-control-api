@@ -1,6 +1,7 @@
 package com.chefcontrol.infrastructure.persistence.adapter;
 
 import com.chefcontrol.domain.purchase.Purchase;
+import com.chefcontrol.domain.purchase.PurchaseStatus;
 import com.chefcontrol.domain.repository.PurchaseRepository;
 import com.chefcontrol.domain.shared.Page;
 import com.chefcontrol.domain.shared.PageRequest;
@@ -45,7 +46,7 @@ public class PurchaseRepositoryAdapter implements PurchaseRepository {
 
     @Override
     public long countByRestaurantIdAndPurchasedAtGreaterThanEqual(UUID restaurantId, Instant since) {
-        return jpa.countByRestaurantIdAndPurchasedAtGreaterThanEqual(restaurantId, since);
+        return jpa.countByRestaurantIdAndStatusAndPurchasedAtGreaterThanEqual(restaurantId, PurchaseStatus.ACTIVE, since);
     }
 
     @Override

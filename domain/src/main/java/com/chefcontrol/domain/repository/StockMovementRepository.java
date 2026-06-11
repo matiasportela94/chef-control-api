@@ -31,4 +31,8 @@ public interface StockMovementRepository {
     BigDecimal sumSalesCost(UUID restaurantId, Instant from, Instant to);
 
     BigDecimal sumSalesCostByMenuItemAndPeriod(UUID menuItemId, UUID restaurantId, Instant from, Instant to);
+
+    BigDecimal findLastPurchaseCostPerUnit(UUID productId, UUID restaurantId);
+
+    void updatePurchaseCostPerUnit(UUID purchaseItemId, BigDecimal newCostPerUnit);
 }

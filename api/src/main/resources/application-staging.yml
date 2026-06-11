@@ -1,8 +1,10 @@
+# Railway Postgres plugin exposes PGHOST / PGPORT / PGDATABASE / PGUSER / PGPASSWORD
+# automáticamente cuando vinculás el servicio con la DB.
 spring:
   datasource:
-    url: ${DATABASE_URL}
-    username: ${DATABASE_USERNAME}
-    password: ${DATABASE_PASSWORD}
+    url: jdbc:postgresql://${PGHOST}:${PGPORT}/${PGDATABASE}
+    username: ${PGUSER}
+    password: ${PGPASSWORD}
     hikari:
       maximum-pool-size: 10
       minimum-idle: 2
@@ -18,21 +20,34 @@ app:
   jwt:
     secret: ${JWT_SECRET}
 
+  cookie:
+    secure: true
+
   frontend:
-    url: ${FRONTEND_URL}
+    url: ${FRONTEND_URL:http://localhost:4200}
 
   token:
     password-reset-expiration-minutes: ${TOKEN_RESET_EXPIRATION_MINUTES:15}
     set-password-expiration-hours: ${TOKEN_SET_PASSWORD_EXPIRATION_HOURS:48}
 
-  ai-service:
-    url: ${AI_SERVICE_URL}
-    secret: ${AI_SERVICE_SECRET}
+  anthropic:
+    api-key: ${ANTHROPIC_API_KEY:}
+    model: ${ANTHROPIC_MODEL:claude-haiku-4-5-20251001}
 
+  google:
+    api-key: ${GOOGLE_AI_API_KEY:}
+    model: ${GOOGLE_AI_MODEL:gemma-4}
+
+  # NoOp stub activo si no se configura
+  ai-service:
+    url: ${AI_SERVICE_URL:http://localhost:8001}
+    secret: ${AI_SERVICE_SECRET:placeholder}
+
+  # NoOp stub activo si no se configura
   whatsapp:
-    verify-token: ${WHATSAPP_VERIFY_TOKEN}
-    access-token: ${WHATSAPP_ACCESS_TOKEN}
-    phone-number-id: ${WHATSAPP_PHONE_NUMBER_ID}
+    verify-token: ${WHATSAPP_VERIFY_TOKEN:placeholder}
+    access-token: ${WHATSAPP_ACCESS_TOKEN:placeholder}
+    phone-number-id: ${WHATSAPP_PHONE_NUMBER_ID:placeholder}
 
 logging:
   level:

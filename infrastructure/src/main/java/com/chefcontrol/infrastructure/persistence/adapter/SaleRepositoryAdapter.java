@@ -44,4 +44,9 @@ public class SaleRepositoryAdapter implements SaleRepository {
     public BigDecimal sumTotalAmountByRestaurantIdAndSoldAtBetween(UUID restaurantId, Instant from, Instant to) {
         return jpa.sumTotalAmountByRestaurantIdAndSoldAtBetween(restaurantId, from, to);
     }
+
+    @Override
+    public long countByRestaurantIdAndSoldAtBetween(UUID restaurantId, Instant from, Instant to) {
+        return jpa.countByRestaurantIdAndSoldAtBetween(restaurantId, from, to);
+    }
 }
