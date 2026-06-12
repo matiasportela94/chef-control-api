@@ -3,6 +3,7 @@ package com.chefcontrol.domain.stock;
 import lombok.*;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -29,16 +30,18 @@ public class StockMovement {
     public static StockMovement forPurchase(UUID restaurantId, UUID productId,
                                             BigDecimal quantity, UUID unitId, BigDecimal costPerUnit,
                                             BigDecimal stockBefore, UUID referenceId, UUID userId) {
+        BigDecimal qty = r2(quantity);
+        BigDecimal before = r2(stockBefore);
         return StockMovement.builder()
                 .restaurantId(restaurantId)
                 .productId(productId)
                 .type(MovementType.PURCHASE)
                 .direction(MovementDirection.IN)
-                .quantity(quantity)
+                .quantity(qty)
                 .unitId(unitId)
                 .costPerUnit(costPerUnit)
-                .stockBefore(stockBefore)
-                .stockAfter(stockBefore.add(quantity))
+                .stockBefore(before)
+                .stockAfter(r2(before.add(qty)))
                 .referenceId(referenceId)
                 .referenceType("purchase_item")
                 .userId(userId)
@@ -49,16 +52,18 @@ public class StockMovement {
     public static StockMovement forSale(UUID restaurantId, UUID productId,
                                         BigDecimal quantity, UUID unitId, BigDecimal avgCost,
                                         BigDecimal stockBefore, UUID referenceId, UUID userId) {
+        BigDecimal qty = r2(quantity);
+        BigDecimal before = r2(stockBefore);
         return StockMovement.builder()
                 .restaurantId(restaurantId)
                 .productId(productId)
                 .type(MovementType.SALE)
                 .direction(MovementDirection.OUT)
-                .quantity(quantity)
+                .quantity(qty)
                 .unitId(unitId)
                 .costPerUnit(avgCost)
-                .stockBefore(stockBefore)
-                .stockAfter(stockBefore.subtract(quantity))
+                .stockBefore(before)
+                .stockAfter(r2(before.subtract(qty)))
                 .referenceId(referenceId)
                 .referenceType("sale_item")
                 .userId(userId)
@@ -69,16 +74,18 @@ public class StockMovement {
     public static StockMovement forWaste(UUID restaurantId, UUID productId,
                                          BigDecimal quantity, UUID unitId, BigDecimal costPerUnit,
                                          BigDecimal stockBefore, UUID referenceId, UUID userId) {
+        BigDecimal qty = r2(quantity);
+        BigDecimal before = r2(stockBefore);
         return StockMovement.builder()
                 .restaurantId(restaurantId)
                 .productId(productId)
                 .type(MovementType.WASTE)
                 .direction(MovementDirection.OUT)
-                .quantity(quantity)
+                .quantity(qty)
                 .unitId(unitId)
                 .costPerUnit(costPerUnit)
-                .stockBefore(stockBefore)
-                .stockAfter(stockBefore.subtract(quantity))
+                .stockBefore(before)
+                .stockAfter(r2(before.subtract(qty)))
                 .referenceId(referenceId)
                 .referenceType("waste_event")
                 .userId(userId)
@@ -93,7 +100,9 @@ public class StockMovement {
     public static StockMovement forAdjustment(UUID restaurantId, UUID productId,
                                                BigDecimal currentStock, BigDecimal countedQuantity,
                                                UUID unitId, UUID referenceId, UUID userId) {
-        BigDecimal delta = countedQuantity.subtract(currentStock);
+        BigDecimal before = r2(currentStock);
+        BigDecimal after  = r2(countedQuantity);
+        BigDecimal delta  = after.subtract(before);
         MovementDirection direction = delta.compareTo(BigDecimal.ZERO) > 0
                 ? MovementDirection.IN : MovementDirection.OUT;
         return StockMovement.builder()
@@ -103,12 +112,16 @@ public class StockMovement {
                 .direction(direction)
                 .quantity(delta.abs())
                 .unitId(unitId)
-                .stockBefore(currentStock)
-                .stockAfter(countedQuantity)
+                .stockBefore(before)
+                .stockAfter(after)
                 .referenceId(referenceId)
                 .referenceType("stock_count")
                 .userId(userId)
                 .source(MovementSource.DASHBOARD)
                 .build();
+    }
+
+    private static BigDecimal r2(BigDecimal v) {
+        return v == null ? BigDecimal.ZERO : v.setScale(2, RoundingMode.HALF_UP);
     }
 }

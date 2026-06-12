@@ -43,6 +43,8 @@ public class SaleService {
     private final AlertEvaluationService alertEvaluationService;
     private final AuditService auditService;
     private final CurrentUserProvider currentUserProvider;
+    private final ProductRepository productRepository;
+    private final UnitConversionService unitConversionService;
 
     public Page<Sale> listSales(PageRequest pageRequest) {
         return saleRepository.findByRestaurantIdOrderBySoldAtDesc(TenantContext.require(), pageRequest);
@@ -113,6 +115,14 @@ public class SaleService {
         recipeRepository.findByMenuItemIdAndRestaurantId(menuItem.getId(), restaurantId)
                 .ifPresent(recipe -> {
                     for (var ingredient : recipe.calculateIngredientsForQuantity(quantity)) {
+                        UUID defaultUnitId = productRepository
+                                .findByIdAndRestaurantId(ingredient.productId(), restaurantId)
+                                .map(p -> p.getDefaultUnitId())
+                                .orElse(ingredient.unitId());
+
+                        BigDecimal qtyInDefaultUnit = unitConversionService.convert(
+                                ingredient.quantity(), ingredient.unitId(), defaultUnitId);
+
                         BigDecimal avgCost = stockMovementRepository
                                 .getWeightedAvgPurchaseCost(ingredient.productId(), restaurantId);
                         BigDecimal stockBefore = stockMovementRepository
@@ -120,12 +130,12 @@ public class SaleService {
 
                         StockMovement movement = StockMovement.forSale(
                                 restaurantId, ingredient.productId(),
-                                ingredient.quantity(), ingredient.unitId(), avgCost,
+                                qtyInDefaultUnit, defaultUnitId, avgCost,
                                 stockBefore, saleItemId, userId);
                         movement = stockMovementRepository.save(movement);
 
                         stockBatchService.consumeFifo(restaurantId, ingredient.productId(),
-                                ingredient.quantity(), movement.getId());
+                                qtyInDefaultUnit, movement.getId());
 
                         alertEvaluationService.evaluate(ingredient.productId(), restaurantId, movement.getStockAfter());
                     }

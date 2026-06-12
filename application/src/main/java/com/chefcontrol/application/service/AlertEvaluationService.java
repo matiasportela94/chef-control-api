@@ -35,7 +35,7 @@ public class AlertEvaluationService {
         if (product.getMinStock() == null) return;
 
         if (product.isLowStock(stockAfter)) {
-            String msg = String.format("Stock de '%s' (%.3f) está por debajo del mínimo (%.3f)",
+            String msg = String.format("Stock de '%s' (%.2f) está por debajo del mínimo (%.2f)",
                     product.getName(), stockAfter, product.getMinStock());
             AlertSeverity severity = product.lowStockSeverity(stockAfter);
             alertRepository.findByProductIdAndTypeAndResolvedAtIsNull(product.getId(), AlertType.LOW_STOCK)
@@ -53,7 +53,7 @@ public class AlertEvaluationService {
         if (product.getMaxStock() == null) return;
 
         if (product.isOverstock(stockAfter)) {
-            String msg = String.format("Stock de '%s' (%.3f) supera el máximo (%.3f)",
+            String msg = String.format("Stock de '%s' (%.2f) supera el máximo (%.2f)",
                     product.getName(), stockAfter, product.getMaxStock());
             alertRepository.findByProductIdAndTypeAndResolvedAtIsNull(product.getId(), AlertType.OVERSTOCK)
                     .ifPresentOrElse(existing -> {
