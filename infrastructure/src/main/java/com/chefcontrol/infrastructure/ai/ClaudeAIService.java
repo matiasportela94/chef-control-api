@@ -89,6 +89,13 @@ public class ClaudeAIService implements AIService {
                 + "- needs_confirmation = true si confidence < 80 o hay ambigüedad.\n"
                 + "- Motivos de merma: EXPIRED, DAMAGED, OVERPRODUCTION, THEFT, OTHER.\n"
                 + "- Respondé en español rioplatense, de forma concisa y directa.\n\n"
+                + "ESTRUCTURA DE DATA (obligatoria):\n"
+                + "Siempre devolvé data.items[] con objetos. NUNCA pongas los campos directamente en el nivel raíz.\n"
+                + "- purchase: {\"supplier_id\":\"uuid-o-null\",\"items\":[{\"product_id\":\"uuid\",\"quantity\":10,\"price_per_unit\":5000,\"expiration_date\":\"2026-12-31\"}]}\n"
+                + "  → price_per_unit y product_id son OBLIGATORIOS para purchase.\n"
+                + "  → expiration_date es opcional (formato YYYY-MM-DD). supplier_id es opcional.\n"
+                + "- waste: {\"items\":[{\"product_id\":\"uuid\",\"quantity\":2,\"reason\":\"DAMAGED\"}]}\n"
+                + "- sale:  {\"items\":[{\"product_id\":\"uuid\",\"quantity\":3}]}\n\n"
                 + "REGLA DE PRECIOS (crítica):\n"
                 + "- \"a [precio]\" con cantidad siempre es precio POR UNIDAD, no total.\n"
                 + "  Ejemplos: \"5kg a 25mil\" → price_per_unit=25000 (total=125000).\n"
@@ -104,19 +111,39 @@ public class ClaudeAIService implements AIService {
     }
 
     private Map<String, Object> buildTool() {
+        Map<String, Object> itemProperties = new LinkedHashMap<>();
+        itemProperties.put("product_id",       Map.of("type", "string", "description", "UUID exacto del catálogo. null si no hay coincidencia."));
+        itemProperties.put("quantity",         Map.of("type", "number", "description", "Cantidad numérica (nunca texto)."));
+        itemProperties.put("price_per_unit",   Map.of("type", "number", "description", "Precio por unidad en ARS. OBLIGATORIO para purchase. null para waste/sale."));
+        itemProperties.put("expiration_date",  Map.of("type", "string", "description", "Fecha de vencimiento ISO 8601 YYYY-MM-DD. Solo para purchase. Opcional."));
+        itemProperties.put("reason",           Map.of("type", "string", "enum", List.of("EXPIRED","DAMAGED","OVERPRODUCTION","THEFT","OTHER"),
+                                                       "description", "Motivo de merma. Solo para waste."));
+        Map<String, Object> itemSchema = new LinkedHashMap<>();
+        itemSchema.put("type", "object");
+        itemSchema.put("properties", itemProperties);
+        itemSchema.put("required", List.of("product_id", "quantity"));
+
+        Map<String, Object> dataProperties = new LinkedHashMap<>();
+        dataProperties.put("items",       Map.of("type", "array", "description", "Array de productos. Siempre presente.", "items", itemSchema));
+        dataProperties.put("supplier_id", Map.of("type", "string", "description", "UUID del proveedor. Solo para purchase. Opcional."));
+        Map<String, Object> dataSchema = new LinkedHashMap<>();
+        dataSchema.put("type", "object");
+        dataSchema.put("description", "Datos estructurados. Siempre usá items[] — nunca pongas los campos sueltos en el nivel raíz.");
+        dataSchema.put("properties", dataProperties);
+        dataSchema.put("required", List.of("items"));
+
         Map<String, Object> properties = new LinkedHashMap<>();
         properties.put("intent", Map.of("type", "string",
                 "enum", List.of("purchase", "waste", "sale", "stock_adjustment", "query", "multi", "unknown")));
         properties.put("confidence",         Map.of("type", "integer", "minimum", 0, "maximum", 100));
         properties.put("needs_confirmation", Map.of("type", "boolean"));
         properties.put("response_to_user",   Map.of("type", "string"));
-        properties.put("data",               Map.of("type", "object",
-                "description", "Datos estructurados según el intent. Estructura varía: items[] para purchase/waste/sale, producto+cantidad para stock_adjustment."));
+        properties.put("data", dataSchema);
 
         Map<String, Object> schema = new LinkedHashMap<>();
         schema.put("type", "object");
         schema.put("properties", properties);
-        schema.put("required", List.of("intent", "confidence", "needs_confirmation", "response_to_user"));
+        schema.put("required", List.of("intent", "confidence", "needs_confirmation", "response_to_user", "data"));
 
         Map<String, Object> tool = new LinkedHashMap<>();
         tool.put("name", TOOL_NAME);

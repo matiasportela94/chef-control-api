@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -39,6 +40,7 @@ public class AIExecuteService {
         if (items.isEmpty()) return ExecuteResult.error("No se encontraron items en la compra.");
 
         UUID restaurantId = TenantContext.require();
+        UUID supplierId   = parseUuid(data.get("supplier_id"));
         var commands = new ArrayList<PurchaseService.PurchaseItemCommand>();
         int skipped = 0;
 
@@ -53,14 +55,17 @@ public class AIExecuteService {
             if (qty == null || qty.compareTo(BigDecimal.ZERO) <= 0) { skipped++; continue; }
 
             BigDecimal price = toBigDecimal(item.get("price_per_unit"));
+            if (price == null || price.compareTo(BigDecimal.ZERO) <= 0) { skipped++; continue; }
+
+            LocalDate expirationDate = parseLocalDate(item.get("expiration_date"));
             commands.add(new PurchaseService.PurchaseItemCommand(
-                    productId, product.getDefaultUnitId(), qty, price, null));
+                    productId, product.getDefaultUnitId(), qty, price, expirationDate));
         }
 
         if (commands.isEmpty()) return ExecuteResult.error("Ningún producto coincide con el catálogo.");
 
         purchaseService.createPurchase(new PurchaseService.CreatePurchaseCommand(
-                null, null, Instant.now(), commands));
+                supplierId, null, Instant.now(), commands));
 
         return ExecuteResult.ok(commands.size(), skipped, "Compra registrada");
     }
@@ -123,6 +128,11 @@ public class AIExecuteService {
     private WasteReason parseReason(Object v) {
         if (v == null) return WasteReason.OTHER;
         try { return WasteReason.valueOf(v.toString().toUpperCase()); } catch (Exception e) { return WasteReason.OTHER; }
+    }
+
+    private LocalDate parseLocalDate(Object v) {
+        if (v == null) return null;
+        try { return LocalDate.parse(v.toString()); } catch (Exception e) { return null; }
     }
 
     // ── result ────────────────────────────────────────────────────────────────

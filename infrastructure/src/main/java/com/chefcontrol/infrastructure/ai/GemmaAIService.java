@@ -97,6 +97,13 @@ public class GemmaAIService implements AIService {
                 + "- needs_confirmation = true si confidence < 80 o hay ambigüedad.\n"
                 + "- Motivos de merma: EXPIRED, DAMAGED, OVERPRODUCTION, THEFT, OTHER.\n"
                 + "- Respondé en español rioplatense, de forma concisa y directa.\n\n"
+                + "ESTRUCTURA DE DATA (obligatoria):\n"
+                + "Siempre devolvé data.items[] con objetos. NUNCA pongas los campos directamente en el nivel raíz.\n"
+                + "- purchase: {\"supplier_id\":\"uuid-o-null\",\"items\":[{\"product_id\":\"uuid\",\"quantity\":10,\"price_per_unit\":5000,\"expiration_date\":\"2026-12-31\"}]}\n"
+                + "  → price_per_unit y product_id son OBLIGATORIOS para purchase.\n"
+                + "  → expiration_date es opcional (formato YYYY-MM-DD). supplier_id es opcional.\n"
+                + "- waste: {\"items\":[{\"product_id\":\"uuid\",\"quantity\":2,\"reason\":\"DAMAGED\"}]}\n"
+                + "- sale:  {\"items\":[{\"product_id\":\"uuid\",\"quantity\":3}]}\n\n"
                 + "REGLA DE PRECIOS (crítica):\n"
                 + "- \"a [precio]\" con cantidad siempre es precio POR UNIDAD, no total.\n"
                 + "  Ejemplos: \"5kg a 25mil\" → price_per_unit=25000 (total=125000).\n"
@@ -119,10 +126,25 @@ public class GemmaAIService implements AIService {
         properties.put("confidence",         Map.of("type", "INTEGER", "minimum", 0, "maximum", 100));
         properties.put("needs_confirmation", Map.of("type", "BOOLEAN"));
         properties.put("response_to_user",   Map.of("type", "STRING"));
-        properties.put("data", Map.of(
-                "type", "OBJECT",
-                "nullable", true,
-                "description", "Datos estructurados según el intent. Estructura varía: items[] para purchase/waste/sale, producto+cantidad para stock_adjustment."));
+        Map<String, Object> itemProps = new LinkedHashMap<>();
+        itemProps.put("product_id",      Map.of("type", "STRING", "description", "UUID exacto del catálogo. null si no hay coincidencia."));
+        itemProps.put("quantity",        Map.of("type", "NUMBER", "description", "Cantidad numérica."));
+        itemProps.put("price_per_unit",  Map.of("type", "NUMBER", "description", "Precio por unidad en ARS. OBLIGATORIO para purchase. null para waste/sale."));
+        itemProps.put("expiration_date", Map.of("type", "STRING", "description", "Fecha de vencimiento YYYY-MM-DD. Solo para purchase. Opcional."));
+        itemProps.put("reason",          Map.of("type", "STRING", "enum", List.of("EXPIRED","DAMAGED","OVERPRODUCTION","THEFT","OTHER"),
+                                                "description", "Motivo de merma. Solo para waste."));
+        Map<String, Object> itemSchemaG = new LinkedHashMap<>();
+        itemSchemaG.put("type", "OBJECT");
+        itemSchemaG.put("properties", itemProps);
+
+        Map<String, Object> dataProps = new LinkedHashMap<>();
+        dataProps.put("items",       Map.of("type", "ARRAY", "description", "Array de productos. Siempre presente.", "items", itemSchemaG));
+        dataProps.put("supplier_id", Map.of("type", "STRING", "description", "UUID del proveedor. Solo para purchase. Opcional."));
+        Map<String, Object> dataSchemaG = new LinkedHashMap<>();
+        dataSchemaG.put("type", "OBJECT");
+        dataSchemaG.put("description", "Datos estructurados. Siempre usá items[] — nunca pongas los campos sueltos en el nivel raíz.");
+        dataSchemaG.put("properties", dataProps);
+        properties.put("data", dataSchemaG);
 
         Map<String, Object> parameters = new LinkedHashMap<>();
         parameters.put("type", "OBJECT");
