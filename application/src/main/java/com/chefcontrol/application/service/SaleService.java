@@ -11,6 +11,7 @@ import com.chefcontrol.domain.menu.RecipeItem;
 import com.chefcontrol.domain.repository.*;
 import com.chefcontrol.domain.sale.Sale;
 import com.chefcontrol.domain.sale.SaleItem;
+import com.chefcontrol.domain.sale.SaleStatus;
 import com.chefcontrol.domain.shared.Page;
 import com.chefcontrol.domain.shared.PageRequest;
 import com.chefcontrol.domain.shared.time.ChefControlTime;
@@ -62,6 +63,58 @@ public class SaleService {
 
     public int getItemCount(UUID saleId) {
         return saleItemRepository.countBySaleId(saleId);
+    }
+
+    @Transactional
+    public Sale reverseSale(UUID saleId) {
+        UUID restaurantId = TenantContext.require();
+        UUID userId = currentUserProvider.currentUserId();
+
+        Sale sale = saleRepository.findByIdAndRestaurantId(saleId, restaurantId)
+                .orElseThrow(() -> AppException.notFound(ErrorCode.SALE_NOT_FOUND, "Sale not found"));
+
+        if (sale.getStatus() == SaleStatus.REVERSED) {
+            throw AppException.conflict(ErrorCode.VALIDATION_ERROR, "Sale already reversed");
+        }
+
+        List<SaleItem> items = saleItemRepository.findBySaleId(saleId);
+
+        for (SaleItem item : items) {
+            List<StockMovement> movements = stockMovementRepository
+                    .findByReferenceIdAndReferenceType(item.getId(), "sale_item");
+
+            for (StockMovement original : movements) {
+                if (original.getType() == MovementType.REVERSAL || original.getReversedBy() != null) continue;
+
+                BigDecimal stockBefore = stockMovementRepository.getCurrentStock(original.getProductId(), restaurantId);
+                StockMovement reversal = StockMovement.builder()
+                        .restaurantId(restaurantId)
+                        .productId(original.getProductId())
+                        .type(MovementType.REVERSAL)
+                        .direction(MovementDirection.IN)
+                        .quantity(original.getQuantity())
+                        .unitId(original.getUnitId())
+                        .costPerUnit(original.getCostPerUnit())
+                        .stockBefore(stockBefore)
+                        .stockAfter(stockBefore.add(original.getQuantity()))
+                        .referenceId(original.getId())
+                        .referenceType("reversal")
+                        .userId(userId)
+                        .source(MovementSource.DASHBOARD)
+                        .build();
+                reversal = stockMovementRepository.save(reversal);
+                stockMovementRepository.markReversed(original.getId(), reversal.getId());
+
+                alertEvaluationService.evaluate(original.getProductId(), restaurantId, reversal.getStockAfter());
+            }
+        }
+
+        sale.setStatus(SaleStatus.REVERSED);
+        sale = saleRepository.save(sale);
+
+        auditService.log(AuditAction.SALE_RECORDED, "Sale", sale.getId(),
+                Map.of("action", "REVERSED"));
+        return sale;
     }
 
     @Transactional

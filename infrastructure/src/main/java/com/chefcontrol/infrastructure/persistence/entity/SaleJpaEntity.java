@@ -1,6 +1,7 @@
 package com.chefcontrol.infrastructure.persistence.entity;
 
 import com.chefcontrol.domain.sale.Sale;
+import com.chefcontrol.domain.sale.SaleStatus;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -37,6 +38,10 @@ public class SaleJpaEntity {
     @Column(name = "created_at", updatable = false, nullable = false)
     private Instant createdAt;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private SaleStatus status = SaleStatus.ACTIVE;
+
     @PrePersist
     protected void onCreate() {
         if (createdAt == null) createdAt = Instant.now();
@@ -52,6 +57,7 @@ public class SaleJpaEntity {
                 .notes(domain.getNotes())
                 .soldAt(domain.getSoldAt())
                 .createdAt(domain.getCreatedAt())
+                .status(domain.getStatus() != null ? domain.getStatus() : SaleStatus.ACTIVE)
                 .build();
     }
 
@@ -65,6 +71,7 @@ public class SaleJpaEntity {
                 .notes(notes)
                 .soldAt(soldAt)
                 .createdAt(createdAt)
+                .status(status)
                 .build();
     }
 }

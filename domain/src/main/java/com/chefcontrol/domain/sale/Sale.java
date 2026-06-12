@@ -6,7 +6,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
-@Getter @Builder @NoArgsConstructor @AllArgsConstructor
+@Getter @Setter @Builder @NoArgsConstructor @AllArgsConstructor
 public class Sale {
 
     private UUID id;
@@ -17,4 +17,5 @@ public class Sale {
     private String notes;
     private Instant soldAt;
     private Instant createdAt;
+    private SaleStatus status;
 }

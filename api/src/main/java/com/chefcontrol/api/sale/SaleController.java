@@ -50,4 +50,10 @@ public class SaleController {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(SaleResponse.from(sale, saleService.getSaleItems(sale.getId())));
     }
+
+    @PostMapping("/{id}/reverse")
+    public ResponseEntity<SaleResponse> reverse(@PathVariable UUID id) {
+        Sale sale = saleService.reverseSale(id);
+        return ResponseEntity.ok(SaleResponse.from(sale, saleService.getSaleItems(sale.getId())));
+    }
 }
