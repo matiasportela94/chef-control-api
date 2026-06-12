@@ -7,6 +7,7 @@ import com.chefcontrol.domain.finance.FoodCostMetric;
 import com.chefcontrol.domain.menu.MenuItem;
 import com.chefcontrol.domain.menu.Recipe;
 import com.chefcontrol.domain.repository.MenuItemRepository;
+import com.chefcontrol.domain.repository.ProductRepository;
 import com.chefcontrol.domain.repository.RecipeRepository;
 import com.chefcontrol.domain.repository.SaleItemRepository;
 import com.chefcontrol.domain.repository.SaleRepository;
@@ -29,6 +30,8 @@ public class FoodCostService {
     private final StockMovementRepository stockMovementRepository;
     private final MenuItemRepository menuItemRepository;
     private final RecipeRepository recipeRepository;
+    private final ProductRepository productRepository;
+    private final UnitConversionService unitConversionService;
 
     public FoodCostReport calculate(Instant from, Instant to) {
         var restaurantId = TenantContext.require();
@@ -60,9 +63,15 @@ public class FoodCostService {
 
         List<RecipeIngredientCost> ingredients = recipe.getItems().stream()
                 .map(item -> {
+                    UUID defaultUnitId = productRepository
+                            .findByIdAndRestaurantId(item.getProductId(), restaurantId)
+                            .map(p -> p.getDefaultUnitId())
+                            .orElse(item.getUnitId());
+                    BigDecimal qtyInDefaultUnit = unitConversionService.convert(
+                            item.getQuantity(), item.getUnitId(), defaultUnitId);
                     BigDecimal unitCost = stockMovementRepository
                             .getWeightedAvgPurchaseCost(item.getProductId(), restaurantId);
-                    BigDecimal totalCost = item.getQuantity().multiply(unitCost).setScale(4, RoundingMode.HALF_UP);
+                    BigDecimal totalCost = qtyInDefaultUnit.multiply(unitCost).setScale(4, RoundingMode.HALF_UP);
                     return new RecipeIngredientCost(
                             item.getProductId(), item.getProductName(),
                             item.getQuantity(), item.getUnitId(), item.getUnitName(),
