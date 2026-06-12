@@ -20,6 +20,7 @@ app:
 
   cookie:
     secure: true
+    same-site: None
 
   frontend:
     url: ${FRONTEND_URL:http://localhost:4200}

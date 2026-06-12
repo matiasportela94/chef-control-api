@@ -53,6 +53,9 @@ public class AuthController {
     @Value("${app.cookie.secure}")
     private boolean cookieSecure;
 
+    @Value("${app.cookie.same-site:Strict}")
+    private String cookieSameSite;
+
     @Value("${app.jwt.expiration-ms}")
     private long jwtExpirationMs;
 
@@ -153,7 +156,7 @@ public class AuthController {
         ResponseCookie cookie = ResponseCookie.from("auth_token", token)
                 .httpOnly(true)
                 .secure(cookieSecure)
-                .sameSite("Strict")
+                .sameSite(cookieSameSite)
                 .path("/")
                 .maxAge(jwtExpirationMs / 1000)
                 .build();
@@ -164,7 +167,7 @@ public class AuthController {
         ResponseCookie cookie = ResponseCookie.from("auth_token", "")
                 .httpOnly(true)
                 .secure(cookieSecure)
-                .sameSite("Strict")
+                .sameSite(cookieSameSite)
                 .path("/")
                 .maxAge(0)
                 .build();
