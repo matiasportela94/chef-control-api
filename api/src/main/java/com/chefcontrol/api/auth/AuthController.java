@@ -16,6 +16,7 @@ import com.chefcontrol.application.exception.ErrorCode;
 import com.chefcontrol.domain.repository.UserRepository;
 import com.chefcontrol.domain.repository.UserRestaurantRepository;
 import com.chefcontrol.domain.security.ChefControlPrincipal;
+import com.chefcontrol.domain.shared.time.ChefControlTime;
 import com.chefcontrol.domain.user.User;
 import com.chefcontrol.domain.user.UserRestaurant;
 import com.chefcontrol.infrastructure.security.JwtTokenProvider;
@@ -190,6 +191,8 @@ public class AuthController {
                         ur.getRoleName().name()))
                 .toList();
 
+        long expiresAt = ChefControlTime.nowInstant().plusMillis(jwtExpirationMs).toEpochMilli();
+
         return new LoginResponse(
                 user.getId(),
                 user.getName(),
@@ -197,6 +200,7 @@ public class AuthController {
                 activeRestaurantId,
                 active.getRestaurantName(),
                 active.getRoleName().name(),
+                expiresAt,
                 restaurants);
     }
 }

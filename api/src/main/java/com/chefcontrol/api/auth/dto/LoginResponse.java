@@ -10,6 +10,7 @@ public record LoginResponse(
         UUID activeRestaurantId,
         String activeRestaurantName,
         String role,
+        long expiresAt,
         List<RestaurantSummary> restaurants
 ) {
     public record RestaurantSummary(UUID id, String name, String role) {}
