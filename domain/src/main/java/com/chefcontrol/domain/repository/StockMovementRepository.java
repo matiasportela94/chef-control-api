@@ -7,6 +7,7 @@ import com.chefcontrol.domain.stock.StockMovement;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -35,4 +36,6 @@ public interface StockMovementRepository {
     BigDecimal findLastPurchaseCostPerUnit(UUID productId, UUID restaurantId);
 
     void updatePurchaseCostPerUnit(UUID purchaseItemId, BigDecimal newCostPerUnit);
+
+    Map<UUID, BigDecimal> getAllCurrentStocks(UUID restaurantId);
 }

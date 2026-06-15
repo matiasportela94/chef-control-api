@@ -21,7 +21,15 @@ public record DashboardResponse(Kpis kpis) {
             BigDecimal salesTotalThisMonth,
             long       wasteEventsThisMonth,
             BigDecimal wasteTotalArsThisMonth,
-            BigDecimal salesCostThisMonth
+            BigDecimal salesCostThisMonth,
+            // Mes anterior
+            long       purchasesLastMonth,
+            BigDecimal purchasesTotalLastMonth,
+            long       salesCountLastMonth,
+            BigDecimal salesTotalLastMonth,
+            long       wasteEventsLastMonth,
+            BigDecimal wasteTotalArsLastMonth,
+            BigDecimal salesCostLastMonth
     ) {
         public static Kpis from(KpiSummary kpis) {
             return new Kpis(
@@ -34,7 +42,14 @@ public record DashboardResponse(Kpis kpis) {
                     kpis.salesTotalThisMonth(),
                     kpis.wasteEventsThisMonth(),
                     kpis.wasteTotalArsThisMonth(),
-                    kpis.salesCostThisMonth());
+                    kpis.salesCostThisMonth(),
+                    kpis.purchasesLastMonth(),
+                    kpis.purchasesTotalLastMonth(),
+                    kpis.salesCountLastMonth(),
+                    kpis.salesTotalLastMonth(),
+                    kpis.wasteEventsLastMonth(),
+                    kpis.wasteTotalArsLastMonth(),
+                    kpis.salesCostLastMonth());
         }
     }
 }

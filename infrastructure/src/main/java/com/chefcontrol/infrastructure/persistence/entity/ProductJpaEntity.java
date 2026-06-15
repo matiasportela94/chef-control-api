@@ -80,6 +80,7 @@ public class ProductJpaEntity {
         p.setCategoryId(categoryId);
         p.setCategoryName(category != null ? category.getName() : null);
         p.setCategoryColor(category != null ? category.getColor() : null);
+        p.setCategoryIcon(category != null ? category.getIcon() : null);
         p.setName(name);
         p.setSku(sku);
         p.setDefaultUnitId(defaultUnitId);

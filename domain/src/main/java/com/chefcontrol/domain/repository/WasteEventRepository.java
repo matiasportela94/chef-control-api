@@ -19,5 +19,7 @@ public interface WasteEventRepository {
 
     long countByRestaurantIdAndCreatedAtGreaterThanEqual(UUID restaurantId, Instant since);
 
+    long countByRestaurantIdAndCreatedAtBetween(UUID restaurantId, Instant from, Instant to);
+
     BigDecimal sumCostByRestaurantIdAndCreatedAtBetween(UUID restaurantId, Instant from, Instant to);
 }

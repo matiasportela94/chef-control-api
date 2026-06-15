@@ -37,7 +37,7 @@ public class ProductService {
     }
 
     @Transactional
-    public ProductCategory createCategory(String name, String color, UUID parentId) {
+    public ProductCategory createCategory(String name, String description, String color, String icon, UUID parentId) {
         UUID restaurantId = TenantContext.require();
         if (parentId != null) {
             categoryRepository.findByIdAccessibleTo(parentId, restaurantId)
@@ -46,10 +46,28 @@ public class ProductService {
         ProductCategory category = new ProductCategory();
         category.setRestaurantId(restaurantId);
         category.setName(name);
+        category.setDescription(description);
         category.setColor(color);
+        category.setIcon(icon);
         category.setParentId(parentId);
         ProductCategory saved = categoryRepository.save(category);
         auditService.log(AuditAction.PRODUCT_CREATED, "ProductCategory", saved.getId());
+        return saved;
+    }
+
+    @Transactional
+    public ProductCategory updateCategory(UUID id, String name, String description, String color, String icon) {
+        ProductCategory category = categoryRepository.findByIdAndRestaurantId(id, TenantContext.require())
+                .orElseThrow(() -> AppException.notFound(ErrorCode.CATEGORY_NOT_FOUND, "Category not found"));
+        if (category.isSystem()) {
+            throw AppException.forbidden(ErrorCode.SYSTEM_CATEGORY_IMMUTABLE, "System categories cannot be modified");
+        }
+        if (name != null && !name.isBlank()) category.setName(name);
+        category.setDescription(description);
+        category.setColor(color);
+        category.setIcon(icon);
+        ProductCategory saved = categoryRepository.save(category);
+        auditService.log(AuditAction.PRODUCT_UPDATED, "ProductCategory", saved.getId());
         return saved;
     }
 

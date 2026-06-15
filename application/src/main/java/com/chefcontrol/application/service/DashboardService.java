@@ -30,15 +30,18 @@ public class DashboardService {
 
     @Transactional(readOnly = true)
     public DashboardSummary getSummary() {
-        UUID    restaurantId = TenantContext.require();
-        Instant monthStart   = firstDayOfCurrentMonth();
-        Instant now          = Instant.now();
+        UUID    restaurantId   = TenantContext.require();
+        Instant now            = Instant.now();
+        Instant monthStart     = firstDayOfCurrentMonth();
+        Instant prevMonthStart = firstDayOfPreviousMonth();
+        Instant prevMonthEnd   = monthStart;
 
         List<ProductStockProjection> stockRows = productRepository.findProductStockByRestaurant(restaurantId);
 
         long lowStockCount  = stockRows.stream().filter(this::isLowStock).count();
         long overstockCount = stockRows.stream().filter(this::isOverstock).count();
 
+        // — Mes actual —
         long       purchasesThisMonth      = purchaseRepository.countByRestaurantIdAndPurchasedAtGreaterThanEqual(restaurantId, monthStart);
         BigDecimal purchasesTotalThisMonth = purchaseRepository.sumTotalByRestaurantIdAndPurchasedAtSince(restaurantId, monthStart);
 
@@ -50,6 +53,18 @@ public class DashboardService {
 
         BigDecimal salesCostThisMonth      = stockMovementRepository.sumSalesCost(restaurantId, monthStart, now);
 
+        // — Mes anterior —
+        long       purchasesLastMonth      = purchaseRepository.countByRestaurantIdAndPurchasedAtBetween(restaurantId, prevMonthStart, prevMonthEnd);
+        BigDecimal purchasesTotalLastMonth = purchaseRepository.sumTotalByRestaurantIdAndPurchasedAtBetween(restaurantId, prevMonthStart, prevMonthEnd);
+
+        long       salesCountLastMonth     = saleRepository.countByRestaurantIdAndSoldAtBetween(restaurantId, prevMonthStart, prevMonthEnd);
+        BigDecimal salesTotalLastMonth     = saleRepository.sumTotalAmountByRestaurantIdAndSoldAtBetween(restaurantId, prevMonthStart, prevMonthEnd);
+
+        long       wasteEventsLastMonth    = wasteEventRepository.countByRestaurantIdAndCreatedAtBetween(restaurantId, prevMonthStart, prevMonthEnd);
+        BigDecimal wasteTotalArsLastMonth  = wasteEventRepository.sumCostByRestaurantIdAndCreatedAtBetween(restaurantId, prevMonthStart, prevMonthEnd);
+
+        BigDecimal salesCostLastMonth      = stockMovementRepository.sumSalesCost(restaurantId, prevMonthStart, prevMonthEnd);
+
         KpiSummary kpis = new KpiSummary(
                 stockRows.size(),
                 lowStockCount,
@@ -60,7 +75,14 @@ public class DashboardService {
                 salesTotalThisMonth,
                 wasteEventsThisMonth,
                 wasteTotalArsThisMonth,
-                salesCostThisMonth);
+                salesCostThisMonth,
+                purchasesLastMonth,
+                purchasesTotalLastMonth,
+                salesCountLastMonth,
+                salesTotalLastMonth,
+                wasteEventsLastMonth,
+                wasteTotalArsLastMonth,
+                salesCostLastMonth);
 
         return new DashboardSummary(kpis);
     }
@@ -84,6 +106,16 @@ public class DashboardService {
                 .toInstant(ZoneOffset.UTC);
     }
 
+    private Instant firstDayOfPreviousMonth() {
+        return Instant.now()
+                .atOffset(ZoneOffset.UTC)
+                .with(TemporalAdjusters.firstDayOfMonth())
+                .minusMonths(1)
+                .toLocalDate()
+                .atStartOfDay()
+                .toInstant(ZoneOffset.UTC);
+    }
+
     // ── Result types ──────────────────────────────────────────────────────────
 
     public record DashboardSummary(KpiSummary kpis) {}
@@ -98,6 +130,14 @@ public class DashboardService {
             BigDecimal salesTotalThisMonth,
             long       wasteEventsThisMonth,
             BigDecimal wasteTotalArsThisMonth,
-            BigDecimal salesCostThisMonth
+            BigDecimal salesCostThisMonth,
+            // Mes anterior
+            long       purchasesLastMonth,
+            BigDecimal purchasesTotalLastMonth,
+            long       salesCountLastMonth,
+            BigDecimal salesTotalLastMonth,
+            long       wasteEventsLastMonth,
+            BigDecimal wasteTotalArsLastMonth,
+            BigDecimal salesCostLastMonth
     ) {}
 }

@@ -23,6 +23,8 @@ public interface JpaWasteEventRepository extends JpaRepository<WasteEventJpaEnti
 
     long countByRestaurantIdAndCreatedAtGreaterThanEqual(UUID restaurantId, Instant since);
 
+    long countByRestaurantIdAndCreatedAtBetween(UUID restaurantId, Instant from, Instant to);
+
     @Query("SELECT COALESCE(SUM(w.cost), 0) FROM WasteEventJpaEntity w WHERE w.restaurantId = :restaurantId AND w.createdAt BETWEEN :from AND :to")
     BigDecimal sumCostByRestaurantIdAndCreatedAtBetween(
             @Param("restaurantId") UUID restaurantId,

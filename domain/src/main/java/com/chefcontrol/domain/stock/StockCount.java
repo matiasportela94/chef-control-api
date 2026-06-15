@@ -15,4 +15,6 @@ public class StockCount {
     private UUID userId;
     private String notes;
     private Instant countedAt = Instant.now();
+    private int itemsChecked;
+    private int adjustmentsMade;
 }

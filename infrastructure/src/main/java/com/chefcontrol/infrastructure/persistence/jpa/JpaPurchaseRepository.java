@@ -25,8 +25,16 @@ public interface JpaPurchaseRepository extends JpaRepository<PurchaseJpaEntity, 
 
     long countByRestaurantIdAndStatusAndPurchasedAtGreaterThanEqual(UUID restaurantId, PurchaseStatus status, Instant since);
 
+    long countByRestaurantIdAndStatusAndPurchasedAtBetween(UUID restaurantId, PurchaseStatus status, Instant from, Instant to);
+
     @Query("SELECT COALESCE(SUM(p.total), 0) FROM PurchaseJpaEntity p WHERE p.restaurantId = :restaurantId AND p.status = 'ACTIVE' AND p.purchasedAt >= :since")
     BigDecimal sumTotalByRestaurantIdAndPurchasedAtSince(
             @Param("restaurantId") UUID restaurantId,
             @Param("since") Instant since);
+
+    @Query("SELECT COALESCE(SUM(p.total), 0) FROM PurchaseJpaEntity p WHERE p.restaurantId = :restaurantId AND p.status = 'ACTIVE' AND p.purchasedAt BETWEEN :from AND :to")
+    BigDecimal sumTotalByRestaurantIdAndPurchasedAtBetween(
+            @Param("restaurantId") UUID restaurantId,
+            @Param("from") Instant from,
+            @Param("to") Instant to);
 }

@@ -20,4 +20,8 @@ public interface PurchaseRepository {
     long countByRestaurantIdAndPurchasedAtGreaterThanEqual(UUID restaurantId, Instant since);
 
     BigDecimal sumTotalByRestaurantIdAndPurchasedAtSince(UUID restaurantId, Instant since);
+
+    long countByRestaurantIdAndPurchasedAtBetween(UUID restaurantId, Instant from, Instant to);
+
+    BigDecimal sumTotalByRestaurantIdAndPurchasedAtBetween(UUID restaurantId, Instant from, Instant to);
 }

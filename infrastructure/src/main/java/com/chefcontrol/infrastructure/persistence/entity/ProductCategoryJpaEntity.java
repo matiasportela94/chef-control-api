@@ -26,6 +26,10 @@ public class ProductCategoryJpaEntity {
 
     private String color;
 
+    private String icon;
+
+    private String description;
+
     @Column(name = "is_system", nullable = false)
     private boolean isSystem;
 
@@ -46,6 +50,8 @@ public class ProductCategoryJpaEntity {
         e.setRestaurantId(domain.getRestaurantId());
         e.setName(domain.getName());
         e.setColor(domain.getColor());
+        e.setIcon(domain.getIcon());
+        e.setDescription(domain.getDescription());
         e.setSystem(domain.isSystem());
         e.setParentId(domain.getParentId());
         e.setCreatedAt(domain.getCreatedAt());
@@ -58,6 +64,8 @@ public class ProductCategoryJpaEntity {
         c.setRestaurantId(restaurantId);
         c.setName(name);
         c.setColor(color);
+        c.setIcon(icon);
+        c.setDescription(description);
         c.setSystem(isSystem);
         c.setParentId(parentId);
         c.setCreatedAt(createdAt);

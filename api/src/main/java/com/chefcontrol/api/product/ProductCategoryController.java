@@ -2,6 +2,7 @@ package com.chefcontrol.api.product;
 
 import com.chefcontrol.api.product.dto.CategoryResponse;
 import com.chefcontrol.api.product.dto.CreateCategoryRequest;
+import com.chefcontrol.api.product.dto.UpdateCategoryRequest;
 import com.chefcontrol.application.service.ProductService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -33,8 +34,17 @@ public class ProductCategoryController {
     @PreAuthorize("hasAnyRole('OWNER', 'MANAGER')")
     public ResponseEntity<CategoryResponse> createCategory(@Valid @RequestBody CreateCategoryRequest request) {
         CategoryResponse response = CategoryResponse.from(
-                productService.createCategory(request.name(), request.color(), request.parentId()));
+                productService.createCategory(request.name(), request.description(), request.color(), request.icon(), request.parentId()));
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+
+    @PutMapping("/{id}")
+    @PreAuthorize("hasAnyRole('OWNER', 'MANAGER')")
+    public ResponseEntity<CategoryResponse> updateCategory(@PathVariable UUID id,
+                                                           @Valid @RequestBody UpdateCategoryRequest request) {
+        CategoryResponse response = CategoryResponse.from(
+                productService.updateCategory(id, request.name(), request.description(), request.color(), request.icon()));
+        return ResponseEntity.ok(response);
     }
 
     @DeleteMapping("/{id}")

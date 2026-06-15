@@ -13,9 +13,14 @@ public record ProductResponse(
         CategorySummary category,
         BigDecimal minStock,
         BigDecimal maxStock,
-        boolean isActive
+        boolean isActive,
+        BigDecimal currentStock
 ) {
     public static ProductResponse from(Product product) {
+        return from(product, null);
+    }
+
+    public static ProductResponse from(Product product, BigDecimal currentStock) {
         return new ProductResponse(
                 product.getId(),
                 product.getName(),
@@ -24,7 +29,8 @@ public record ProductResponse(
                 CategorySummary.from(product),
                 product.getMinStock(),
                 product.getMaxStock(),
-                product.isActive());
+                product.isActive(),
+                currentStock);
     }
 
     public record UnitSummary(UUID id, String name, String abbreviation) {
@@ -36,13 +42,14 @@ public record ProductResponse(
         }
     }
 
-    public record CategorySummary(UUID id, String name, String color) {
+    public record CategorySummary(UUID id, String name, String color, String icon) {
         static CategorySummary from(Product product) {
             if (product.getCategoryId() == null) return null;
             return new CategorySummary(
                     product.getCategoryId(),
                     product.getCategoryName(),
-                    product.getCategoryColor());
+                    product.getCategoryColor(),
+                    product.getCategoryIcon());
         }
     }
 }

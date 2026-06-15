@@ -22,10 +22,11 @@ public record StockCountResponse(
                 .toList();
         return new StockCountResponse(
                 c.getId(), c.getNotes(), c.getCountedAt(),
-                result.movements().size(), movements.size(), movements);
+                c.getItemsChecked(), movements.size(), movements);
     }
 
     public static StockCountResponse summary(StockCount c) {
-        return new StockCountResponse(c.getId(), c.getNotes(), c.getCountedAt(), 0, 0, List.of());
+        return new StockCountResponse(c.getId(), c.getNotes(), c.getCountedAt(),
+                c.getItemsChecked(), c.getAdjustmentsMade(), null);
     }
 }

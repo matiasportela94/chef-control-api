@@ -39,6 +39,10 @@ public class StockService {
         return stockMovementRepository.getCurrentStock(productId, restaurantId);
     }
 
+    public Map<UUID, BigDecimal> getAllCurrentStocks() {
+        return stockMovementRepository.getAllCurrentStocks(TenantContext.require());
+    }
+
     public Page<StockMovement> listMovements(PageRequest pageRequest) {
         return stockMovementRepository.findByRestaurantIdOrderByCreatedAtDesc(TenantContext.require(), pageRequest);
     }

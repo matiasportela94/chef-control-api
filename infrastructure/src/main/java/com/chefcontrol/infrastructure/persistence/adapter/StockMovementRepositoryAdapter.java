@@ -14,6 +14,7 @@ import org.springframework.stereotype.Repository;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -90,5 +91,13 @@ public class StockMovementRepositoryAdapter implements StockMovementRepository {
     @Override
     public void updatePurchaseCostPerUnit(UUID purchaseItemId, BigDecimal newCostPerUnit) {
         jpa.updatePurchaseCostPerUnit(purchaseItemId, newCostPerUnit);
+    }
+
+    @Override
+    public Map<UUID, BigDecimal> getAllCurrentStocks(UUID restaurantId) {
+        return jpa.getAllCurrentStocksRaw(restaurantId).stream()
+                .collect(Collectors.toMap(
+                        row -> UUID.fromString(row[0].toString()),
+                        row -> (BigDecimal) row[1]));
     }
 }

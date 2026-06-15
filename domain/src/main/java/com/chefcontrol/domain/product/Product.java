@@ -17,6 +17,7 @@ public class Product {
     private UUID categoryId;
     private String categoryName;
     private String categoryColor;
+    private String categoryIcon;
     private String name;
     private String sku;
     private UUID defaultUnitId;

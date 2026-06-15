@@ -49,6 +49,11 @@ public class WasteEventRepositoryAdapter implements WasteEventRepository {
     }
 
     @Override
+    public long countByRestaurantIdAndCreatedAtBetween(UUID restaurantId, Instant from, Instant to) {
+        return jpa.countByRestaurantIdAndCreatedAtBetween(restaurantId, from, to);
+    }
+
+    @Override
     public BigDecimal sumCostByRestaurantIdAndCreatedAtBetween(UUID restaurantId, Instant from, Instant to) {
         return jpa.sumCostByRestaurantIdAndCreatedAtBetween(restaurantId, from, to);
     }

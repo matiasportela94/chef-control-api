@@ -53,4 +53,14 @@ public class PurchaseRepositoryAdapter implements PurchaseRepository {
     public BigDecimal sumTotalByRestaurantIdAndPurchasedAtSince(UUID restaurantId, Instant since) {
         return jpa.sumTotalByRestaurantIdAndPurchasedAtSince(restaurantId, since);
     }
+
+    @Override
+    public long countByRestaurantIdAndPurchasedAtBetween(UUID restaurantId, Instant from, Instant to) {
+        return jpa.countByRestaurantIdAndStatusAndPurchasedAtBetween(restaurantId, PurchaseStatus.ACTIVE, from, to);
+    }
+
+    @Override
+    public BigDecimal sumTotalByRestaurantIdAndPurchasedAtBetween(UUID restaurantId, Instant from, Instant to) {
+        return jpa.sumTotalByRestaurantIdAndPurchasedAtBetween(restaurantId, from, to);
+    }
 }

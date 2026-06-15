@@ -94,6 +94,10 @@ public class StockCountService {
             alertEvaluationService.evaluate(product.getId(), restaurantId, movement.getStockAfter());
         }
 
+        count.setItemsChecked(cmd.items().size());
+        count.setAdjustmentsMade(movements.size());
+        count = stockCountRepository.save(count);
+
         auditService.log(AuditAction.STOCK_COUNT_CREATED, "StockCount", count.getId(),
                 Map.of("adjustments", movements.size(), "itemsChecked", cmd.items().size()));
 

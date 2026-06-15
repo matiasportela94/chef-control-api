@@ -29,6 +29,12 @@ public class StockCountJpaEntity {
     @Column(name = "counted_at", nullable = false)
     private Instant countedAt = Instant.now();
 
+    @Column(name = "items_checked", nullable = false)
+    private int itemsChecked;
+
+    @Column(name = "adjustments_made", nullable = false)
+    private int adjustmentsMade;
+
     public static StockCountJpaEntity from(StockCount domain) {
         StockCountJpaEntity e = new StockCountJpaEntity();
         e.setId(domain.getId());
@@ -36,6 +42,8 @@ public class StockCountJpaEntity {
         e.setUserId(domain.getUserId());
         e.setNotes(domain.getNotes());
         e.setCountedAt(domain.getCountedAt());
+        e.setItemsChecked(domain.getItemsChecked());
+        e.setAdjustmentsMade(domain.getAdjustmentsMade());
         return e;
     }
 
@@ -46,6 +54,8 @@ public class StockCountJpaEntity {
         s.setUserId(userId);
         s.setNotes(notes);
         s.setCountedAt(countedAt);
+        s.setItemsChecked(itemsChecked);
+        s.setAdjustmentsMade(adjustmentsMade);
         return s;
     }
 }

@@ -32,8 +32,10 @@ public class ProductController {
     public ResponseEntity<PagedResponse<ProductResponse>> listProducts(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
+        var products  = productService.listProducts(PageRequest.of(page, size));
+        var stockMap  = stockService.getAllCurrentStocks();
         return ResponseEntity.ok(PagedResponse.from(
-                productService.listProducts(PageRequest.of(page, size)), ProductResponse::from));
+                products, p -> ProductResponse.from(p, stockMap.getOrDefault(p.getId(), BigDecimal.ZERO))));
     }
 
     @GetMapping("/{id}")

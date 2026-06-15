@@ -92,4 +92,13 @@ public interface JpaStockMovementRepository extends JpaRepository<StockMovementJ
                                                @Param("restaurantId") UUID restaurantId,
                                                @Param("from") Instant from,
                                                @Param("to") Instant to);
+
+    @Query(value = """
+            SELECT product_id,
+                   COALESCE(SUM(CASE WHEN direction = 'IN' THEN quantity ELSE -quantity END), 0)
+            FROM stock_movements
+            WHERE restaurant_id = :restaurantId
+            GROUP BY product_id
+            """, nativeQuery = true)
+    List<Object[]> getAllCurrentStocksRaw(@Param("restaurantId") UUID restaurantId);
 }
