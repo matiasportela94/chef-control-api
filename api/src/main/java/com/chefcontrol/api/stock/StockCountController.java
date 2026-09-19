@@ -11,6 +11,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
@@ -23,6 +24,7 @@ public class StockCountController {
     private final StockCountService stockCountService;
 
     @GetMapping
+    @PreAuthorize("hasAuthority('PERM_STOCK_COUNTS_VIEW')")
     public ResponseEntity<PagedResponse<StockCountResponse>> list(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
@@ -31,11 +33,13 @@ public class StockCountController {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAuthority('PERM_STOCK_COUNTS_VIEW')")
     public ResponseEntity<StockCountResponse> get(@PathVariable UUID id) {
         return ResponseEntity.ok(StockCountResponse.from(stockCountService.getCount(id)));
     }
 
     @PostMapping
+    @PreAuthorize("hasAuthority('PERM_STOCK_COUNTS_MANAGE')")
     public ResponseEntity<StockCountResponse> create(@Valid @RequestBody CreateStockCountRequest request) {
         var command = new CreateStockCountCommand(
                 request.notes(),

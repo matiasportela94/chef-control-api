@@ -23,6 +23,7 @@ public class WasteEventController {
     private final WasteService wasteService;
 
     @GetMapping
+    @PreAuthorize("hasAuthority('PERM_WASTE_VIEW')")
     public ResponseEntity<PagedResponse<WasteEventResponse>> listWasteEvents(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
@@ -32,12 +33,13 @@ public class WasteEventController {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAuthority('PERM_WASTE_VIEW')")
     public ResponseEntity<WasteEventResponse> getWasteEvent(@PathVariable UUID id) {
         return ResponseEntity.ok(WasteEventResponse.from(wasteService.getWasteEvent(id)));
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('OWNER', 'MANAGER', 'KITCHEN')")
+    @PreAuthorize("hasAuthority('PERM_WASTE_MANAGE')")
     public ResponseEntity<WasteEventResponse> createWasteEvent(
             @Valid @RequestBody CreateWasteEventRequest request) {
         CreateWasteEventCommand command = new CreateWasteEventCommand(

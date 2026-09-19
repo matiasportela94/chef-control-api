@@ -29,6 +29,7 @@ public class ProductController {
     private final StockService stockService;
 
     @GetMapping
+    @PreAuthorize("hasAuthority('PERM_PRODUCTS_VIEW')")
     public ResponseEntity<PagedResponse<ProductResponse>> listProducts(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
@@ -39,12 +40,13 @@ public class ProductController {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAuthority('PERM_PRODUCTS_VIEW')")
     public ResponseEntity<ProductResponse> getProduct(@PathVariable UUID id) {
         return ResponseEntity.ok(ProductResponse.from(productService.getProduct(id)));
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('OWNER', 'MANAGER')")
+    @PreAuthorize("hasAuthority('PERM_PRODUCTS_MANAGE')")
     public ResponseEntity<ProductResponse> createProduct(@Valid @RequestBody CreateProductRequest request) {
         var command = new CreateProductCommand(
                 request.name(),
@@ -58,7 +60,7 @@ public class ProductController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('OWNER', 'MANAGER')")
+    @PreAuthorize("hasAuthority('PERM_PRODUCTS_MANAGE')")
     public ResponseEntity<ProductResponse> updateProduct(
             @PathVariable UUID id,
             @Valid @RequestBody UpdateProductRequest request) {
@@ -73,13 +75,14 @@ public class ProductController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAnyRole('OWNER', 'MANAGER')")
+    @PreAuthorize("hasAuthority('PERM_PRODUCTS_MANAGE')")
     public ResponseEntity<Void> deactivateProduct(@PathVariable UUID id) {
         productService.deactivateProduct(id);
         return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/{id}/stock")
+    @PreAuthorize("hasAuthority('PERM_PRODUCTS_VIEW')")
     public ResponseEntity<Map<String, Object>> getStock(@PathVariable UUID id) {
         productService.getProduct(id); // validates product belongs to tenant
         BigDecimal stock = stockService.getCurrentStock(id);

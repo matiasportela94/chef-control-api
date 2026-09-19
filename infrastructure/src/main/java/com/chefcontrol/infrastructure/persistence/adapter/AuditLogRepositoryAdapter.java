@@ -10,6 +10,7 @@ import com.chefcontrol.infrastructure.persistence.entity.AuditLogJpaEntity;
 import com.chefcontrol.infrastructure.persistence.jpa.JpaAuditLogRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
@@ -53,9 +54,19 @@ public class AuditLogRepositoryAdapter implements AuditLogRepository {
     @Override
     public Page<AuditLog> search(UUID restaurantId, String actorEmail, AuditAction action, String entityType,
                                  Instant from, Instant to, PageRequest pageRequest) {
+        // Specification en vez de "(:param IS NULL OR ...)" — con ese patrón Postgres no puede
+        // inferir el tipo del bind param cuando el filtro correspondiente viene en null
+        // (ERROR: could not determine data type of parameter $N). Acá el predicado directamente
+        // no se agrega si el filtro es null, así que el problema no existe.
+        Specification<AuditLogJpaEntity> spec = (root, query, cb) -> cb.equal(root.get("restaurantId"), restaurantId);
+        if (actorEmail != null) spec = spec.and((root, query, cb) -> cb.equal(root.get("actorEmail"), actorEmail));
+        if (action != null) spec = spec.and((root, query, cb) -> cb.equal(root.get("action"), action));
+        if (entityType != null) spec = spec.and((root, query, cb) -> cb.equal(root.get("entityType"), entityType));
+        if (from != null) spec = spec.and((root, query, cb) -> cb.greaterThanOrEqualTo(root.get("createdAt"), from));
+        if (to != null) spec = spec.and((root, query, cb) -> cb.lessThanOrEqualTo(root.get("createdAt"), to));
+
         return PersistenceUtils.toDomain(
-                jpa.search(restaurantId, actorEmail, action, entityType, from, to,
-                        PersistenceUtils.toSpring(pageRequest, Sort.by("createdAt").descending()))
+                jpa.findAll(spec, PersistenceUtils.toSpring(pageRequest, Sort.by("createdAt").descending()))
                    .map(AuditLogJpaEntity::toDomain));
     }
 }

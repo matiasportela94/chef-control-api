@@ -29,6 +29,7 @@ public class PurchaseController {
     private final PurchaseService purchaseService;
 
     @GetMapping
+    @PreAuthorize("hasAuthority('PERM_PURCHASES_VIEW')")
     public ResponseEntity<PagedResponse<PurchaseResponse>> listPurchases(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
@@ -38,6 +39,7 @@ public class PurchaseController {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAuthority('PERM_PURCHASES_VIEW')")
     public ResponseEntity<PurchaseDetailResponse> getPurchase(@PathVariable UUID id) {
         Purchase purchase = purchaseService.getPurchase(id);
         return ResponseEntity.ok(
@@ -45,7 +47,7 @@ public class PurchaseController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('OWNER', 'MANAGER')")
+    @PreAuthorize("hasAuthority('PERM_PURCHASES_MANAGE')")
     public ResponseEntity<PurchaseDetailResponse> createPurchase(
             @Valid @RequestBody CreatePurchaseRequest request) {
 
@@ -64,7 +66,7 @@ public class PurchaseController {
     }
 
     @PostMapping("/{id}/reverse")
-    @PreAuthorize("hasAnyRole('OWNER', 'MANAGER')")
+    @PreAuthorize("hasAuthority('PERM_PURCHASES_MANAGE')")
     public ResponseEntity<PurchaseDetailResponse> reversePurchase(@PathVariable UUID id) {
         Purchase purchase = purchaseService.reversePurchase(id);
         return ResponseEntity.ok(
@@ -72,7 +74,7 @@ public class PurchaseController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('OWNER', 'MANAGER')")
+    @PreAuthorize("hasAuthority('PERM_PURCHASES_MANAGE')")
     public ResponseEntity<PurchaseDetailResponse> updatePurchase(
             @PathVariable UUID id,
             @Valid @RequestBody UpdatePurchaseRequest request) {

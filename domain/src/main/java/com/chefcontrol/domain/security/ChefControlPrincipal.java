@@ -1,5 +1,6 @@
 package com.chefcontrol.domain.security;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -10,5 +11,6 @@ public record ChefControlPrincipal(
         UUID userId,
         String email,
         UUID activeRestaurantId,
-        String role
+        String role,
+        List<String> permissions
 ) {}

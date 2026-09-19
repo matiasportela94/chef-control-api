@@ -10,6 +10,7 @@ import com.chefcontrol.domain.repository.AlertRepository;
 import com.chefcontrol.domain.shared.PageRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
@@ -23,6 +24,7 @@ public class AlertController {
     private final AlertRepository alertRepository;
 
     @GetMapping
+    @PreAuthorize("hasAuthority('PERM_ALERTS_VIEW')")
     public ResponseEntity<PagedResponse<AlertResponse>> list(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
@@ -32,6 +34,7 @@ public class AlertController {
     }
 
     @PutMapping("/{id}/read")
+    @PreAuthorize("hasAuthority('PERM_ALERTS_MANAGE')")
     public ResponseEntity<AlertResponse> markRead(@PathVariable UUID id) {
         Alert alert = alertRepository.findByIdAndRestaurantId(id, TenantContext.require())
                 .orElseThrow(() -> AppException.notFound(ErrorCode.ALERT_NOT_FOUND, "Alert not found"));
@@ -40,6 +43,7 @@ public class AlertController {
     }
 
     @PutMapping("/{id}/resolve")
+    @PreAuthorize("hasAuthority('PERM_ALERTS_MANAGE')")
     public ResponseEntity<AlertResponse> resolve(@PathVariable UUID id) {
         Alert alert = alertRepository.findByIdAndRestaurantId(id, TenantContext.require())
                 .orElseThrow(() -> AppException.notFound(ErrorCode.ALERT_NOT_FOUND, "Alert not found"));

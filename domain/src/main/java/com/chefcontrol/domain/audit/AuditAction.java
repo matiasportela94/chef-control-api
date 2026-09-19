@@ -15,6 +15,7 @@ public enum AuditAction {
     USER_UPDATED,
     USER_DEACTIVATED,
     USER_REACTIVATED,
+    USER_PERMISSIONS_UPDATED,
 
     // Restaurants
     RESTAURANT_CREATED,

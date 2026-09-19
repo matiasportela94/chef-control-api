@@ -8,6 +8,7 @@ import com.chefcontrol.api.auth.dto.ResetPasswordRequest;
 import com.chefcontrol.api.auth.dto.SwitchRestaurantRequest;
 import com.chefcontrol.application.port.AuditService;
 import com.chefcontrol.application.service.PasswordResetService;
+import com.chefcontrol.application.service.PermissionResolutionService;
 import com.chefcontrol.application.service.RestaurantRegistrationService;
 import com.chefcontrol.application.service.RestaurantRegistrationService.RegisterCommand;
 import com.chefcontrol.domain.audit.AuditAction;
@@ -49,6 +50,7 @@ public class AuthController {
     private final UserRestaurantRepository userRestaurantRepository;
     private final PasswordResetService passwordResetService;
     private final RestaurantRegistrationService registrationService;
+    private final PermissionResolutionService permissionResolutionService;
     private final AuditService auditService;
 
     @Value("${app.cookie.secure}")
@@ -193,6 +195,10 @@ public class AuthController {
 
         long expiresAt = ChefControlTime.nowInstant().plusMillis(jwtExpirationMs).toEpochMilli();
 
+        List<String> permissions = permissionResolutionService
+                .resolveEffectivePermissions(user.getId(), activeRestaurantId, active.getRoleName())
+                .stream().map(Enum::name).toList();
+
         return new LoginResponse(
                 user.getId(),
                 user.getName(),
@@ -200,6 +206,7 @@ public class AuthController {
                 activeRestaurantId,
                 active.getRestaurantName(),
                 active.getRoleName().name(),
+                permissions,
                 expiresAt,
                 restaurants);
     }

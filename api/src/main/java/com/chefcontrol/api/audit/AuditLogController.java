@@ -25,7 +25,7 @@ public class AuditLogController {
     private final AuditLogRepository auditLogRepository;
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('OWNER', 'MANAGER')")
+    @PreAuthorize("hasAuthority('PERM_AUDIT_VIEW')")
     public ResponseEntity<PagedResponse<AuditLogResponse>> list(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,

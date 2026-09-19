@@ -7,10 +7,13 @@ import com.chefcontrol.domain.audit.AuditAction;
 import com.chefcontrol.domain.context.TenantContext;
 import com.chefcontrol.application.exception.AppException;
 import com.chefcontrol.application.exception.ErrorCode;
+import com.chefcontrol.domain.repository.PermissionOverrideRepository;
 import com.chefcontrol.domain.repository.RestaurantRepository;
 import com.chefcontrol.domain.repository.RoleRepository;
 import com.chefcontrol.domain.repository.UserRepository;
 import com.chefcontrol.domain.repository.UserRestaurantRepository;
+import com.chefcontrol.domain.user.Permission;
+import com.chefcontrol.domain.user.PermissionOverride;
 import com.chefcontrol.domain.user.RoleName;
 import com.chefcontrol.domain.user.User;
 import com.chefcontrol.domain.user.UserRestaurant;
@@ -20,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -30,6 +34,8 @@ public class UserManagementService {
     private final UserRestaurantRepository userRestaurantRepository;
     private final RoleRepository roleRepository;
     private final RestaurantRepository restaurantRepository;
+    private final PermissionOverrideRepository permissionOverrideRepository;
+    private final PermissionResolutionService permissionResolutionService;
     private final PasswordEncoderPort passwordEncoder;
     private final PasswordResetService passwordResetService;
     private final AuditService auditService;
@@ -150,6 +156,50 @@ public class UserManagementService {
                 Map.of("restaurantId", restaurantId));
     }
 
+    // ── Permisos ─────────────────────────────────────────────────────────────
+
+    public EffectivePermissions getPermissions(UUID userId) {
+        UUID restaurantId = TenantContext.require();
+        UserRestaurant membership = getUser(userId); // valida ownership
+
+        List<PermissionOverride> overrides = permissionOverrideRepository
+                .findByUserIdAndRestaurantId(userId, restaurantId);
+        Set<Permission> effective = permissionResolutionService
+                .resolveEffectivePermissions(userId, restaurantId, membership.getRoleName());
+
+        return new EffectivePermissions(
+                membership.getRoleName(),
+                membership.getRoleName().defaultPermissions(),
+                overrides,
+                effective);
+    }
+
+    @Transactional
+    public void setPermissionOverrides(UUID userId, List<PermissionOverrideCommand> overrides) {
+        UUID restaurantId = TenantContext.require();
+        String callerRole = currentUserProvider.currentRole();
+
+        if (RoleName.valueOf(callerRole) != RoleName.OWNER) {
+            throw AppException.forbidden(ErrorCode.FORBIDDEN, "Only the restaurant owner can edit permission overrides");
+        }
+
+        getUser(userId); // valida que el usuario pertenezca a este restaurante
+
+        List<PermissionOverride> domainOverrides = overrides.stream()
+                .map(o -> PermissionOverride.builder()
+                        .userId(userId)
+                        .restaurantId(restaurantId)
+                        .permission(o.permission())
+                        .granted(o.granted())
+                        .build())
+                .toList();
+
+        permissionOverrideRepository.replaceAll(userId, restaurantId, domainOverrides);
+
+        auditService.log(AuditAction.USER_PERMISSIONS_UPDATED, "User", userId,
+                Map.of("overrideCount", domainOverrides.size()));
+    }
+
     // ── Commands / Results ────────────────────────────────────────────────────
 
     public record CreateUserCommand(
@@ -166,4 +216,13 @@ public class UserManagementService {
     ) {}
 
     public record CreatedUser(UserRestaurant membership) {}
+
+    public record PermissionOverrideCommand(Permission permission, boolean granted) {}
+
+    public record EffectivePermissions(
+            RoleName role,
+            Set<Permission> roleDefaults,
+            List<PermissionOverride> overrides,
+            Set<Permission> effective
+    ) {}
 }

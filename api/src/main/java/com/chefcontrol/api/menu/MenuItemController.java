@@ -13,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
@@ -27,6 +28,7 @@ public class MenuItemController {
     private final FoodCostService foodCostService;
 
     @GetMapping
+    @PreAuthorize("hasAuthority('PERM_MENU_VIEW')")
     public ResponseEntity<PagedResponse<MenuItemResponse>> list(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size,
@@ -36,11 +38,13 @@ public class MenuItemController {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAuthority('PERM_MENU_VIEW')")
     public ResponseEntity<MenuItemResponse> get(@PathVariable UUID id) {
         return ResponseEntity.ok(MenuItemResponse.from(menuItemService.getMenuItem(id)));
     }
 
     @PostMapping
+    @PreAuthorize("hasAuthority('PERM_MENU_MANAGE')")
     public ResponseEntity<MenuItemResponse> create(@Valid @RequestBody CreateMenuItemRequest request) {
         var cmd = new CreateMenuItemCommand(
                 request.name(), request.description(), request.price(), request.category());
@@ -49,6 +53,7 @@ public class MenuItemController {
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasAuthority('PERM_MENU_MANAGE')")
     public ResponseEntity<MenuItemResponse> update(
             @PathVariable UUID id,
             @Valid @RequestBody UpdateMenuItemRequest request) {
@@ -58,23 +63,27 @@ public class MenuItemController {
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAuthority('PERM_MENU_MANAGE')")
     public ResponseEntity<Void> deactivate(@PathVariable UUID id) {
         menuItemService.deactivateMenuItem(id);
         return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/bulk-deactivate")
+    @PreAuthorize("hasAuthority('PERM_MENU_MANAGE')")
     public ResponseEntity<Void> bulkDeactivate(@Valid @RequestBody BulkDeactivateMenuItemsRequest request) {
         menuItemService.deactivateMenuItems(request.ids());
         return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/{id}/activate")
+    @PreAuthorize("hasAuthority('PERM_MENU_MANAGE')")
     public ResponseEntity<MenuItemResponse> activate(@PathVariable UUID id) {
         return ResponseEntity.ok(MenuItemResponse.from(menuItemService.activateMenuItem(id)));
     }
 
     @GetMapping("/{id}/recipe")
+    @PreAuthorize("hasAuthority('PERM_MENU_VIEW')")
     public ResponseEntity<RecipeResponse> getRecipe(@PathVariable UUID id) {
         return menuItemService.getRecipe(id)
                 .map(recipe -> ResponseEntity.ok(RecipeResponse.from(recipe)))
@@ -82,6 +91,7 @@ public class MenuItemController {
     }
 
     @PutMapping("/{id}/recipe")
+    @PreAuthorize("hasAuthority('PERM_MENU_MANAGE')")
     public ResponseEntity<RecipeResponse> setRecipe(
             @PathVariable UUID id,
             @Valid @RequestBody SetRecipeRequest request) {
@@ -94,17 +104,20 @@ public class MenuItemController {
     }
 
     @DeleteMapping("/{id}/recipe")
+    @PreAuthorize("hasAuthority('PERM_MENU_MANAGE')")
     public ResponseEntity<Void> deleteRecipe(@PathVariable UUID id) {
         menuItemService.deleteRecipe(id);
         return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/{id}/recipe/cost")
+    @PreAuthorize("hasAuthority('PERM_MENU_VIEW')")
     public ResponseEntity<RecipeCostResponse> getRecipeCost(@PathVariable UUID id) {
         return ResponseEntity.ok(RecipeCostResponse.from(foodCostService.calculateRecipeCost(id)));
     }
 
     @GetMapping("/{id}/food-cost")
+    @PreAuthorize("hasAuthority('PERM_FOOD_COST_VIEW')")
     public ResponseEntity<MenuItemFoodCostResponse> getFoodCost(
             @PathVariable UUID id,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,

@@ -6,6 +6,7 @@ import com.chefcontrol.application.service.StockService;
 import com.chefcontrol.domain.shared.PageRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
@@ -18,6 +19,7 @@ public class StockMovementController {
     private final StockService stockService;
 
     @GetMapping
+    @PreAuthorize("hasAuthority('PERM_STOCK_VIEW')")
     public ResponseEntity<PagedResponse<StockMovementResponse>> list(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size,
@@ -29,6 +31,7 @@ public class StockMovementController {
     }
 
     @PostMapping("/{id}/reverse")
+    @PreAuthorize("hasAuthority('PERM_STOCK_MANAGE')")
     public ResponseEntity<StockMovementResponse> reverse(@PathVariable UUID id) {
         return ResponseEntity.ok(StockMovementResponse.from(stockService.reverseMovement(id)));
     }

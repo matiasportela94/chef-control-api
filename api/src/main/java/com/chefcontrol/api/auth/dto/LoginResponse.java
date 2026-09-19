@@ -10,6 +10,7 @@ public record LoginResponse(
         UUID activeRestaurantId,
         String activeRestaurantName,
         String role,
+        List<String> permissions,
         long expiresAt,
         List<RestaurantSummary> restaurants
 ) {

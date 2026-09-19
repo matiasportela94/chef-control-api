@@ -51,14 +51,22 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 }
 
                 String role = claims.get("role", String.class);
+                @SuppressWarnings("unchecked")
+                List<String> permissions = claims.get("permissions", List.class);
+                if (permissions == null) permissions = List.of(); // tokens viejos, emitidos antes del claim
+
                 var principal = new ChefControlPrincipal(
                         UUID.fromString(claims.get("userId", String.class)),
                         claims.getSubject(),
                         activeRestaurantId,
-                        role);
+                        role,
+                        permissions);
 
-                var auth = new UsernamePasswordAuthenticationToken(
-                        principal, null, List.of(new SimpleGrantedAuthority("ROLE_" + role)));
+                List<SimpleGrantedAuthority> authorities = new java.util.ArrayList<>();
+                authorities.add(new SimpleGrantedAuthority("ROLE_" + role));
+                permissions.forEach(p -> authorities.add(new SimpleGrantedAuthority("PERM_" + p)));
+
+                var auth = new UsernamePasswordAuthenticationToken(principal, null, authorities);
                 auth.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                 SecurityContextHolder.getContext().setAuthentication(auth);
             }
