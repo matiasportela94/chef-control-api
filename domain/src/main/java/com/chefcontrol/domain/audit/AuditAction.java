@@ -33,6 +33,7 @@ public enum AuditAction {
 
     // Purchases
     PURCHASE_CREATED,
+    PURCHASE_UPDATED,
     PURCHASE_REVERSED,
 
     // Waste

@@ -167,10 +167,13 @@ public class PurchaseService {
         Purchase purchase = purchaseRepository.findByIdAndRestaurantId(purchaseId, restaurantId)
                 .orElseThrow(() -> AppException.notFound(ErrorCode.PURCHASE_NOT_FOUND, "Purchase not found"));
 
+        BigDecimal oldTotal = purchase.getTotal();
+
         purchase.setSupplierId(cmd.supplierId());
         purchase.setNotes(cmd.notes());
         if (cmd.purchasedAt() != null) purchase.setPurchasedAt(cmd.purchasedAt());
 
+        int itemsUpdated = cmd.items() != null ? cmd.items().size() : 0;
         if (cmd.items() != null) {
             for (ItemPriceUpdate update : cmd.items()) {
                 PurchaseItem item = purchaseItemRepository.findById(update.id())
@@ -192,7 +195,11 @@ public class PurchaseService {
                 .setScale(2, RoundingMode.HALF_UP);
         purchase.setTotal(newTotal);
 
-        return purchaseRepository.save(purchase);
+        purchase = purchaseRepository.save(purchase);
+
+        auditService.log(AuditAction.PURCHASE_UPDATED, "Purchase", purchase.getId(),
+                Map.of("itemsUpdated", itemsUpdated, "oldTotal", oldTotal, "newTotal", newTotal));
+        return purchase;
     }
 
     @Transactional
