@@ -29,9 +29,10 @@ public class MenuItemController {
     @GetMapping
     public ResponseEntity<PagedResponse<MenuItemResponse>> list(
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "50") int size) {
+            @RequestParam(defaultValue = "50") int size,
+            @RequestParam(defaultValue = "true") boolean active) {
         return ResponseEntity.ok(PagedResponse.of(
-                menuItemService.listMenuItems(PageRequest.of(page, size)).map(MenuItemResponse::from)));
+                menuItemService.listMenuItems(active, PageRequest.of(page, size)).map(MenuItemResponse::from)));
     }
 
     @GetMapping("/{id}")
@@ -60,6 +61,17 @@ public class MenuItemController {
     public ResponseEntity<Void> deactivate(@PathVariable UUID id) {
         menuItemService.deactivateMenuItem(id);
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/bulk-deactivate")
+    public ResponseEntity<Void> bulkDeactivate(@Valid @RequestBody BulkDeactivateMenuItemsRequest request) {
+        menuItemService.deactivateMenuItems(request.ids());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{id}/activate")
+    public ResponseEntity<MenuItemResponse> activate(@PathVariable UUID id) {
+        return ResponseEntity.ok(MenuItemResponse.from(menuItemService.activateMenuItem(id)));
     }
 
     @GetMapping("/{id}/recipe")

@@ -36,8 +36,8 @@ public class MenuItemService {
     private final UnitRepository unitRepository;
     private final AuditService auditService;
 
-    public Page<MenuItem> listMenuItems(PageRequest pageRequest) {
-        return menuItemRepository.findByRestaurantIdAndActiveTrue(TenantContext.require(), pageRequest);
+    public Page<MenuItem> listMenuItems(boolean active, PageRequest pageRequest) {
+        return menuItemRepository.findByRestaurantIdAndActive(TenantContext.require(), active, pageRequest);
     }
 
     public MenuItem getMenuItem(UUID id) {
@@ -82,6 +82,27 @@ public class MenuItemService {
         menuItemRepository.save(item);
         auditService.log(AuditAction.MENU_ITEM_DEACTIVATED, "MenuItem", item.getId(),
                 Map.of("name", item.getName()));
+    }
+
+    @Transactional
+    public void deactivateMenuItems(List<UUID> ids) {
+        List<MenuItem> items = ids.stream().map(this::getMenuItem).toList(); // valida ownership de todos antes de tocar nada
+        for (MenuItem item : items) {
+            item.deactivate();
+            menuItemRepository.save(item);
+        }
+        auditService.log(AuditAction.MENU_ITEM_BULK_DEACTIVATED, "MenuItem", null,
+                Map.of("count", items.size(), "menuItemIds", ids));
+    }
+
+    @Transactional
+    public MenuItem activateMenuItem(UUID id) {
+        MenuItem item = getMenuItem(id);
+        item.activate();
+        item = menuItemRepository.save(item);
+        auditService.log(AuditAction.MENU_ITEM_REACTIVATED, "MenuItem", item.getId(),
+                Map.of("name", item.getName()));
+        return item;
     }
 
     public Optional<Recipe> getRecipe(UUID menuItemId) {

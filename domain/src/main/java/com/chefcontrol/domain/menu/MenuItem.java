@@ -23,6 +23,10 @@ public class MenuItem {
         this.active = false;
     }
 
+    public void activate() {
+        this.active = true;
+    }
+
     public void validateCanBeSold() {
         if (!active) throw new DomainException("Menu item '" + name + "' is not active");
         if (price == null) throw new DomainException("Menu item '" + name + "' has no price set");

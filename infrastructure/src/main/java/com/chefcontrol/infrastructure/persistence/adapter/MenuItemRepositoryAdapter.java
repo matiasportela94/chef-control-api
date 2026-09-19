@@ -21,9 +21,9 @@ public class MenuItemRepositoryAdapter implements MenuItemRepository {
     private final JpaMenuItemRepository jpa;
 
     @Override
-    public Page<MenuItem> findByRestaurantIdAndActiveTrue(UUID restaurantId, PageRequest pageRequest) {
+    public Page<MenuItem> findByRestaurantIdAndActive(UUID restaurantId, boolean active, PageRequest pageRequest) {
         return PersistenceUtils.toDomain(
-                jpa.findByRestaurantIdAndActiveTrue(restaurantId,
+                jpa.findByRestaurantIdAndActive(restaurantId, active,
                         PersistenceUtils.toSpring(pageRequest, Sort.by("name").ascending()))
                    .map(MenuItemJpaEntity::toDomain));
     }

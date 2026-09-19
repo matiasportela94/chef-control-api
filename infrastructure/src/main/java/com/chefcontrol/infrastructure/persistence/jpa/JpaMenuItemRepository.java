@@ -10,7 +10,7 @@ import java.util.UUID;
 
 public interface JpaMenuItemRepository extends JpaRepository<MenuItemJpaEntity, UUID> {
 
-    Page<MenuItemJpaEntity> findByRestaurantIdAndActiveTrue(UUID restaurantId, Pageable pageable);
+    Page<MenuItemJpaEntity> findByRestaurantIdAndActive(UUID restaurantId, boolean active, Pageable pageable);
 
     Optional<MenuItemJpaEntity> findByIdAndRestaurantId(UUID id, UUID restaurantId);
 }

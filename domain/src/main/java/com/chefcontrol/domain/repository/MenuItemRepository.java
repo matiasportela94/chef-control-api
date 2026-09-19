@@ -9,7 +9,7 @@ import java.util.UUID;
 
 public interface MenuItemRepository {
 
-    Page<MenuItem> findByRestaurantIdAndActiveTrue(UUID restaurantId, PageRequest pageRequest);
+    Page<MenuItem> findByRestaurantIdAndActive(UUID restaurantId, boolean active, PageRequest pageRequest);
 
     Optional<MenuItem> findByIdAndRestaurantId(UUID id, UUID restaurantId);
 
