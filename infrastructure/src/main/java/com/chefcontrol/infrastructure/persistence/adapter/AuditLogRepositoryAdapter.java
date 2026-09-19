@@ -1,5 +1,6 @@
 package com.chefcontrol.infrastructure.persistence.adapter;
 
+import com.chefcontrol.domain.audit.AuditAction;
 import com.chefcontrol.domain.audit.AuditLog;
 import com.chefcontrol.domain.repository.AuditLogRepository;
 import com.chefcontrol.domain.shared.Page;
@@ -11,6 +12,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
 import java.util.UUID;
 
 @Repository
@@ -44,6 +46,15 @@ public class AuditLogRepositoryAdapter implements AuditLogRepository {
     public Page<AuditLog> findByEntityTypeAndEntityIdOrderByCreatedAtDesc(String entityType, UUID entityId, PageRequest pageRequest) {
         return PersistenceUtils.toDomain(
                 jpa.findByEntityTypeAndEntityIdOrderByCreatedAtDesc(entityType, entityId,
+                        PersistenceUtils.toSpring(pageRequest, Sort.by("createdAt").descending()))
+                   .map(AuditLogJpaEntity::toDomain));
+    }
+
+    @Override
+    public Page<AuditLog> search(UUID restaurantId, String actorEmail, AuditAction action, String entityType,
+                                 Instant from, Instant to, PageRequest pageRequest) {
+        return PersistenceUtils.toDomain(
+                jpa.search(restaurantId, actorEmail, action, entityType, from, to,
                         PersistenceUtils.toSpring(pageRequest, Sort.by("createdAt").descending()))
                    .map(AuditLogJpaEntity::toDomain));
     }

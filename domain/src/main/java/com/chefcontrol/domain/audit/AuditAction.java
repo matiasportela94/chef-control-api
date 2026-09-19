@@ -33,6 +33,7 @@ public enum AuditAction {
 
     // Purchases
     PURCHASE_CREATED,
+    PURCHASE_REVERSED,
 
     // Waste
     WASTE_EVENT_CREATED,
@@ -50,7 +51,13 @@ public enum AuditAction {
 
     // Sales
     SALE_RECORDED,
+    SALE_REVERSED,
     SALE_DELETED,
+
+    // Menu items
+    MENU_ITEM_CREATED,
+    MENU_ITEM_UPDATED,
+    MENU_ITEM_DEACTIVATED,
 
     // WhatsApp
     WHATSAPP_SESSION_STARTED,

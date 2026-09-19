@@ -57,7 +57,7 @@ public class MenuItemService {
                 .active(true)
                 .build();
         item = menuItemRepository.save(item);
-        auditService.log(AuditAction.RECIPE_CREATED, "MenuItem", item.getId(),
+        auditService.log(AuditAction.MENU_ITEM_CREATED, "MenuItem", item.getId(),
                 Map.of("name", cmd.name()));
         return item;
     }
@@ -69,7 +69,10 @@ public class MenuItemService {
         if (cmd.description() != null) item.setDescription(cmd.description());
         if (cmd.price() != null) item.setPrice(cmd.price());
         if (cmd.category() != null) item.setCategory(cmd.category());
-        return menuItemRepository.save(item);
+        item = menuItemRepository.save(item);
+        auditService.log(AuditAction.MENU_ITEM_UPDATED, "MenuItem", item.getId(),
+                Map.of("name", item.getName()));
+        return item;
     }
 
     @Transactional
@@ -77,6 +80,8 @@ public class MenuItemService {
         MenuItem item = getMenuItem(id);
         item.deactivate();
         menuItemRepository.save(item);
+        auditService.log(AuditAction.MENU_ITEM_DEACTIVATED, "MenuItem", item.getId(),
+                Map.of("name", item.getName()));
     }
 
     public Optional<Recipe> getRecipe(UUID menuItemId) {

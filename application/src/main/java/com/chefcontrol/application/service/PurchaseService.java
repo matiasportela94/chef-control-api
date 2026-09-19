@@ -244,8 +244,7 @@ public class PurchaseService {
         purchase.setStatus(PurchaseStatus.REVERSED);
         purchase = purchaseRepository.save(purchase);
 
-        auditService.log(AuditAction.PURCHASE_CREATED, "Purchase", purchase.getId(),
-                Map.of("action", "REVERSED"));
+        auditService.log(AuditAction.PURCHASE_REVERSED, "Purchase", purchase.getId(), Map.of());
         return purchase;
     }
 

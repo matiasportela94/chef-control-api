@@ -112,8 +112,7 @@ public class SaleService {
         sale.setStatus(SaleStatus.REVERSED);
         sale = saleRepository.save(sale);
 
-        auditService.log(AuditAction.SALE_RECORDED, "Sale", sale.getId(),
-                Map.of("action", "REVERSED"));
+        auditService.log(AuditAction.SALE_REVERSED, "Sale", sale.getId(), Map.of());
         return sale;
     }
 
