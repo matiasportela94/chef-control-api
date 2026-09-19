@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -49,5 +50,12 @@ public class StockBatchRepositoryAdapter implements StockBatchRepository {
     @Override
     public void zeroQuantityRemainingByPurchaseItemId(UUID purchaseItemId) {
         jpa.zeroQuantityRemainingByPurchaseItemId(purchaseItemId);
+    }
+
+    @Override
+    public List<StockBatch> findExpiringSoon(LocalDate maxDate) {
+        return jpa.findExpiringSoon(maxDate).stream()
+                .map(StockBatchJpaEntity::toDomain)
+                .collect(Collectors.toList());
     }
 }
