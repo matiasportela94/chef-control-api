@@ -11,3 +11,10 @@ target/
 *.iws
 .vscode/
 .env
+
+# No committear docs internos, dumps ni artefactos de tooling AI
+*.md
+*.dump
+.codegraph/
+.claude/
+docs/
