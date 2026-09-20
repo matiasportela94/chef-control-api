@@ -25,6 +25,7 @@ public enum ErrorCode {
     DUPLICATE_ROLE_NAME         (Category.CONFLICT),
     SYSTEM_ROLE_IMMUTABLE       (Category.FORBIDDEN),
     ROLE_IN_USE                 (Category.CONFLICT),
+    PLAN_LIMIT_REACHED          (Category.FORBIDDEN),
 
     // Restaurant access
     RESTAURANT_NOT_FOUND    (Category.NOT_FOUND),

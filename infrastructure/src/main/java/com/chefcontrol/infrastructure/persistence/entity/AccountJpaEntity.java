@@ -1,6 +1,7 @@
 package com.chefcontrol.infrastructure.persistence.entity;
 
 import com.chefcontrol.domain.account.Account;
+import com.chefcontrol.domain.plan.PlanTier;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -24,6 +25,10 @@ public class AccountJpaEntity {
     @Column(nullable = false)
     private String name;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private PlanTier plan;
+
     @Column(name = "created_at", updatable = false, nullable = false)
     private Instant createdAt;
 
@@ -37,6 +42,7 @@ public class AccountJpaEntity {
         e.setId(domain.getId());
         e.setOwnerUserId(domain.getOwnerUserId());
         e.setName(domain.getName());
+        e.setPlan(domain.getPlan());
         e.setCreatedAt(domain.getCreatedAt());
         return e;
     }
@@ -46,6 +52,7 @@ public class AccountJpaEntity {
                 .id(id)
                 .ownerUserId(ownerUserId)
                 .name(name)
+                .plan(plan)
                 .createdAt(createdAt)
                 .build();
     }

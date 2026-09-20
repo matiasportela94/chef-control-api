@@ -1,6 +1,5 @@
 package com.chefcontrol.domain.user;
 
-import com.chefcontrol.domain.plan.PlanTier;
 import lombok.*;
 
 import java.time.Instant;
@@ -21,7 +20,6 @@ public class UserRestaurant {
     private String restaurantName;
     private String restaurantSlug;
     private String restaurantTimezone;
-    private PlanTier restaurantPlan;
 
     // Denormalized from user join (populated when querying by restaurant)
     private String userEmail;

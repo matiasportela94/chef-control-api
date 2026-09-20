@@ -51,7 +51,6 @@ public class UserRestaurantJpaEntity {
                 .restaurantName(restaurant != null ? restaurant.getName() : null)
                 .restaurantSlug(restaurant != null ? restaurant.getSlug() : null)
                 .restaurantTimezone(restaurant != null ? restaurant.getTimezone() : null)
-                .restaurantPlan(restaurant != null ? restaurant.getPlan() : null)
                 .userEmail(user != null ? user.getEmail() : null)
                 .userName(user != null ? user.getName() : null)
                 .userPhone(user != null ? user.getPhone() : null)

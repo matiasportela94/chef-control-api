@@ -1,7 +1,5 @@
 package com.chefcontrol.domain.restaurant;
 
-import com.chefcontrol.domain.plan.Feature;
-import com.chefcontrol.domain.plan.PlanTier;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -10,6 +8,10 @@ import java.text.Normalizer;
 import java.time.Instant;
 import java.util.UUID;
 
+/**
+ * El plan/facturación vive en {@link com.chefcontrol.domain.account.Account}, no acá —
+ * un restaurante no paga, la cuenta paga. Ver Account.hasFeature().
+ */
 @Getter @Setter @NoArgsConstructor
 public class Restaurant {
 
@@ -18,13 +20,8 @@ public class Restaurant {
     private String name;
     private String slug;
     private String timezone = "America/Argentina/Buenos_Aires";
-    private PlanTier plan = PlanTier.TRIAL;
     private boolean isActive = true;
     private Instant createdAt;
-
-    public boolean hasFeature(Feature feature) {
-        return plan.hasFeature(feature);
-    }
 
     /**
      * Generates a URL-safe slug from a restaurant name.

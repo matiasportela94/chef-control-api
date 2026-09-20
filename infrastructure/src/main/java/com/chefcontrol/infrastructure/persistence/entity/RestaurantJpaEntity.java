@@ -1,6 +1,5 @@
 package com.chefcontrol.infrastructure.persistence.entity;
 
-import com.chefcontrol.domain.plan.PlanTier;
 import com.chefcontrol.domain.restaurant.Restaurant;
 import jakarta.persistence.*;
 import lombok.Getter;
@@ -31,10 +30,6 @@ public class RestaurantJpaEntity {
     @Column(nullable = false)
     private String timezone = "America/Argentina/Buenos_Aires";
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private PlanTier plan = PlanTier.TRIAL;
-
     @Column(name = "is_active", nullable = false)
     private boolean isActive = true;
 
@@ -53,7 +48,6 @@ public class RestaurantJpaEntity {
         e.setName(domain.getName());
         e.setSlug(domain.getSlug());
         e.setTimezone(domain.getTimezone());
-        e.setPlan(domain.getPlan());
         e.setActive(domain.isActive());
         e.setCreatedAt(domain.getCreatedAt());
         return e;
@@ -66,7 +60,6 @@ public class RestaurantJpaEntity {
         r.setName(name);
         r.setSlug(slug);
         r.setTimezone(timezone);
-        r.setPlan(plan);
         r.setActive(isActive);
         r.setCreatedAt(createdAt);
         return r;
