@@ -5,6 +5,7 @@ import com.chefcontrol.application.port.AuditService;
 import com.chefcontrol.domain.audit.AuditAction;
 import com.chefcontrol.domain.context.TenantContext;
 import com.chefcontrol.domain.menu.MenuItem;
+import com.chefcontrol.domain.repository.CartaRepository;
 import com.chefcontrol.domain.repository.MenuItemRepository;
 import com.chefcontrol.domain.repository.ProductRepository;
 import com.chefcontrol.domain.repository.RecipeRepository;
@@ -36,6 +37,7 @@ import static org.mockito.Mockito.*;
 class MenuItemServiceTest {
 
     @Mock MenuItemRepository menuItemRepository;
+    @Mock CartaRepository cartaRepository;
     @Mock RecipeRepository recipeRepository;
     @Mock ProductRepository productRepository;
     @Mock UnitRepository unitRepository;
@@ -44,7 +46,7 @@ class MenuItemServiceTest {
     private final UUID restaurantId = UUID.randomUUID();
 
     private MenuItemService service() {
-        return new MenuItemService(menuItemRepository, recipeRepository, productRepository, unitRepository, auditService);
+        return new MenuItemService(menuItemRepository, cartaRepository, recipeRepository, productRepository, unitRepository, auditService);
     }
 
     private MenuItem item(UUID id, boolean active) {
@@ -97,6 +99,17 @@ class MenuItemServiceTest {
 
         verify(auditService, times(1)).log(eq(AuditAction.MENU_ITEM_BULK_DEACTIVATED), eq("MenuItem"), isNull(),
                 eq(Map.of("count", 2, "menuItemIds", List.of(id1, id2))));
+    }
+
+    @Test
+    void deactivate_alsoRemovesTheDishFromEveryCarta() {
+        UUID id = UUID.randomUUID();
+        when(menuItemRepository.findByIdAndRestaurantId(id, restaurantId)).thenReturn(Optional.of(item(id, true)));
+        when(menuItemRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        service().deactivateMenuItem(id);
+
+        verify(cartaRepository).removeMenuItemFromAllCartas(id);
     }
 
     @Test

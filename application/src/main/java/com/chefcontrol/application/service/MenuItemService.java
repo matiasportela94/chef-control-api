@@ -10,6 +10,7 @@ import com.chefcontrol.domain.menu.Recipe;
 import com.chefcontrol.domain.menu.RecipeItem;
 import com.chefcontrol.domain.product.Product;
 import com.chefcontrol.domain.product.Unit;
+import com.chefcontrol.domain.repository.CartaRepository;
 import com.chefcontrol.domain.repository.MenuItemRepository;
 import com.chefcontrol.domain.repository.ProductRepository;
 import com.chefcontrol.domain.repository.RecipeRepository;
@@ -31,6 +32,7 @@ import java.util.UUID;
 public class MenuItemService {
 
     private final MenuItemRepository menuItemRepository;
+    private final CartaRepository cartaRepository;
     private final RecipeRepository recipeRepository;
     private final ProductRepository productRepository;
     private final UnitRepository unitRepository;
@@ -75,11 +77,13 @@ public class MenuItemService {
         return item;
     }
 
+    /** Dar de baja un plato lo saca de toda carta: una carta no ofrece algo que ya no existe. */
     @Transactional
     public void deactivateMenuItem(UUID id) {
         MenuItem item = getMenuItem(id);
         item.deactivate();
         menuItemRepository.save(item);
+        cartaRepository.removeMenuItemFromAllCartas(item.getId());
         auditService.log(AuditAction.MENU_ITEM_DEACTIVATED, "MenuItem", item.getId(),
                 Map.of("name", item.getName()));
     }
@@ -90,6 +94,7 @@ public class MenuItemService {
         for (MenuItem item : items) {
             item.deactivate();
             menuItemRepository.save(item);
+            cartaRepository.removeMenuItemFromAllCartas(item.getId());
         }
         auditService.log(AuditAction.MENU_ITEM_BULK_DEACTIVATED, "MenuItem", null,
                 Map.of("count", items.size(), "menuItemIds", ids));

@@ -5,12 +5,16 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.Collection;
 import java.util.Optional;
 import java.util.UUID;
 
 public interface JpaMenuItemRepository extends JpaRepository<MenuItemJpaEntity, UUID> {
 
     Page<MenuItemJpaEntity> findByRestaurantIdAndActive(UUID restaurantId, boolean active, Pageable pageable);
+
+    Page<MenuItemJpaEntity> findByRestaurantIdAndActiveAndIdIn(UUID restaurantId, boolean active,
+                                                               Collection<UUID> ids, Pageable pageable);
 
     Optional<MenuItemJpaEntity> findByIdAndRestaurantId(UUID id, UUID restaurantId);
 }
