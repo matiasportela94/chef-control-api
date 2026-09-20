@@ -52,7 +52,8 @@ public class RestaurantRegistrationService {
      */
     private static final Set<Permission> MANAGER_DEFAULTS = EnumSet.complementOf(EnumSet.of(
             ROLES_VIEW, ROLES_CREATE, ROLES_UPDATE, ROLES_DELETE,
-            RESTAURANTS_VIEW, RESTAURANTS_CREATE));
+            RESTAURANTS_VIEW, RESTAURANTS_CREATE, RESTAURANTS_UPDATE, RESTAURANTS_DELETE,
+            ACCOUNT_VIEW));
 
     private static final Set<Permission> KITCHEN_DEFAULTS = EnumSet.of(
             AI_USE, WASTE_VIEW, WASTE_CREATE, STOCK_VIEW,
@@ -125,9 +126,7 @@ public class RestaurantRegistrationService {
      */
     @Transactional
     public Restaurant createAdditionalRestaurant(CreateRestaurantCommand cmd) {
-        Restaurant currentRestaurant = restaurantRepository.findByIdAndIsActiveTrue(TenantContext.require())
-                .orElseThrow(() -> new IllegalStateException("Restaurant not found"));
-        UUID accountId = currentRestaurant.getAccountId();
+        UUID accountId = currentAccountId();
 
         Account account = accountRepository.findById(accountId)
                 .orElseThrow(() -> new IllegalStateException("Account not found"));
@@ -163,10 +162,81 @@ public class RestaurantRegistrationService {
         return restaurant;
     }
 
+    @Transactional
+    public Restaurant updateRestaurant(UUID id, CreateRestaurantCommand cmd) {
+        Restaurant restaurant = requireFromCurrentAccount(id);
+        restaurant.setName(cmd.name());
+        if (cmd.timezone() != null) restaurant.setTimezone(cmd.timezone());
+        restaurant = restaurantRepository.save(restaurant);
+
+        auditService.log(AuditAction.RESTAURANT_UPDATED, "Restaurant", id,
+                Map.of("name", restaurant.getName(), "timezone", restaurant.getTimezone()));
+        return restaurant;
+    }
+
+    /**
+     * Deshabilitar un restaurante lo saca de todos lados sin borrar nada: los queries ya
+     * filtran por is_active (incluido el listado de locales al loguear/cambiar de local).
+     */
+    @Transactional
+    public Restaurant setRestaurantActive(UUID id, boolean active) {
+        Restaurant restaurant = requireFromCurrentAccount(id);
+        if (!active) requireNotCurrent(id);
+
+        restaurant.setActive(active);
+        restaurant = restaurantRepository.save(restaurant);
+
+        auditService.log(active ? AuditAction.RESTAURANT_ACTIVATED : AuditAction.RESTAURANT_DEACTIVATED,
+                "Restaurant", id, Map.of("name", restaurant.getName()));
+        return restaurant;
+    }
+
+    /**
+     * Borrado duro: se lleva puesta absolutamente toda la data del restaurante (stock, ventas,
+     * compras, recetas, usuarios asignados...) vía ON DELETE CASCADE — ver V15. Lo único que
+     * sobrevive es el audit_log, que no tiene FK a restaurants justamente para esto.
+     */
+    @Transactional
+    public void deleteRestaurant(UUID id) {
+        Restaurant restaurant = requireFromCurrentAccount(id);
+        requireNotCurrent(id);
+
+        auditService.log(AuditAction.RESTAURANT_DELETED, "Restaurant", id,
+                Map.of("name", restaurant.getName(), "slug", restaurant.getSlug()));
+
+        restaurantRepository.deleteById(id);
+    }
+
+    private Restaurant requireFromCurrentAccount(UUID id) {
+        UUID accountId = currentAccountId();
+        Restaurant restaurant = restaurantRepository.findById(id)
+                .orElseThrow(() -> AppException.notFound(ErrorCode.RESTAURANT_NOT_FOUND, "Restaurant not found"));
+        if (!accountId.equals(restaurant.getAccountId())) {
+            throw AppException.notFound(ErrorCode.RESTAURANT_NOT_FOUND, "Restaurant not found");
+        }
+        return restaurant;
+    }
+
+    /**
+     * No se puede deshabilitar ni borrar el local en el que estás parado: te quedarías con el
+     * tenant del JWT apuntando a algo muerto. Además garantiza que siempre queda al menos un
+     * local activo en la cuenta (el actual), o sea nadie se puede autobloquear el acceso.
+     */
+    private void requireNotCurrent(UUID id) {
+        if (id.equals(TenantContext.require())) {
+            throw AppException.conflict(ErrorCode.CANNOT_MODIFY_CURRENT_RESTAURANT,
+                    "Switch to another restaurant before disabling or deleting this one");
+        }
+    }
+
+    private UUID currentAccountId() {
+        return restaurantRepository.findByIdAndIsActiveTrue(TenantContext.require())
+                .orElseThrow(() -> new IllegalStateException("Restaurant not found"))
+                .getAccountId();
+    }
+
     public List<Restaurant> listAccountRestaurants() {
-        Restaurant currentRestaurant = restaurantRepository.findByIdAndIsActiveTrue(TenantContext.require())
-                .orElseThrow(() -> new IllegalStateException("Restaurant not found"));
-        return restaurantRepository.findAllByAccountId(currentRestaurant.getAccountId());
+        return restaurantRepository.findAllByAccountId(currentAccountId());
     }
 
     private String uniqueSlug(String name) {

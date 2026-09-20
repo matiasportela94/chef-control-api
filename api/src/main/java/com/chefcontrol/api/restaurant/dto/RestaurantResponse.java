@@ -10,9 +10,10 @@ public record RestaurantResponse(
         String name,
         String slug,
         String timezone,
+        boolean isActive,
         Instant createdAt
 ) {
     public static RestaurantResponse from(Restaurant r) {
-        return new RestaurantResponse(r.getId(), r.getName(), r.getSlug(), r.getTimezone(), r.getCreatedAt());
+        return new RestaurantResponse(r.getId(), r.getName(), r.getSlug(), r.getTimezone(), r.isActive(), r.getCreatedAt());
     }
 }

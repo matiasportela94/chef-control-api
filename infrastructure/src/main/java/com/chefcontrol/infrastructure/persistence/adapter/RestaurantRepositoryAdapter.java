@@ -24,6 +24,11 @@ public class RestaurantRepositoryAdapter implements RestaurantRepository {
     }
 
     @Override
+    public Optional<Restaurant> findById(UUID id) {
+        return jpa.findById(id).map(RestaurantJpaEntity::toDomain);
+    }
+
+    @Override
     public boolean existsBySlug(String slug) {
         return jpa.existsBySlug(slug);
     }
@@ -38,5 +43,10 @@ public class RestaurantRepositoryAdapter implements RestaurantRepository {
         return jpa.findAllByAccountId(accountId).stream()
                 .map(RestaurantJpaEntity::toDomain)
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    public void deleteById(UUID id) {
+        jpa.deleteById(id);
     }
 }

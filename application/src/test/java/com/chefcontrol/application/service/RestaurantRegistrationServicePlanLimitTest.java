@@ -123,4 +123,50 @@ class RestaurantRegistrationServicePlanLimitTest {
 
         verify(restaurantRepository).save(any());
     }
+
+    // ── Guards de deshabilitar / borrar ──────────────────────────────────────
+
+    @Test
+    void cannotDeleteTheRestaurantYouAreCurrentlyIn() {
+        when(restaurantRepository.findByIdAndIsActiveTrue(restaurantId)).thenReturn(Optional.of(currentRestaurant()));
+        when(restaurantRepository.findById(restaurantId)).thenReturn(Optional.of(currentRestaurant()));
+
+        assertThatThrownBy(() -> service().deleteRestaurant(restaurantId))
+                .isInstanceOf(AppException.class);
+
+        verify(restaurantRepository, never()).deleteById(any());
+    }
+
+    @Test
+    void cannotTouchARestaurantFromAnotherAccount() {
+        UUID otherId = UUID.randomUUID();
+        Restaurant other = new Restaurant();
+        other.setId(otherId);
+        other.setAccountId(UUID.randomUUID());
+
+        when(restaurantRepository.findByIdAndIsActiveTrue(restaurantId)).thenReturn(Optional.of(currentRestaurant()));
+        when(restaurantRepository.findById(otherId)).thenReturn(Optional.of(other));
+
+        assertThatThrownBy(() -> service().deleteRestaurant(otherId))
+                .isInstanceOf(AppException.class);
+
+        verify(restaurantRepository, never()).deleteById(any());
+    }
+
+    @Test
+    void deletesAnotherRestaurantOfTheSameAccount() {
+        UUID otherId = UUID.randomUUID();
+        Restaurant other = new Restaurant();
+        other.setId(otherId);
+        other.setAccountId(accountId);
+        other.setName("Sucursal cerrada");
+        other.setSlug("sucursal-cerrada");
+
+        when(restaurantRepository.findByIdAndIsActiveTrue(restaurantId)).thenReturn(Optional.of(currentRestaurant()));
+        when(restaurantRepository.findById(otherId)).thenReturn(Optional.of(other));
+
+        service().deleteRestaurant(otherId);
+
+        verify(restaurantRepository).deleteById(otherId);
+    }
 }
