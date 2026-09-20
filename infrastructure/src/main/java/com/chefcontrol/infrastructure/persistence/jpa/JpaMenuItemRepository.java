@@ -17,4 +17,6 @@ public interface JpaMenuItemRepository extends JpaRepository<MenuItemJpaEntity, 
                                                                Collection<UUID> ids, Pageable pageable);
 
     Optional<MenuItemJpaEntity> findByIdAndRestaurantId(UUID id, UUID restaurantId);
+
+    boolean existsBySectionId(UUID sectionId);
 }

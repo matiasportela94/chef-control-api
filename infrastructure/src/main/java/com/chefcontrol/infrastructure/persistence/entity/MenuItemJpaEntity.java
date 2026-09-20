@@ -28,7 +28,12 @@ public class MenuItemJpaEntity {
     @Column(precision = 12, scale = 2)
     private BigDecimal price;
 
-    private String category;
+    @Column(name = "section_id")
+    private UUID sectionId;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "section_id", insertable = false, updatable = false)
+    private MenuSectionJpaEntity section;
 
     @Column(name = "is_active", nullable = false)
     private boolean active = true;
@@ -48,7 +53,7 @@ public class MenuItemJpaEntity {
                 .name(domain.getName())
                 .description(domain.getDescription())
                 .price(domain.getPrice())
-                .category(domain.getCategory())
+                .sectionId(domain.getSectionId())
                 .active(domain.isActive())
                 .createdAt(domain.getCreatedAt())
                 .build();
@@ -61,7 +66,10 @@ public class MenuItemJpaEntity {
                 .name(name)
                 .description(description)
                 .price(price)
-                .category(category)
+                .sectionId(sectionId)
+                .sectionName(section != null ? section.getName() : null)
+                .sectionColor(section != null ? section.getColor() : null)
+                .sectionSortOrder(section != null ? section.getSortOrder() : null)
                 .active(active)
                 .createdAt(createdAt)
                 .build();

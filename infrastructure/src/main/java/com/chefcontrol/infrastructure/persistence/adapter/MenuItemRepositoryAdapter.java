@@ -44,6 +44,11 @@ public class MenuItemRepositoryAdapter implements MenuItemRepository {
     }
 
     @Override
+    public boolean existsBySectionId(UUID sectionId) {
+        return jpa.existsBySectionId(sectionId);
+    }
+
+    @Override
     public MenuItem save(MenuItem menuItem) {
         return jpa.save(MenuItemJpaEntity.from(menuItem)).toDomain();
     }

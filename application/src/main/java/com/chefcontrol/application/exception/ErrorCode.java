@@ -49,6 +49,7 @@ public enum ErrorCode {
     MENU_ITEM_NOT_FOUND     (Category.NOT_FOUND),
     MENU_ITEM_INACTIVE      (Category.BAD_REQUEST),
     CARTA_NOT_FOUND         (Category.NOT_FOUND),
+    MENU_SECTION_NOT_FOUND  (Category.NOT_FOUND),
     SALE_NOT_FOUND          (Category.NOT_FOUND),
 
     // Business rules
@@ -61,6 +62,8 @@ public enum ErrorCode {
     DUPLICATE_SLUG          (Category.CONFLICT),
     DUPLICATE_SKU           (Category.CONFLICT),
     DUPLICATE_CARTA_NAME    (Category.CONFLICT),
+    DUPLICATE_MENU_SECTION_NAME (Category.CONFLICT),
+    MENU_SECTION_HAS_ITEMS      (Category.CONFLICT),
     CATEGORY_HAS_PRODUCTS       (Category.CONFLICT),
     SYSTEM_CATEGORY_IMMUTABLE   (Category.FORBIDDEN),
 

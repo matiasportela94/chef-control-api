@@ -12,6 +12,7 @@ import com.chefcontrol.domain.product.Product;
 import com.chefcontrol.domain.product.Unit;
 import com.chefcontrol.domain.repository.CartaRepository;
 import com.chefcontrol.domain.repository.MenuItemRepository;
+import com.chefcontrol.domain.repository.MenuSectionRepository;
 import com.chefcontrol.domain.repository.ProductRepository;
 import com.chefcontrol.domain.repository.RecipeRepository;
 import com.chefcontrol.domain.repository.UnitRepository;
@@ -33,6 +34,7 @@ public class MenuItemService {
 
     private final MenuItemRepository menuItemRepository;
     private final CartaRepository cartaRepository;
+    private final MenuSectionRepository menuSectionRepository;
     private final RecipeRepository recipeRepository;
     private final ProductRepository productRepository;
     private final UnitRepository unitRepository;
@@ -55,7 +57,7 @@ public class MenuItemService {
                 .name(cmd.name())
                 .description(cmd.description())
                 .price(cmd.price())
-                .category(cmd.category())
+                .sectionId(resolveSectionId(cmd.sectionId(), restaurantId))
                 .active(true)
                 .build();
         item = menuItemRepository.save(item);
@@ -70,7 +72,9 @@ public class MenuItemService {
         if (cmd.name() != null) item.setName(cmd.name());
         if (cmd.description() != null) item.setDescription(cmd.description());
         if (cmd.price() != null) item.setPrice(cmd.price());
-        if (cmd.category() != null) item.setCategory(cmd.category());
+        if (cmd.sectionId() != null) {
+            item.setSectionId(resolveSectionId(cmd.sectionId(), item.getRestaurantId()));
+        }
         item = menuItemRepository.save(item);
         auditService.log(AuditAction.MENU_ITEM_UPDATED, "MenuItem", item.getId(),
                 Map.of("name", item.getName()));
@@ -108,6 +112,15 @@ public class MenuItemService {
         auditService.log(AuditAction.MENU_ITEM_REACTIVATED, "MenuItem", item.getId(),
                 Map.of("name", item.getName()));
         return item;
+    }
+
+    /** Un plato solo puede apuntar a un paso del propio restaurante. */
+    private UUID resolveSectionId(UUID sectionId, UUID restaurantId) {
+        if (sectionId == null) return null;
+        return menuSectionRepository.findByIdAndRestaurantId(sectionId, restaurantId)
+                .orElseThrow(() -> AppException.notFound(ErrorCode.MENU_SECTION_NOT_FOUND,
+                        "Menu section not found: " + sectionId))
+                .getId();
     }
 
     public Optional<Recipe> getRecipe(UUID menuItemId) {
@@ -170,9 +183,9 @@ public class MenuItemService {
 
     // ── Commands ─────────────────────────────────────────────────────────────
 
-    public record CreateMenuItemCommand(String name, String description, BigDecimal price, String category) {}
+    public record CreateMenuItemCommand(String name, String description, BigDecimal price, UUID sectionId) {}
 
-    public record UpdateMenuItemCommand(String name, String description, BigDecimal price, String category) {}
+    public record UpdateMenuItemCommand(String name, String description, BigDecimal price, UUID sectionId) {}
 
     public record SetRecipeCommand(int servings, List<RecipeItemCommand> items) {}
 

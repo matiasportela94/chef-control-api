@@ -15,7 +15,10 @@ public class MenuItem {
     private String name;
     private String description;
     private BigDecimal price;
-    private String category;
+    private UUID sectionId;
+    private String sectionName;
+    private String sectionColor;
+    private Integer sectionSortOrder;
     private boolean active = true;
     private Instant createdAt;
 

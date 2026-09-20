@@ -47,7 +47,7 @@ public class MenuItemController {
     @PreAuthorize("hasAuthority('PERM_MENU_CREATE')")
     public ResponseEntity<MenuItemResponse> createMenuItem(@Valid @RequestBody CreateMenuItemRequest request) {
         var cmd = new CreateMenuItemCommand(
-                request.name(), request.description(), request.price(), request.category());
+                request.name(), request.description(), request.price(), request.sectionId());
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(MenuItemResponse.from(menuItemService.createMenuItem(cmd)));
     }
@@ -58,7 +58,7 @@ public class MenuItemController {
                                                            @PathVariable UUID id,
                                                            @Valid @RequestBody UpdateMenuItemRequest request) {
         var cmd = new UpdateMenuItemCommand(
-                request.name(), request.description(), request.price(), request.category());
+                request.name(), request.description(), request.price(), request.sectionId());
         return ResponseEntity.ok(MenuItemResponse.from(menuItemService.updateMenuItem(id, cmd)));
     }
 

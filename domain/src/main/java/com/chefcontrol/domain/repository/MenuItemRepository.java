@@ -18,5 +18,8 @@ public interface MenuItemRepository {
 
     Optional<MenuItem> findByIdAndRestaurantId(UUID id, UUID restaurantId);
 
+    /** Para bloquear el borrado de un paso que todavía tiene platos. */
+    boolean existsBySectionId(UUID sectionId);
+
     MenuItem save(MenuItem menuItem);
 }

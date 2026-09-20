@@ -7,6 +7,7 @@ import com.chefcontrol.domain.context.TenantContext;
 import com.chefcontrol.domain.menu.MenuItem;
 import com.chefcontrol.domain.repository.CartaRepository;
 import com.chefcontrol.domain.repository.MenuItemRepository;
+import com.chefcontrol.domain.repository.MenuSectionRepository;
 import com.chefcontrol.domain.repository.ProductRepository;
 import com.chefcontrol.domain.repository.RecipeRepository;
 import com.chefcontrol.domain.repository.UnitRepository;
@@ -38,6 +39,7 @@ class MenuItemServiceTest {
 
     @Mock MenuItemRepository menuItemRepository;
     @Mock CartaRepository cartaRepository;
+    @Mock MenuSectionRepository menuSectionRepository;
     @Mock RecipeRepository recipeRepository;
     @Mock ProductRepository productRepository;
     @Mock UnitRepository unitRepository;
@@ -46,7 +48,8 @@ class MenuItemServiceTest {
     private final UUID restaurantId = UUID.randomUUID();
 
     private MenuItemService service() {
-        return new MenuItemService(menuItemRepository, cartaRepository, recipeRepository, productRepository, unitRepository, auditService);
+        return new MenuItemService(menuItemRepository, cartaRepository, menuSectionRepository,
+                recipeRepository, productRepository, unitRepository, auditService);
     }
 
     private MenuItem item(UUID id, boolean active) {
