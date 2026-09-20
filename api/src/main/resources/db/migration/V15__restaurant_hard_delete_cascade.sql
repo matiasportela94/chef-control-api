@@ -12,9 +12,9 @@
 -- cierre transitivo de dependientes de restaurants desde pg_constraint y se reescribe
 -- cada FK del subgrafo con ON DELETE CASCADE.
 --
--- audit_log queda AFUERA a propósito: su restaurant_id no es FK (es un UUID suelto,
--- ya desnormalizado como actor_email), así que el rastro de auditoría sobrevive al
--- borrado del restaurante. Es el registro permanente de que existió y se eliminó.
+-- audit_log queda afuera de la cascada porque su restaurant_id no es FK (es un UUID
+-- suelto, ya desnormalizado como actor_email). Sus filas igual se borran, pero a mano
+-- desde el servicio — ver RestaurantRegistrationService.deleteRestaurant().
 -- ============================================================
 
 DO $$

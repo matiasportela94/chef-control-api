@@ -10,6 +10,7 @@ import com.chefcontrol.domain.context.TenantContext;
 import com.chefcontrol.domain.plan.Feature;
 import com.chefcontrol.domain.plan.PlanTier;
 import com.chefcontrol.domain.repository.AccountRepository;
+import com.chefcontrol.domain.repository.AuditLogRepository;
 import com.chefcontrol.domain.repository.RestaurantRepository;
 import com.chefcontrol.domain.repository.RoleRepository;
 import com.chefcontrol.domain.repository.UserRepository;
@@ -40,6 +41,7 @@ public class RestaurantRegistrationService {
     private final RestaurantRepository restaurantRepository;
     private final UserRestaurantRepository userRestaurantRepository;
     private final RoleRepository roleRepository;
+    private final AuditLogRepository auditLogRepository;
     private final PasswordEncoderPort passwordEncoder;
     private final AuditService auditService;
 
@@ -193,8 +195,12 @@ public class RestaurantRegistrationService {
 
     /**
      * Borrado duro: se lleva puesta absolutamente toda la data del restaurante (stock, ventas,
-     * compras, recetas, usuarios asignados...) vía ON DELETE CASCADE — ver V15. Lo único que
-     * sobrevive es el audit_log, que no tiene FK a restaurants justamente para esto.
+     * compras, recetas, usuarios asignados...) vía ON DELETE CASCADE — ver V15 — incluido su
+     * audit_log, que se borra a mano porque no tiene FK a restaurants.
+     *
+     * Lo único que queda en la cuenta es la entrada RESTAURANT_DELETED de acá abajo: se audita
+     * con el tenant del local en el que estás parado, no con el que se borra, así que sobrevive
+     * al DELETE. Es una línea diciendo "se eliminó este local" y nada más.
      */
     @Transactional
     public void deleteRestaurant(UUID id) {
@@ -204,6 +210,7 @@ public class RestaurantRegistrationService {
         auditService.log(AuditAction.RESTAURANT_DELETED, "Restaurant", id,
                 Map.of("name", restaurant.getName(), "slug", restaurant.getSlug()));
 
+        auditLogRepository.deleteByRestaurantId(id);
         restaurantRepository.deleteById(id);
     }
 

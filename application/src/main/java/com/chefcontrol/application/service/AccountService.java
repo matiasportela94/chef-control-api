@@ -1,5 +1,8 @@
 package com.chefcontrol.application.service;
 
+import com.chefcontrol.application.exception.AppException;
+import com.chefcontrol.application.exception.ErrorCode;
+import com.chefcontrol.application.port.CurrentUserProvider;
 import com.chefcontrol.domain.account.Account;
 import com.chefcontrol.domain.context.TenantContext;
 import com.chefcontrol.domain.repository.AccountRepository;
@@ -32,16 +35,33 @@ public class AccountService {
     private final RestaurantRepository restaurantRepository;
     private final UserRepository userRepository;
     private final UserRestaurantRepository userRestaurantRepository;
+    private final CurrentUserProvider currentUserProvider;
+
+    /**
+     * Cierra la cuenta entera: todos los restaurantes con toda su data, los roles, el audit_log
+     * y los usuarios que no trabajen también en otra cuenta. No queda nada ni rastro — es la
+     * salida del dueño que quiere irse de la plataforma, y la contracara del guard que impide
+     * borrar el último local desde la pantalla de restaurantes.
+     *
+     * Solo el dueño de la cuenta, y no se delega por permiso: es irreversible y afecta a todos
+     * los usuarios de la cuenta, no solo a quien aprieta el botón.
+     */
+    @Transactional
+    public void deleteCurrentAccount() {
+        Account account = currentAccount();
+
+        if (!account.getOwnerUserId().equals(currentUserProvider.currentUserId())) {
+            throw AppException.forbidden(ErrorCode.NOT_ACCOUNT_OWNER,
+                    "Only the account owner can delete the account");
+        }
+
+        accountRepository.deleteWithAllData(account.getId());
+    }
 
     @Transactional(readOnly = true)
     public AccountOverview getCurrentAccount() {
-        UUID accountId = restaurantRepository.findByIdAndIsActiveTrue(TenantContext.require())
-                .orElseThrow(() -> new IllegalStateException("Restaurant not found"))
-                .getAccountId();
-
-        Account account = accountRepository.findById(accountId)
-                .orElseThrow(() -> new IllegalStateException("Account not found"));
-
+        Account account = currentAccount();
+        UUID accountId = account.getId();
         List<Restaurant> restaurants = restaurantRepository.findAllByAccountId(accountId);
         User owner = userRepository.findById(account.getOwnerUserId()).orElse(null);
 
@@ -51,6 +71,14 @@ public class AccountService {
                 .collect(Collectors.toSet());
 
         return new AccountOverview(account, owner, restaurants, users.size());
+    }
+
+    private Account currentAccount() {
+        UUID accountId = restaurantRepository.findByIdAndIsActiveTrue(TenantContext.require())
+                .orElseThrow(() -> new IllegalStateException("Restaurant not found"))
+                .getAccountId();
+        return accountRepository.findById(accountId)
+                .orElseThrow(() -> new IllegalStateException("Account not found"));
     }
 
     public record AccountOverview(Account account, User owner, List<Restaurant> restaurants, int userCount) {}

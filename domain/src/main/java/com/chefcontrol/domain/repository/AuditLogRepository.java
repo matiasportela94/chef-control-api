@@ -12,6 +12,9 @@ public interface AuditLogRepository {
 
     AuditLog save(AuditLog entry);
 
+    /** Se usa al borrar un restaurante: su rastro es data de la cuenta y se va con el local. */
+    void deleteByRestaurantId(UUID restaurantId);
+
     Page<AuditLog> findByActorIdOrderByCreatedAtDesc(UUID actorId, PageRequest pageRequest);
 
     Page<AuditLog> findByRestaurantIdOrderByCreatedAtDesc(UUID restaurantId, PageRequest pageRequest);

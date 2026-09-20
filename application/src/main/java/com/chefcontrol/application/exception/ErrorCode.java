@@ -32,6 +32,7 @@ public enum ErrorCode {
     RESTAURANT_ACCESS_DENIED(Category.FORBIDDEN),
     RESTAURANT_INACTIVE     (Category.FORBIDDEN),
     CANNOT_MODIFY_CURRENT_RESTAURANT(Category.CONFLICT),
+    NOT_ACCOUNT_OWNER       (Category.FORBIDDEN),
 
     // WhatsApp
     UNREGISTERED_PHONE      (Category.FORBIDDEN),

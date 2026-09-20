@@ -37,6 +37,7 @@ class RestaurantRegistrationServicePlanLimitTest {
     @Mock RestaurantRepository restaurantRepository;
     @Mock UserRestaurantRepository userRestaurantRepository;
     @Mock RoleRepository roleRepository;
+    @Mock AuditLogRepository auditLogRepository;
     @Mock PasswordEncoderPort passwordEncoder;
     @Mock AuditService auditService;
 
@@ -46,7 +47,7 @@ class RestaurantRegistrationServicePlanLimitTest {
 
     private RestaurantRegistrationService service() {
         return new RestaurantRegistrationService(userRepository, accountRepository, restaurantRepository,
-                userRestaurantRepository, roleRepository, passwordEncoder, auditService);
+                userRestaurantRepository, roleRepository, auditLogRepository, passwordEncoder, auditService);
     }
 
     @BeforeEach

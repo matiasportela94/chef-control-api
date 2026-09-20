@@ -28,6 +28,11 @@ public class AuditLogRepositoryAdapter implements AuditLogRepository {
     }
 
     @Override
+    public void deleteByRestaurantId(UUID restaurantId) {
+        jpa.deleteByRestaurantId(restaurantId);
+    }
+
+    @Override
     public Page<AuditLog> findByActorIdOrderByCreatedAtDesc(UUID actorId, PageRequest pageRequest) {
         return PersistenceUtils.toDomain(
                 jpa.findByActorIdOrderByCreatedAtDesc(actorId,
