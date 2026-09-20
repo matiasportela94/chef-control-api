@@ -39,7 +39,7 @@ public class WasteEventController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAuthority('PERM_WASTE_MANAGE')")
+    @PreAuthorize("hasAuthority('PERM_WASTE_CREATE')")
     public ResponseEntity<WasteEventResponse> createWasteEvent(
             @Valid @RequestBody CreateWasteEventRequest request) {
         CreateWasteEventCommand command = new CreateWasteEventCommand(

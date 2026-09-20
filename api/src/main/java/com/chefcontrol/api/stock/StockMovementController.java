@@ -31,7 +31,7 @@ public class StockMovementController {
     }
 
     @PostMapping("/{id}/reverse")
-    @PreAuthorize("hasAuthority('PERM_STOCK_MANAGE')")
+    @PreAuthorize("hasAuthority('PERM_STOCK_DELETE')")
     public ResponseEntity<StockMovementResponse> reverse(@PathVariable UUID id) {
         return ResponseEntity.ok(StockMovementResponse.from(stockService.reverseMovement(id)));
     }

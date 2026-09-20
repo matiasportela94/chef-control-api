@@ -46,7 +46,7 @@ public class ProductController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAuthority('PERM_PRODUCTS_MANAGE')")
+    @PreAuthorize("hasAuthority('PERM_PRODUCTS_CREATE')")
     public ResponseEntity<ProductResponse> createProduct(@Valid @RequestBody CreateProductRequest request) {
         var command = new CreateProductCommand(
                 request.name(),
@@ -60,7 +60,7 @@ public class ProductController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAuthority('PERM_PRODUCTS_MANAGE')")
+    @PreAuthorize("hasAuthority('PERM_PRODUCTS_UPDATE')")
     public ResponseEntity<ProductResponse> updateProduct(
             @PathVariable UUID id,
             @Valid @RequestBody UpdateProductRequest request) {
@@ -75,7 +75,7 @@ public class ProductController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority('PERM_PRODUCTS_MANAGE')")
+    @PreAuthorize("hasAuthority('PERM_PRODUCTS_DELETE')")
     public ResponseEntity<Void> deactivateProduct(@PathVariable UUID id) {
         productService.deactivateProduct(id);
         return ResponseEntity.noContent().build();

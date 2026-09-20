@@ -39,7 +39,7 @@ public class StockCountController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAuthority('PERM_STOCK_COUNTS_MANAGE')")
+    @PreAuthorize("hasAuthority('PERM_STOCK_COUNTS_CREATE')")
     public ResponseEntity<StockCountResponse> create(@Valid @RequestBody CreateStockCountRequest request) {
         var command = new CreateStockCountCommand(
                 request.notes(),

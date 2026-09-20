@@ -19,6 +19,9 @@ public class RestaurantJpaEntity {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    @Column(name = "account_id", nullable = false)
+    private UUID accountId;
+
     @Column(nullable = false)
     private String name;
 
@@ -46,6 +49,7 @@ public class RestaurantJpaEntity {
     public static RestaurantJpaEntity from(Restaurant domain) {
         RestaurantJpaEntity e = new RestaurantJpaEntity();
         e.setId(domain.getId());
+        e.setAccountId(domain.getAccountId());
         e.setName(domain.getName());
         e.setSlug(domain.getSlug());
         e.setTimezone(domain.getTimezone());
@@ -58,6 +62,7 @@ public class RestaurantJpaEntity {
     public Restaurant toDomain() {
         Restaurant r = new Restaurant();
         r.setId(id);
+        r.setAccountId(accountId);
         r.setName(name);
         r.setSlug(slug);
         r.setTimezone(timezone);

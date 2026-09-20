@@ -14,6 +14,7 @@ import java.util.UUID;
 public class Restaurant {
 
     private UUID id;
+    private UUID accountId;
     private String name;
     private String slug;
     private String timezone = "America/Argentina/Buenos_Aires";

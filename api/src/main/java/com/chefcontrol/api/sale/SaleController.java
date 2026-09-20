@@ -42,7 +42,7 @@ public class SaleController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAuthority('PERM_SALES_MANAGE')")
+    @PreAuthorize("hasAuthority('PERM_SALES_CREATE')")
     public ResponseEntity<SaleResponse> create(@Valid @RequestBody CreateSaleRequest request) {
         var cmd = new CreateSaleCommand(
                 request.notes(),
@@ -56,7 +56,7 @@ public class SaleController {
     }
 
     @PostMapping("/{id}/reverse")
-    @PreAuthorize("hasAuthority('PERM_SALES_MANAGE')")
+    @PreAuthorize("hasAuthority('PERM_SALES_DELETE')")
     public ResponseEntity<SaleResponse> reverse(@PathVariable UUID id) {
         Sale sale = saleService.reverseSale(id);
         return ResponseEntity.ok(SaleResponse.from(sale, saleService.getSaleItems(sale.getId())));

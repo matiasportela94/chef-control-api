@@ -32,4 +32,6 @@ public interface JpaUserRestaurantRepository extends JpaRepository<UserRestauran
     Optional<UserRestaurantJpaEntity> findByUserIdAndRestaurantId(
             @Param("userId") UUID userId,
             @Param("restaurantId") UUID restaurantId);
+
+    boolean existsByRole_IdAndIsActiveTrue(UUID roleId);
 }

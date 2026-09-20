@@ -21,6 +21,10 @@ public enum ErrorCode {
     MOVEMENT_CANNOT_BE_REVERSED (Category.BAD_REQUEST),
     STOCK_COUNT_NOT_FOUND       (Category.NOT_FOUND),
     ALERT_NOT_FOUND             (Category.NOT_FOUND),
+    ROLE_NOT_FOUND              (Category.NOT_FOUND),
+    DUPLICATE_ROLE_NAME         (Category.CONFLICT),
+    SYSTEM_ROLE_IMMUTABLE       (Category.FORBIDDEN),
+    ROLE_IN_USE                 (Category.CONFLICT),
 
     // Restaurant access
     RESTAURANT_NOT_FOUND    (Category.NOT_FOUND),

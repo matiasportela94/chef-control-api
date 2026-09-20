@@ -10,7 +10,9 @@ public record UserResponse(
         String name,
         String email,
         String phone,
+        UUID roleId,
         String role,
+        boolean roleIsSystem,
         boolean isActive,
         Instant memberSince
 ) {
@@ -20,7 +22,9 @@ public record UserResponse(
                 membership.getUserName(),
                 membership.getUserEmail(),
                 membership.getUserPhone(),
-                membership.getRoleName().name(),
+                membership.getRoleId(),
+                membership.getRoleName(),
+                membership.isRoleIsSystem(),
                 membership.isActive(),
                 membership.getCreatedAt());
     }

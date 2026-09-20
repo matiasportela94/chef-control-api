@@ -14,7 +14,8 @@ public class UserRestaurant {
 
     // Denormalized from role join
     private UUID roleId;
-    private RoleName roleName;
+    private String roleName;
+    private boolean roleIsSystem;
 
     // Denormalized from restaurant join
     private String restaurantName;

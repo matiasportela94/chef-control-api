@@ -30,7 +30,7 @@ public class SupplierController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAuthority('PERM_SUPPLIERS_MANAGE')")
+    @PreAuthorize("hasAuthority('PERM_SUPPLIERS_CREATE')")
     public ResponseEntity<SupplierResponse> createSupplier(@Valid @RequestBody CreateSupplierRequest request) {
         SupplierResponse response = SupplierResponse.from(
                 supplierService.createSupplier(toCommand(request)));
@@ -38,7 +38,7 @@ public class SupplierController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAuthority('PERM_SUPPLIERS_MANAGE')")
+    @PreAuthorize("hasAuthority('PERM_SUPPLIERS_UPDATE')")
     public ResponseEntity<SupplierResponse> updateSupplier(
             @PathVariable UUID id,
             @Valid @RequestBody UpdateSupplierRequest request) {
@@ -47,7 +47,7 @@ public class SupplierController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority('PERM_SUPPLIERS_MANAGE')")
+    @PreAuthorize("hasAuthority('PERM_SUPPLIERS_DELETE')")
     public ResponseEntity<Void> deactivateSupplier(@PathVariable UUID id) {
         supplierService.deactivateSupplier(id);
         return ResponseEntity.noContent().build();

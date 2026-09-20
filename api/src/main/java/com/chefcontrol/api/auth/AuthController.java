@@ -190,13 +190,13 @@ public class AuthController {
                 .map(ur -> new LoginResponse.RestaurantSummary(
                         ur.getRestaurantId(),
                         ur.getRestaurantName(),
-                        ur.getRoleName().name()))
+                        ur.getRoleName()))
                 .toList();
 
         long expiresAt = ChefControlTime.nowInstant().plusMillis(jwtExpirationMs).toEpochMilli();
 
         List<String> permissions = permissionResolutionService
-                .resolveEffectivePermissions(user.getId(), activeRestaurantId, active.getRoleName())
+                .resolveEffectivePermissions(user.getId(), activeRestaurantId, active.getRoleId())
                 .stream().map(Enum::name).toList();
 
         return new LoginResponse(
@@ -205,7 +205,7 @@ public class AuthController {
                 user.getEmail(),
                 activeRestaurantId,
                 active.getRestaurantName(),
-                active.getRoleName().name(),
+                active.getRoleName(),
                 permissions,
                 expiresAt,
                 restaurants);

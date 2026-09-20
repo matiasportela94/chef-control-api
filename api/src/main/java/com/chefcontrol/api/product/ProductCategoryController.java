@@ -32,7 +32,7 @@ public class ProductCategoryController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAuthority('PERM_CATEGORIES_MANAGE')")
+    @PreAuthorize("hasAuthority('PERM_CATEGORIES_CREATE')")
     public ResponseEntity<CategoryResponse> createCategory(@Valid @RequestBody CreateCategoryRequest request) {
         CategoryResponse response = CategoryResponse.from(
                 productService.createCategory(request.name(), request.description(), request.color(), request.icon(), request.parentId()));
@@ -40,7 +40,7 @@ public class ProductCategoryController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAuthority('PERM_CATEGORIES_MANAGE')")
+    @PreAuthorize("hasAuthority('PERM_CATEGORIES_UPDATE')")
     public ResponseEntity<CategoryResponse> updateCategory(@PathVariable UUID id,
                                                            @Valid @RequestBody UpdateCategoryRequest request) {
         CategoryResponse response = CategoryResponse.from(
@@ -49,7 +49,7 @@ public class ProductCategoryController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority('PERM_CATEGORIES_MANAGE')")
+    @PreAuthorize("hasAuthority('PERM_CATEGORIES_DELETE')")
     public ResponseEntity<Void> deleteCategory(@PathVariable UUID id) {
         productService.deleteCategory(id);
         return ResponseEntity.noContent().build();

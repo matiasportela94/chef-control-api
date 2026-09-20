@@ -44,7 +44,7 @@ public class MenuItemController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAuthority('PERM_MENU_MANAGE')")
+    @PreAuthorize("hasAuthority('PERM_MENU_CREATE')")
     public ResponseEntity<MenuItemResponse> create(@Valid @RequestBody CreateMenuItemRequest request) {
         var cmd = new CreateMenuItemCommand(
                 request.name(), request.description(), request.price(), request.category());
@@ -53,7 +53,7 @@ public class MenuItemController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAuthority('PERM_MENU_MANAGE')")
+    @PreAuthorize("hasAuthority('PERM_MENU_UPDATE')")
     public ResponseEntity<MenuItemResponse> update(
             @PathVariable UUID id,
             @Valid @RequestBody UpdateMenuItemRequest request) {
@@ -63,21 +63,21 @@ public class MenuItemController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority('PERM_MENU_MANAGE')")
+    @PreAuthorize("hasAuthority('PERM_MENU_DELETE')")
     public ResponseEntity<Void> deactivate(@PathVariable UUID id) {
         menuItemService.deactivateMenuItem(id);
         return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/bulk-deactivate")
-    @PreAuthorize("hasAuthority('PERM_MENU_MANAGE')")
+    @PreAuthorize("hasAuthority('PERM_MENU_DELETE')")
     public ResponseEntity<Void> bulkDeactivate(@Valid @RequestBody BulkDeactivateMenuItemsRequest request) {
         menuItemService.deactivateMenuItems(request.ids());
         return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/{id}/activate")
-    @PreAuthorize("hasAuthority('PERM_MENU_MANAGE')")
+    @PreAuthorize("hasAuthority('PERM_MENU_UPDATE')")
     public ResponseEntity<MenuItemResponse> activate(@PathVariable UUID id) {
         return ResponseEntity.ok(MenuItemResponse.from(menuItemService.activateMenuItem(id)));
     }
@@ -91,7 +91,7 @@ public class MenuItemController {
     }
 
     @PutMapping("/{id}/recipe")
-    @PreAuthorize("hasAuthority('PERM_MENU_MANAGE')")
+    @PreAuthorize("hasAuthority('PERM_MENU_UPDATE')")
     public ResponseEntity<RecipeResponse> setRecipe(
             @PathVariable UUID id,
             @Valid @RequestBody SetRecipeRequest request) {
@@ -104,7 +104,7 @@ public class MenuItemController {
     }
 
     @DeleteMapping("/{id}/recipe")
-    @PreAuthorize("hasAuthority('PERM_MENU_MANAGE')")
+    @PreAuthorize("hasAuthority('PERM_MENU_DELETE')")
     public ResponseEntity<Void> deleteRecipe(@PathVariable UUID id) {
         menuItemService.deleteRecipe(id);
         return ResponseEntity.noContent().build();

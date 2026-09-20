@@ -1,7 +1,6 @@
 package com.chefcontrol.infrastructure.security;
 
 import com.chefcontrol.application.service.PermissionResolutionService;
-import com.chefcontrol.domain.user.RoleName;
 import com.chefcontrol.domain.user.User;
 import com.chefcontrol.domain.user.UserRestaurant;
 import io.jsonwebtoken.Claims;
@@ -47,14 +46,13 @@ public class JwtTokenProvider {
                 .map(ur -> ur.getRestaurantId().toString())
                 .toList();
 
-        RoleName role = memberships.stream()
+        UserRestaurant activeMembership = memberships.stream()
                 .filter(ur -> ur.getRestaurantId().equals(activeRestaurantId))
-                .map(UserRestaurant::getRoleName)
                 .findFirst()
-                .orElse(RoleName.READONLY);
+                .orElseThrow(() -> new IllegalStateException("No membership for active restaurant"));
 
         List<String> permissions = permissionResolutionService
-                .resolveEffectivePermissions(user.getId(), activeRestaurantId, role)
+                .resolveEffectivePermissions(user.getId(), activeRestaurantId, activeMembership.getRoleId())
                 .stream().map(Enum::name).toList();
 
         return Jwts.builder()
@@ -63,7 +61,7 @@ public class JwtTokenProvider {
                 .claim("name", user.getName())
                 .claim("restaurantIds", restaurantIds)
                 .claim("activeRestaurantId", activeRestaurantId.toString())
-                .claim("role", role.name())
+                .claim("role", activeMembership.getRoleName())
                 .claim("permissions", permissions)
                 .issuedAt(Date.from(ChefControlTime.nowInstant()))
                 .expiration(Date.from(ChefControlTime.nowInstant().plusMillis(expirationMs)))

@@ -34,7 +34,7 @@ public class AlertController {
     }
 
     @PutMapping("/{id}/read")
-    @PreAuthorize("hasAuthority('PERM_ALERTS_MANAGE')")
+    @PreAuthorize("hasAuthority('PERM_ALERTS_UPDATE')")
     public ResponseEntity<AlertResponse> markRead(@PathVariable UUID id) {
         Alert alert = alertRepository.findByIdAndRestaurantId(id, TenantContext.require())
                 .orElseThrow(() -> AppException.notFound(ErrorCode.ALERT_NOT_FOUND, "Alert not found"));
@@ -43,7 +43,7 @@ public class AlertController {
     }
 
     @PutMapping("/{id}/resolve")
-    @PreAuthorize("hasAuthority('PERM_ALERTS_MANAGE')")
+    @PreAuthorize("hasAuthority('PERM_ALERTS_UPDATE')")
     public ResponseEntity<AlertResponse> resolve(@PathVariable UUID id) {
         Alert alert = alertRepository.findByIdAndRestaurantId(id, TenantContext.require())
                 .orElseThrow(() -> AppException.notFound(ErrorCode.ALERT_NOT_FOUND, "Alert not found"));

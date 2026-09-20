@@ -47,7 +47,7 @@ public class PurchaseController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAuthority('PERM_PURCHASES_MANAGE')")
+    @PreAuthorize("hasAuthority('PERM_PURCHASES_CREATE')")
     public ResponseEntity<PurchaseDetailResponse> createPurchase(
             @Valid @RequestBody CreatePurchaseRequest request) {
 
@@ -66,7 +66,7 @@ public class PurchaseController {
     }
 
     @PostMapping("/{id}/reverse")
-    @PreAuthorize("hasAuthority('PERM_PURCHASES_MANAGE')")
+    @PreAuthorize("hasAuthority('PERM_PURCHASES_DELETE')")
     public ResponseEntity<PurchaseDetailResponse> reversePurchase(@PathVariable UUID id) {
         Purchase purchase = purchaseService.reversePurchase(id);
         return ResponseEntity.ok(
@@ -74,7 +74,7 @@ public class PurchaseController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAuthority('PERM_PURCHASES_MANAGE')")
+    @PreAuthorize("hasAuthority('PERM_PURCHASES_UPDATE')")
     public ResponseEntity<PurchaseDetailResponse> updatePurchase(
             @PathVariable UUID id,
             @Valid @RequestBody UpdatePurchaseRequest request) {
