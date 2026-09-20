@@ -18,6 +18,13 @@ app:
   jwt:
     secret: ${JWT_SECRET}
 
+  # El front (Vercel) y el back (Railway) son dominios distintos: sin SameSite=None el
+  # navegador no manda la cookie y no hay sesion. Ademas None sin Secure el navegador lo
+  # rechaza entero. Estaba solo en staging; aca dependia de variables de entorno invisibles.
+  cookie:
+    secure: true
+    same-site: None
+
   frontend:
     url: ${FRONTEND_URL}
 

@@ -69,6 +69,7 @@ public class MenuItemJpaEntity {
                 .sectionId(sectionId)
                 .sectionName(section != null ? section.getName() : null)
                 .sectionColor(section != null ? section.getColor() : null)
+                .sectionIcon(section != null ? section.getIcon() : null)
                 .sectionSortOrder(section != null ? section.getSortOrder() : null)
                 .active(active)
                 .createdAt(createdAt)

@@ -35,13 +35,14 @@ public record MenuItemResponse(
     }
 
     /** El color viaja con el plato: la tarjeta de /menu se pinta con el color de su paso. */
-    public record SectionSummary(UUID id, String name, String color, Integer sortOrder) {
+    public record SectionSummary(UUID id, String name, String color, String icon, Integer sortOrder) {
         static SectionSummary from(MenuItem item) {
             if (item.getSectionId() == null) return null;
             return new SectionSummary(
                     item.getSectionId(),
                     item.getSectionName(),
                     item.getSectionColor(),
+                    item.getSectionIcon(),
                     item.getSectionSortOrder());
         }
     }

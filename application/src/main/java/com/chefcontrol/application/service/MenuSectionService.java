@@ -38,7 +38,7 @@ public class MenuSectionService {
     }
 
     @Transactional
-    public MenuSection createSection(String name, String color) {
+    public MenuSection createSection(String name, String color, String icon) {
         UUID restaurantId = TenantContext.require();
         requireAvailableName(restaurantId, name);
 
@@ -51,6 +51,7 @@ public class MenuSectionService {
                 .restaurantId(restaurantId)
                 .name(name)
                 .color(color)
+                .icon(icon)
                 .sortOrder(nextOrder)
                 .build();
 
@@ -61,13 +62,14 @@ public class MenuSectionService {
     }
 
     @Transactional
-    public MenuSection updateSection(UUID id, String name, String color) {
+    public MenuSection updateSection(UUID id, String name, String color, String icon) {
         MenuSection section = getSection(id);
         if (name != null && !name.equalsIgnoreCase(section.getName())) {
             requireAvailableName(section.getRestaurantId(), name);
         }
         if (name != null)  section.setName(name);
         if (color != null) section.setColor(color);
+        if (icon != null)  section.setIcon(icon);
 
         section = menuSectionRepository.save(section);
         auditService.log(AuditAction.MENU_SECTION_UPDATED, "MenuSection", section.getId(),

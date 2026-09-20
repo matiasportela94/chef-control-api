@@ -18,6 +18,7 @@ public class MenuItem {
     private UUID sectionId;
     private String sectionName;
     private String sectionColor;
+    private String sectionIcon;
     private Integer sectionSortOrder;
     private boolean active = true;
     private Instant createdAt;

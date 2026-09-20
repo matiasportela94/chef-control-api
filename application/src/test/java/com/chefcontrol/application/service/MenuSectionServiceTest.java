@@ -106,7 +106,7 @@ class MenuSectionServiceTest {
         when(menuSectionRepository.existsByRestaurantIdAndNameIgnoreCase(restaurantId, "Postres"))
                 .thenReturn(true);
 
-        assertThatThrownBy(() -> service().createSection("Postres", "#000000"))
+        assertThatThrownBy(() -> service().createSection("Postres", "#000000", "cake"))
                 .isInstanceOf(AppException.class);
 
         verify(menuSectionRepository, never()).save(any());
@@ -119,7 +119,7 @@ class MenuSectionServiceTest {
                 section(UUID.randomUUID(), "Principales", 1)));
         when(menuSectionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        MenuSection created = service().createSection("Postres", "#000000");
+        MenuSection created = service().createSection("Postres", "#000000", "cake");
 
         assertThat(created.getSortOrder()).isEqualTo(2);
     }

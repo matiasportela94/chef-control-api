@@ -37,7 +37,7 @@ public class MenuSectionController {
     public ResponseEntity<MenuSectionResponse> createMenuSection(
             @Valid @RequestBody CreateMenuSectionRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(MenuSectionResponse.from(
-                menuSectionService.createSection(request.name(), request.color())));
+                menuSectionService.createSection(request.name(), request.color(), request.icon())));
     }
 
     @PutMapping("/{id}")
@@ -46,7 +46,7 @@ public class MenuSectionController {
             @PathVariable UUID id,
             @Valid @RequestBody UpdateMenuSectionRequest request) {
         return ResponseEntity.ok(MenuSectionResponse.from(
-                menuSectionService.updateSection(id, request.name(), request.color())));
+                menuSectionService.updateSection(id, request.name(), request.color(), request.icon())));
     }
 
     @PutMapping("/order")

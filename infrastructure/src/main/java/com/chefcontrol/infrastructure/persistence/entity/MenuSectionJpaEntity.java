@@ -27,6 +27,8 @@ public class MenuSectionJpaEntity {
 
     private String color;
 
+    private String icon;
+
     @Column(name = "created_at", updatable = false, nullable = false)
     private Instant createdAt;
 
@@ -42,6 +44,7 @@ public class MenuSectionJpaEntity {
                 .name(domain.getName())
                 .sortOrder(domain.getSortOrder())
                 .color(domain.getColor())
+                .icon(domain.getIcon())
                 .createdAt(domain.getCreatedAt())
                 .build();
     }
@@ -53,6 +56,7 @@ public class MenuSectionJpaEntity {
                 .name(name)
                 .sortOrder(sortOrder)
                 .color(color)
+                .icon(icon)
                 .createdAt(createdAt)
                 .build();
     }

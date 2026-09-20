@@ -8,13 +8,15 @@ public record MenuSectionResponse(
         UUID id,
         String name,
         int sortOrder,
-        String color
+        String color,
+        String icon
 ) {
     public static MenuSectionResponse from(MenuSection section) {
         return new MenuSectionResponse(
                 section.getId(),
                 section.getName(),
                 section.getSortOrder(),
-                section.getColor());
+                section.getColor(),
+                section.getIcon());
     }
 }

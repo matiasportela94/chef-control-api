@@ -20,5 +20,6 @@ public class MenuSection {
     private String name;
     private int sortOrder;
     private String color;
+    private String icon;
     private Instant createdAt;
 }
