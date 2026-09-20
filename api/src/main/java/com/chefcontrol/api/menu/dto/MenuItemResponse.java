@@ -13,9 +13,15 @@ public record MenuItemResponse(
         BigDecimal price,
         SectionSummary section,
         boolean active,
+        Instant imageUpdatedAt,
         Instant createdAt
 ) {
     public static MenuItemResponse from(MenuItem item) {
+        return from(item, null);
+    }
+
+    /** {@code imageUpdatedAt} se mergea en el borde: el dominio del plato no sabe de fotos. */
+    public static MenuItemResponse from(MenuItem item, Instant imageUpdatedAt) {
         return new MenuItemResponse(
                 item.getId(),
                 item.getName(),
@@ -23,6 +29,7 @@ public record MenuItemResponse(
                 item.getPrice(),
                 SectionSummary.from(item),
                 item.isActive(),
+                imageUpdatedAt,
                 item.getCreatedAt()
         );
     }

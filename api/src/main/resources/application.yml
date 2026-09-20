@@ -12,6 +12,11 @@ spring:
         format_sql: true
         default_schema: public
 
+  servlet:
+    multipart:
+      max-file-size: 2MB
+      max-request-size: 3MB
+
   flyway:
     enabled: true
     locations: classpath:db/migration

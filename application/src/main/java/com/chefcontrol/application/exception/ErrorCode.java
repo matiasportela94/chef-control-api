@@ -50,6 +50,9 @@ public enum ErrorCode {
     MENU_ITEM_INACTIVE      (Category.BAD_REQUEST),
     CARTA_NOT_FOUND         (Category.NOT_FOUND),
     MENU_SECTION_NOT_FOUND  (Category.NOT_FOUND),
+    IMAGE_EMPTY                 (Category.BAD_REQUEST),
+    IMAGE_TOO_LARGE             (Category.BAD_REQUEST),
+    IMAGE_FORMAT_NOT_SUPPORTED  (Category.BAD_REQUEST),
     SALE_NOT_FOUND          (Category.NOT_FOUND),
 
     // Business rules
