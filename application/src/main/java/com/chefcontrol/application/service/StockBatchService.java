@@ -8,9 +8,12 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.chefcontrol.domain.context.TenantContext;
+
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -30,6 +33,15 @@ public class StockBatchService {
      * an unexplained surplus found during a stock count.
      */
     @Transactional
+    /**
+     * Para el listado de insumos: qué vence primero en cada producto, mirando solo lotes con
+     * stock remanente. Sin ventana de días — la pantalla muestra la fecha y el que mira decide,
+     * en vez de esperar a que el barrido nocturno levante la alerta.
+     */
+    public Map<UUID, LocalDate> getNextExpirationDates() {
+        return stockBatchRepository.findNextExpirationByProduct(TenantContext.require());
+    }
+
     public StockBatch createBatch(UUID restaurantId, UUID productId, UUID purchaseItemId,
                                   BigDecimal quantity, LocalDate expirationDate, BigDecimal costPerUnit,
                                   UUID stockMovementId) {

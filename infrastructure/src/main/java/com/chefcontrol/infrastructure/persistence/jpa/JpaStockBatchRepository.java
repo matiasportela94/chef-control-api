@@ -38,6 +38,15 @@ public interface JpaStockBatchRepository extends JpaRepository<StockBatchJpaEnti
     void zeroQuantityRemainingByPurchaseItemId(@Param("purchaseItemId") UUID purchaseItemId);
 
     @Query("""
+            SELECT b.productId, MIN(b.expirationDate) FROM StockBatchJpaEntity b
+            WHERE b.restaurantId = :restaurantId
+              AND b.quantityRemaining > 0
+              AND b.expirationDate IS NOT NULL
+            GROUP BY b.productId
+            """)
+    List<Object[]> findNextExpirationByProductRaw(@Param("restaurantId") UUID restaurantId);
+
+    @Query("""
             SELECT b FROM StockBatchJpaEntity b
             WHERE b.quantityRemaining > 0 AND b.expirationDate <= :maxDate
             ORDER BY b.expirationDate ASC

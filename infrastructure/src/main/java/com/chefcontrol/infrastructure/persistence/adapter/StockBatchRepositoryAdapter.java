@@ -9,7 +9,9 @@ import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -50,6 +52,15 @@ public class StockBatchRepositoryAdapter implements StockBatchRepository {
     @Override
     public void zeroQuantityRemainingByPurchaseItemId(UUID purchaseItemId) {
         jpa.zeroQuantityRemainingByPurchaseItemId(purchaseItemId);
+    }
+
+    @Override
+    public Map<UUID, LocalDate> findNextExpirationByProduct(UUID restaurantId) {
+        Map<UUID, LocalDate> result = new HashMap<>();
+        for (Object[] row : jpa.findNextExpirationByProductRaw(restaurantId)) {
+            result.put((UUID) row[0], (LocalDate) row[1]);
+        }
+        return result;
     }
 
     @Override

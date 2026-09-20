@@ -7,6 +7,7 @@ import com.chefcontrol.api.shared.PagedResponse;
 import com.chefcontrol.application.service.ProductService;
 import com.chefcontrol.application.service.ProductService.CreateProductCommand;
 import com.chefcontrol.application.service.ProductService.UpdateProductCommand;
+import com.chefcontrol.application.service.StockBatchService;
 import com.chefcontrol.application.service.StockService;
 import jakarta.validation.Valid;
 import com.chefcontrol.domain.shared.PageRequest;
@@ -27,6 +28,7 @@ public class ProductController {
 
     private final ProductService productService;
     private final StockService stockService;
+    private final StockBatchService stockBatchService;
 
     @GetMapping
     @PreAuthorize("hasAuthority('PERM_PRODUCTS_VIEW')")
@@ -35,8 +37,11 @@ public class ProductController {
             @RequestParam(defaultValue = "20") int size) {
         var products  = productService.listProducts(PageRequest.of(page, size));
         var stockMap  = stockService.getAllCurrentStocks();
+        var expiryMap = stockBatchService.getNextExpirationDates();
         return ResponseEntity.ok(PagedResponse.from(
-                products, p -> ProductResponse.from(p, stockMap.getOrDefault(p.getId(), BigDecimal.ZERO))));
+                products, p -> ProductResponse.from(p,
+                        stockMap.getOrDefault(p.getId(), BigDecimal.ZERO),
+                        expiryMap.get(p.getId()))));
     }
 
     @GetMapping("/{id}")
