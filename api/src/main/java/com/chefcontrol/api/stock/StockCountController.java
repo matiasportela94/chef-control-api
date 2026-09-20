@@ -25,22 +25,22 @@ public class StockCountController {
 
     @GetMapping
     @PreAuthorize("hasAuthority('PERM_STOCK_COUNTS_VIEW')")
-    public ResponseEntity<PagedResponse<StockCountResponse>> list(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
+    public ResponseEntity<PagedResponse<StockCountResponse>> listStockCounts(
+                                                                             @RequestParam(defaultValue = "0") int page,
+                                                                             @RequestParam(defaultValue = "20") int size) {
         return ResponseEntity.ok(PagedResponse.of(
                 stockCountService.listCounts(PageRequest.of(page, size)).map(StockCountResponse::summary)));
     }
 
     @GetMapping("/{id}")
     @PreAuthorize("hasAuthority('PERM_STOCK_COUNTS_VIEW')")
-    public ResponseEntity<StockCountResponse> get(@PathVariable UUID id) {
+    public ResponseEntity<StockCountResponse> getStockCount(@PathVariable UUID id) {
         return ResponseEntity.ok(StockCountResponse.from(stockCountService.getCount(id)));
     }
 
     @PostMapping
     @PreAuthorize("hasAuthority('PERM_STOCK_COUNTS_CREATE')")
-    public ResponseEntity<StockCountResponse> create(@Valid @RequestBody CreateStockCountRequest request) {
+    public ResponseEntity<StockCountResponse> createStockCount(@Valid @RequestBody CreateStockCountRequest request) {
         var command = new CreateStockCountCommand(
                 request.notes(),
                 request.items().stream()

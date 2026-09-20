@@ -26,9 +26,9 @@ public class SaleController {
 
     @GetMapping
     @PreAuthorize("hasAuthority('PERM_SALES_VIEW')")
-    public ResponseEntity<PagedResponse<SaleResponse>> list(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "50") int size) {
+    public ResponseEntity<PagedResponse<SaleResponse>> listSales(
+                                                                 @RequestParam(defaultValue = "0") int page,
+                                                                 @RequestParam(defaultValue = "50") int size) {
         return ResponseEntity.ok(PagedResponse.of(
                 saleService.listSales(PageRequest.of(page, size))
                         .map(sale -> SaleResponse.summary(sale, saleService.getItemCount(sale.getId())))));
@@ -36,14 +36,14 @@ public class SaleController {
 
     @GetMapping("/{id}")
     @PreAuthorize("hasAuthority('PERM_SALES_VIEW')")
-    public ResponseEntity<SaleResponse> get(@PathVariable UUID id) {
+    public ResponseEntity<SaleResponse> getSale(@PathVariable UUID id) {
         Sale sale = saleService.getSale(id);
         return ResponseEntity.ok(SaleResponse.from(sale, saleService.getSaleItems(id)));
     }
 
     @PostMapping
     @PreAuthorize("hasAuthority('PERM_SALES_CREATE')")
-    public ResponseEntity<SaleResponse> create(@Valid @RequestBody CreateSaleRequest request) {
+    public ResponseEntity<SaleResponse> createSale(@Valid @RequestBody CreateSaleRequest request) {
         var cmd = new CreateSaleCommand(
                 request.notes(),
                 request.soldAt(),
@@ -57,7 +57,7 @@ public class SaleController {
 
     @PostMapping("/{id}/reverse")
     @PreAuthorize("hasAuthority('PERM_SALES_DELETE')")
-    public ResponseEntity<SaleResponse> reverse(@PathVariable UUID id) {
+    public ResponseEntity<SaleResponse> reverseSale(@PathVariable UUID id) {
         Sale sale = saleService.reverseSale(id);
         return ResponseEntity.ok(SaleResponse.from(sale, saleService.getSaleItems(sale.getId())));
     }

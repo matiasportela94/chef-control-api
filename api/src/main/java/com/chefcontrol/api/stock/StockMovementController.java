@@ -20,10 +20,10 @@ public class StockMovementController {
 
     @GetMapping
     @PreAuthorize("hasAuthority('PERM_STOCK_VIEW')")
-    public ResponseEntity<PagedResponse<StockMovementResponse>> list(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "50") int size,
-            @RequestParam(required = false) UUID productId) {
+    public ResponseEntity<PagedResponse<StockMovementResponse>> listStockMovements(
+                                                                                   @RequestParam(defaultValue = "0") int page,
+                                                                                   @RequestParam(defaultValue = "50") int size,
+                                                                                   @RequestParam(required = false) UUID productId) {
         var movements = productId != null
                 ? stockService.listMovementsByProduct(productId, PageRequest.of(page, size))
                 : stockService.listMovements(PageRequest.of(page, size));
@@ -32,7 +32,7 @@ public class StockMovementController {
 
     @PostMapping("/{id}/reverse")
     @PreAuthorize("hasAuthority('PERM_STOCK_DELETE')")
-    public ResponseEntity<StockMovementResponse> reverse(@PathVariable UUID id) {
+    public ResponseEntity<StockMovementResponse> reverseStockMovement(@PathVariable UUID id) {
         return ResponseEntity.ok(StockMovementResponse.from(stockService.reverseMovement(id)));
     }
 }

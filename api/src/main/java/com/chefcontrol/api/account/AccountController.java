@@ -19,7 +19,7 @@ public class AccountController {
 
     @GetMapping
     @PreAuthorize("hasAuthority('PERM_ACCOUNT_VIEW')")
-    public ResponseEntity<AccountResponse> get() {
+    public ResponseEntity<AccountResponse> getAccount() {
         return ResponseEntity.ok(AccountResponse.from(accountService.getCurrentAccount()));
     }
 
@@ -28,7 +28,7 @@ public class AccountController {
      * el servicio exige que seas el dueño de la cuenta.
      */
     @DeleteMapping
-    public ResponseEntity<Void> delete() {
+    public ResponseEntity<Void> deleteAccount() {
         accountService.deleteCurrentAccount();
         return ResponseEntity.noContent().build();
     }

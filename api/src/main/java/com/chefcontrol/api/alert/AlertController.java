@@ -25,9 +25,9 @@ public class AlertController {
 
     @GetMapping
     @PreAuthorize("hasAuthority('PERM_ALERTS_VIEW')")
-    public ResponseEntity<PagedResponse<AlertResponse>> list(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
+    public ResponseEntity<PagedResponse<AlertResponse>> listAlerts(
+                                                                   @RequestParam(defaultValue = "0") int page,
+                                                                   @RequestParam(defaultValue = "20") int size) {
         var result = alertRepository.findByRestaurantIdAndResolvedAtIsNullOrderByCreatedAtDesc(
                 TenantContext.require(), PageRequest.of(page, size));
         return ResponseEntity.ok(PagedResponse.of(result.map(AlertResponse::from)));

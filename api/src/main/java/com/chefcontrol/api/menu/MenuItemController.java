@@ -29,23 +29,23 @@ public class MenuItemController {
 
     @GetMapping
     @PreAuthorize("hasAuthority('PERM_MENU_VIEW')")
-    public ResponseEntity<PagedResponse<MenuItemResponse>> list(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "50") int size,
-            @RequestParam(defaultValue = "true") boolean active) {
+    public ResponseEntity<PagedResponse<MenuItemResponse>> listMenuItems(
+                                                                         @RequestParam(defaultValue = "0") int page,
+                                                                         @RequestParam(defaultValue = "50") int size,
+                                                                         @RequestParam(defaultValue = "true") boolean active) {
         return ResponseEntity.ok(PagedResponse.of(
                 menuItemService.listMenuItems(active, PageRequest.of(page, size)).map(MenuItemResponse::from)));
     }
 
     @GetMapping("/{id}")
     @PreAuthorize("hasAuthority('PERM_MENU_VIEW')")
-    public ResponseEntity<MenuItemResponse> get(@PathVariable UUID id) {
+    public ResponseEntity<MenuItemResponse> getMenuItem(@PathVariable UUID id) {
         return ResponseEntity.ok(MenuItemResponse.from(menuItemService.getMenuItem(id)));
     }
 
     @PostMapping
     @PreAuthorize("hasAuthority('PERM_MENU_CREATE')")
-    public ResponseEntity<MenuItemResponse> create(@Valid @RequestBody CreateMenuItemRequest request) {
+    public ResponseEntity<MenuItemResponse> createMenuItem(@Valid @RequestBody CreateMenuItemRequest request) {
         var cmd = new CreateMenuItemCommand(
                 request.name(), request.description(), request.price(), request.category());
         return ResponseEntity.status(HttpStatus.CREATED)
@@ -54,9 +54,9 @@ public class MenuItemController {
 
     @PutMapping("/{id}")
     @PreAuthorize("hasAuthority('PERM_MENU_UPDATE')")
-    public ResponseEntity<MenuItemResponse> update(
-            @PathVariable UUID id,
-            @Valid @RequestBody UpdateMenuItemRequest request) {
+    public ResponseEntity<MenuItemResponse> updateMenuItem(
+                                                           @PathVariable UUID id,
+                                                           @Valid @RequestBody UpdateMenuItemRequest request) {
         var cmd = new UpdateMenuItemCommand(
                 request.name(), request.description(), request.price(), request.category());
         return ResponseEntity.ok(MenuItemResponse.from(menuItemService.updateMenuItem(id, cmd)));
@@ -64,21 +64,21 @@ public class MenuItemController {
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAuthority('PERM_MENU_DELETE')")
-    public ResponseEntity<Void> deactivate(@PathVariable UUID id) {
+    public ResponseEntity<Void> deactivateMenuItem(@PathVariable UUID id) {
         menuItemService.deactivateMenuItem(id);
         return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/bulk-deactivate")
     @PreAuthorize("hasAuthority('PERM_MENU_DELETE')")
-    public ResponseEntity<Void> bulkDeactivate(@Valid @RequestBody BulkDeactivateMenuItemsRequest request) {
+    public ResponseEntity<Void> bulkDeactivateMenuItems(@Valid @RequestBody BulkDeactivateMenuItemsRequest request) {
         menuItemService.deactivateMenuItems(request.ids());
         return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/{id}/activate")
     @PreAuthorize("hasAuthority('PERM_MENU_UPDATE')")
-    public ResponseEntity<MenuItemResponse> activate(@PathVariable UUID id) {
+    public ResponseEntity<MenuItemResponse> activateMenuItem(@PathVariable UUID id) {
         return ResponseEntity.ok(MenuItemResponse.from(menuItemService.activateMenuItem(id)));
     }
 
@@ -93,8 +93,8 @@ public class MenuItemController {
     @PutMapping("/{id}/recipe")
     @PreAuthorize("hasAuthority('PERM_MENU_UPDATE')")
     public ResponseEntity<RecipeResponse> setRecipe(
-            @PathVariable UUID id,
-            @Valid @RequestBody SetRecipeRequest request) {
+                                                    @PathVariable UUID id,
+                                                    @Valid @RequestBody SetRecipeRequest request) {
         var cmd = new SetRecipeCommand(
                 request.servings(),
                 request.items().stream()
@@ -119,9 +119,9 @@ public class MenuItemController {
     @GetMapping("/{id}/food-cost")
     @PreAuthorize("hasAuthority('PERM_FOOD_COST_VIEW')")
     public ResponseEntity<MenuItemFoodCostResponse> getFoodCost(
-            @PathVariable UUID id,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to) {
+                                                                @PathVariable UUID id,
+                                                                @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
+                                                                @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to) {
         return ResponseEntity.ok(MenuItemFoodCostResponse.from(foodCostService.calculateMenuItemFoodCost(id, from, to)));
     }
 }

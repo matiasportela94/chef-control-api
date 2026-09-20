@@ -23,33 +23,33 @@ public class RoleController {
 
     @GetMapping
     @PreAuthorize("hasAuthority('PERM_ROLES_VIEW')")
-    public ResponseEntity<List<RoleResponse>> list() {
+    public ResponseEntity<List<RoleResponse>> listRoles() {
         return ResponseEntity.ok(roleService.listRoles().stream().map(RoleResponse::from).toList());
     }
 
     @GetMapping("/{id}")
     @PreAuthorize("hasAuthority('PERM_ROLES_VIEW')")
-    public ResponseEntity<RoleResponse> get(@PathVariable UUID id) {
+    public ResponseEntity<RoleResponse> getRole(@PathVariable UUID id) {
         return ResponseEntity.ok(RoleResponse.from(roleService.getRole(id)));
     }
 
     @PostMapping
     @PreAuthorize("hasAuthority('PERM_ROLES_CREATE')")
-    public ResponseEntity<RoleResponse> create(@Valid @RequestBody CreateRoleRequest request) {
+    public ResponseEntity<RoleResponse> createRole(@Valid @RequestBody CreateRoleRequest request) {
         var role = roleService.createRole(request.name(), request.permissions());
         return ResponseEntity.status(HttpStatus.CREATED).body(RoleResponse.from(role));
     }
 
     @PutMapping("/{id}")
     @PreAuthorize("hasAuthority('PERM_ROLES_UPDATE')")
-    public ResponseEntity<RoleResponse> update(@PathVariable UUID id, @Valid @RequestBody UpdateRoleRequest request) {
+    public ResponseEntity<RoleResponse> updateRole(@PathVariable UUID id, @Valid @RequestBody UpdateRoleRequest request) {
         var role = roleService.updateRole(id, request.name(), request.permissions());
         return ResponseEntity.ok(RoleResponse.from(role));
     }
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAuthority('PERM_ROLES_DELETE')")
-    public ResponseEntity<Void> delete(@PathVariable UUID id) {
+    public ResponseEntity<Void> deleteRole(@PathVariable UUID id) {
         roleService.deleteRole(id);
         return ResponseEntity.noContent().build();
     }

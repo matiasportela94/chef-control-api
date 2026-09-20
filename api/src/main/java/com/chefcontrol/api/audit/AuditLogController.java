@@ -26,14 +26,14 @@ public class AuditLogController {
 
     @GetMapping
     @PreAuthorize("hasAuthority('PERM_AUDIT_VIEW')")
-    public ResponseEntity<PagedResponse<AuditLogResponse>> list(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size,
-            @RequestParam(required = false) String actorEmail,
-            @RequestParam(required = false) AuditAction action,
-            @RequestParam(required = false) String entityType,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to) {
+    public ResponseEntity<PagedResponse<AuditLogResponse>> listAuditLogs(
+                                                                         @RequestParam(defaultValue = "0") int page,
+                                                                         @RequestParam(defaultValue = "20") int size,
+                                                                         @RequestParam(required = false) String actorEmail,
+                                                                         @RequestParam(required = false) AuditAction action,
+                                                                         @RequestParam(required = false) String entityType,
+                                                                         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
+                                                                         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to) {
         var result = auditLogRepository.search(
                 TenantContext.require(), actorEmail, action, entityType, from, to,
                 PageRequest.of(page, size));

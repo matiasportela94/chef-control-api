@@ -28,7 +28,7 @@ public class RestaurantController {
 
     @GetMapping
     @PreAuthorize("hasAuthority('PERM_RESTAURANTS_VIEW')")
-    public ResponseEntity<List<RestaurantResponse>> list() {
+    public ResponseEntity<List<RestaurantResponse>> listRestaurants() {
         return ResponseEntity.ok(
                 restaurantRegistrationService.listAccountRestaurants().stream()
                         .map(RestaurantResponse::from).toList());
@@ -36,7 +36,7 @@ public class RestaurantController {
 
     @PostMapping
     @PreAuthorize("hasAuthority('PERM_RESTAURANTS_CREATE')")
-    public ResponseEntity<RestaurantResponse> create(@Valid @RequestBody CreateRestaurantRequest request) {
+    public ResponseEntity<RestaurantResponse> createRestaurant(@Valid @RequestBody CreateRestaurantRequest request) {
         var restaurant = restaurantRegistrationService.createAdditionalRestaurant(
                 new CreateRestaurantCommand(request.name(), request.timezone()));
         return ResponseEntity.status(HttpStatus.CREATED).body(RestaurantResponse.from(restaurant));
@@ -44,8 +44,8 @@ public class RestaurantController {
 
     @PutMapping("/{id}")
     @PreAuthorize("hasAuthority('PERM_RESTAURANTS_UPDATE')")
-    public ResponseEntity<RestaurantResponse> update(@PathVariable UUID id,
-                                                     @Valid @RequestBody CreateRestaurantRequest request) {
+    public ResponseEntity<RestaurantResponse> updateRestaurant(@PathVariable UUID id,
+                                                               @Valid @RequestBody CreateRestaurantRequest request) {
         var restaurant = restaurantRegistrationService.updateRestaurant(
                 id, new CreateRestaurantCommand(request.name(), request.timezone()));
         return ResponseEntity.ok(RestaurantResponse.from(restaurant));
@@ -53,8 +53,8 @@ public class RestaurantController {
 
     @PatchMapping("/{id}/active")
     @PreAuthorize("hasAuthority('PERM_RESTAURANTS_UPDATE')")
-    public ResponseEntity<RestaurantResponse> setActive(@PathVariable UUID id,
-                                                        @Valid @RequestBody SetActiveRequest request) {
+    public ResponseEntity<RestaurantResponse> setRestaurantActive(@PathVariable UUID id,
+                                                                  @Valid @RequestBody SetActiveRequest request) {
         return ResponseEntity.ok(RestaurantResponse.from(
                 restaurantRegistrationService.setRestaurantActive(id, request.active())));
     }
@@ -62,7 +62,7 @@ public class RestaurantController {
     /** Borra el restaurante y absolutamente toda su data. Irreversible — solo sobrevive el audit_log. */
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAuthority('PERM_RESTAURANTS_DELETE')")
-    public ResponseEntity<Void> delete(@PathVariable UUID id) {
+    public ResponseEntity<Void> deleteRestaurant(@PathVariable UUID id) {
         restaurantRegistrationService.deleteRestaurant(id);
         return ResponseEntity.noContent().build();
     }
