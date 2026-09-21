@@ -19,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -126,7 +127,7 @@ public class ProductService {
         product.setCategoryId(cmd.categoryId());
 
         Product saved = productRepository.save(product);
-        auditService.log(AuditAction.PRODUCT_CREATED, "Product", saved.getId());
+        auditService.log(AuditAction.PRODUCT_CREATED, "Product", saved.getId(), payloadOf(saved));
         return saved;
     }
 
@@ -153,7 +154,7 @@ public class ProductService {
         product.setCategoryId(cmd.categoryId());
 
         Product saved = productRepository.save(product);
-        auditService.log(AuditAction.PRODUCT_UPDATED, "Product", id);
+        auditService.log(AuditAction.PRODUCT_UPDATED, "Product", id, payloadOf(saved));
         return saved;
     }
 
@@ -164,6 +165,22 @@ public class ProductService {
         product.deactivate();
         productRepository.save(product);
         auditService.log(AuditAction.PRODUCT_DEACTIVATED, "Product", id);
+    }
+
+    /**
+     * Payload de auditoría de un insumo. Hasta el 2026-09-21 no guardaba nada: el audit decía
+     * que alguien tocó el producto, no qué le cambió.
+     *
+     * <p>Lleva el rendimiento porque cambiarlo <b>reprecia todos los platos que usan el insumo</b>
+     * —el food cost teórico se mueve sin que nadie haya tocado una receta— y es justo el dato que
+     * hay que poder rastrear cuando el número cambie sin explicación. Ninguno de los tres puede
+     * ser null: nombre y unidad son obligatorios y el rendimiento cae en 100 por default.
+     */
+    private static Map<String, Object> payloadOf(Product product) {
+        return Map.of(
+                "name", product.getName(),
+                "unitId", product.getDefaultUnitId(),
+                "yieldPercentage", product.getYieldPercentage());
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

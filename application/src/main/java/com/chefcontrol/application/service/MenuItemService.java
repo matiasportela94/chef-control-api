@@ -24,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -62,7 +63,7 @@ public class MenuItemService {
                 .build();
         item = menuItemRepository.save(item);
         auditService.log(AuditAction.MENU_ITEM_CREATED, "MenuItem", item.getId(),
-                Map.of("name", cmd.name()));
+                pricePayload(item));
         return item;
     }
 
@@ -77,8 +78,25 @@ public class MenuItemService {
         }
         item = menuItemRepository.save(item);
         auditService.log(AuditAction.MENU_ITEM_UPDATED, "MenuItem", item.getId(),
-                Map.of("name", item.getName()));
+                pricePayload(item));
         return item;
+    }
+
+    /**
+     * Payload de auditoría de un plato. Lleva el precio porque {@code menu_items.price} se pisa
+     * al editar y el valor viejo no queda en ningún lado: leyendo la serie de entradas de este
+     * plato en {@code audit_log} se reconstruye el historial de precios, con quién y cuándo.
+     *
+     * <p>Por eso el alta también lo graba: sin el punto inicial la serie arranca colgada.
+     *
+     * <p>{@code HashMap} y no {@code Map.of()} a propósito: el precio es opcional y
+     * {@code Map.of()} tira NPE con un valor null.
+     */
+    private static Map<String, Object> pricePayload(MenuItem item) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("name", item.getName());
+        payload.put("price", item.getPrice());
+        return payload;
     }
 
     /** Dar de baja un plato lo saca de toda carta: una carta no ofrece algo que ya no existe. */
