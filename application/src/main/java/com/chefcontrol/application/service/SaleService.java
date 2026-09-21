@@ -174,8 +174,12 @@ public class SaleService {
                                 .orElse(null);
                         UUID defaultUnitId = product != null ? product.getDefaultUnitId() : ingredient.unitId();
 
+                        // Se redondea el neto a la precisión con la que se va a guardar ANTES de
+                        // restar, para que SALE + WASTE dé exactamente el bruto y no quede un
+                        // resto de medio gramo colgado en ningún lado.
                         BigDecimal netQuantity = unitConversionService.convert(
-                                ingredient.quantity(), ingredient.unitId(), defaultUnitId);
+                                ingredient.quantity(), ingredient.unitId(), defaultUnitId)
+                                .setScale(3, RoundingMode.HALF_UP);
                         BigDecimal grossQuantity = product != null
                                 ? product.grossQuantityFor(netQuantity)
                                 : netQuantity;

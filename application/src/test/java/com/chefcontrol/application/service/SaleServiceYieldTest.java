@@ -65,8 +65,12 @@ class SaleServiceYieldTest {
                 currentUserProvider, productRepository, unitConversionService);
     }
 
-    /** Vende 1 plato cuya receta pide 200 g de un producto con el rendimiento dado. */
     private List<StockMovement> movementsForSaleOf(String yieldPercentage) {
+        return movementsForSaleOf(yieldPercentage, "200");
+    }
+
+    /** Vende 1 plato cuya receta pide {@code recipeQuantity} de un producto con ese rendimiento. */
+    private List<StockMovement> movementsForSaleOf(String yieldPercentage, String recipeQuantity) {
         MenuItem menuItem = new MenuItem();
         menuItem.setId(menuItemId);
         menuItem.setRestaurantId(restaurantId);
@@ -85,7 +89,7 @@ class SaleServiceYieldTest {
                 .menuItemId(menuItemId).restaurantId(restaurantId).servings(1)
                 .items(List.of(RecipeItem.builder()
                         .productId(productId).productName("Papa")
-                        .quantity(new BigDecimal("200")).unitId(unitId).build()))
+                        .quantity(new BigDecimal(recipeQuantity)).unitId(unitId).build()))
                 .build();
         when(recipeRepository.findByMenuItemIdAndRestaurantId(menuItemId, restaurantId))
                 .thenReturn(Optional.of(recipe));
@@ -118,10 +122,10 @@ class SaleServiceYieldTest {
         StockMovement sale = movements.stream().filter(m -> m.getType() == MovementType.SALE).findFirst().orElseThrow();
         StockMovement waste = movements.stream().filter(m -> m.getType() == MovementType.WASTE).findFirst().orElseThrow();
 
-        assertThat(sale.getQuantity()).isEqualByComparingTo("200.00");
-        assertThat(waste.getQuantity()).isEqualByComparingTo("22.22");
-        // 200 / 0,90 = 222,22 — el stock se descuenta por el bruto, no por lo que entra a la olla.
-        assertThat(sale.getQuantity().add(waste.getQuantity())).isEqualByComparingTo("222.22");
+        assertThat(sale.getQuantity()).isEqualByComparingTo("200.000");
+        assertThat(waste.getQuantity()).isEqualByComparingTo("22.222");
+        // 200 / 0,90 = 222,222 — el stock se descuenta por el bruto, no por lo que entra a la olla.
+        assertThat(sale.getQuantity().add(waste.getQuantity())).isEqualByComparingTo("222.222");
 
         // De esto depende que reverseSale() revierta también la merma: busca por sale_item.
         assertThat(waste.getReferenceType()).isEqualTo("sale_item");
@@ -134,7 +138,20 @@ class SaleServiceYieldTest {
 
         assertThat(movements).noneMatch(m -> m.getType() == MovementType.WASTE);
         StockMovement sale = movements.stream().filter(m -> m.getType() == MovementType.SALE).findFirst().orElseThrow();
-        assertThat(sale.getQuantity()).isEqualByComparingTo("80.00");
+        assertThat(sale.getQuantity()).isEqualByComparingTo("80.000");
+    }
+
+    /**
+     * El bug que esto cierra: con redondeo a 2 decimales, 5 g de sal de un producto medido en kg
+     * (0,005) se guardaban como 0,01 — el doble — y 4 g como 0. Nada que ver con el rendimiento:
+     * pasaba en toda receta con cantidades chicas sobre una unidad grande.
+     */
+    @Test
+    void cantidadChica_noSePierdeEnElRedondeo() {
+        List<StockMovement> movements = movementsForSaleOf("100", "0.005");
+
+        StockMovement sale = movements.stream().filter(m -> m.getType() == MovementType.SALE).findFirst().orElseThrow();
+        assertThat(sale.getQuantity()).isEqualByComparingTo("0.005");
     }
 
     @Test
@@ -143,6 +160,6 @@ class SaleServiceYieldTest {
 
         assertThat(movements).noneMatch(m -> m.getType() == MovementType.WASTE);
         StockMovement sale = movements.stream().filter(m -> m.getType() == MovementType.SALE).findFirst().orElseThrow();
-        assertThat(sale.getQuantity()).isEqualByComparingTo("200.00");
+        assertThat(sale.getQuantity()).isEqualByComparingTo("200.000");
     }
 }
