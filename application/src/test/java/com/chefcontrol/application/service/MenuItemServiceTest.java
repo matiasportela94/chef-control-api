@@ -4,6 +4,7 @@ import com.chefcontrol.application.exception.AppException;
 import com.chefcontrol.application.port.AuditService;
 import com.chefcontrol.application.port.CurrentUserProvider;
 import com.chefcontrol.domain.repository.PriceHistoryRepository;
+import com.chefcontrol.domain.repository.RecipeVersionRepository;
 import com.chefcontrol.domain.audit.AuditAction;
 import com.chefcontrol.domain.context.TenantContext;
 import com.chefcontrol.domain.menu.MenuItem;
@@ -48,13 +49,14 @@ class MenuItemServiceTest {
     @Mock AuditService auditService;
     @Mock PriceHistoryRepository priceHistoryRepository;
     @Mock CurrentUserProvider currentUserProvider;
+    @Mock RecipeVersionRepository recipeVersionRepository;
 
     private final UUID restaurantId = UUID.randomUUID();
 
     private MenuItemService service() {
         return new MenuItemService(menuItemRepository, cartaRepository, menuSectionRepository,
                 recipeRepository, productRepository, unitRepository, auditService,
-                priceHistoryRepository, currentUserProvider);
+                priceHistoryRepository, recipeVersionRepository, currentUserProvider);
     }
 
     private MenuItem item(UUID id, boolean active) {

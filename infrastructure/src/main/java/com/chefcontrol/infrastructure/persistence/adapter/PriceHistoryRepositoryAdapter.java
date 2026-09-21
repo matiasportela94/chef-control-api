@@ -9,6 +9,11 @@ import com.chefcontrol.infrastructure.persistence.jpa.JpaProductYieldHistoryRepo
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
 @Repository
 @RequiredArgsConstructor
 public class PriceHistoryRepositoryAdapter implements PriceHistoryRepository {
@@ -26,4 +31,32 @@ public class PriceHistoryRepositoryAdapter implements PriceHistoryRepository {
         return productJpa.save(ProductYieldHistoryJpaEntity.from(entry)).toDomain();
     }
 
+
+    @Override
+    public Optional<PriceHistoryEntry> findMenuItemPriceAt(UUID menuItemId, Instant at) {
+        return menuItemJpa
+                .findFirstByMenuItemIdAndValidFromLessThanEqualOrderByValidFromDesc(menuItemId, at)
+                .map(MenuItemPriceHistoryJpaEntity::toDomain);
+    }
+
+    @Override
+    public Optional<PriceHistoryEntry> findProductYieldAt(UUID productId, Instant at) {
+        return productJpa
+                .findFirstByProductIdAndValidFromLessThanEqualOrderByValidFromDesc(productId, at)
+                .map(ProductYieldHistoryJpaEntity::toDomain);
+    }
+
+    @Override
+    public List<PriceHistoryEntry> findMenuItemPriceHistory(UUID menuItemId) {
+        return menuItemJpa.findByMenuItemIdOrderByValidFromAsc(menuItemId).stream()
+                .map(MenuItemPriceHistoryJpaEntity::toDomain)
+                .toList();
+    }
+
+    @Override
+    public List<PriceHistoryEntry> findProductYieldHistory(UUID productId) {
+        return productJpa.findByProductIdOrderByValidFromAsc(productId).stream()
+                .map(ProductYieldHistoryJpaEntity::toDomain)
+                .toList();
+    }
 }

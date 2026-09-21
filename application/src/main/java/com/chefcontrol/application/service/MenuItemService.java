@@ -6,7 +6,9 @@ import com.chefcontrol.application.port.AuditService;
 import com.chefcontrol.application.port.CurrentUserProvider;
 import com.chefcontrol.domain.audit.AuditAction;
 import com.chefcontrol.domain.history.PriceHistoryEntry;
+import com.chefcontrol.domain.history.RecipeVersion;
 import com.chefcontrol.domain.repository.PriceHistoryRepository;
+import com.chefcontrol.domain.repository.RecipeVersionRepository;
 import com.chefcontrol.domain.context.TenantContext;
 import com.chefcontrol.domain.menu.MenuItem;
 import com.chefcontrol.domain.menu.Recipe;
@@ -44,6 +46,7 @@ public class MenuItemService {
     private final UnitRepository unitRepository;
     private final AuditService auditService;
     private final PriceHistoryRepository priceHistoryRepository;
+    private final RecipeVersionRepository recipeVersionRepository;
     private final CurrentUserProvider currentUserProvider;
 
     public Page<MenuItem> listMenuItems(boolean active, PageRequest pageRequest) {
@@ -209,9 +212,36 @@ public class MenuItemService {
 
         boolean isNew = recipe.getId() == null;
         Recipe saved = recipeRepository.save(recipe);
+        recordRecipeVersion(saved, restaurantId);
         auditService.log(isNew ? AuditAction.RECIPE_CREATED : AuditAction.RECIPE_UPDATED,
                 "Recipe", saved.getId(), Map.of("menuItemId", menuItemId));
         return saved;
+    }
+
+    /**
+     * Guarda la composición de la receta como una versión nueva, en la misma transacción que el
+     * save.
+     *
+     * <p>`replaceItems()` pisa los ítems anteriores, así que sin esto el food cost de un período
+     * pasado se calcularía con la receta de hoy: sacarle la crema a un plato en abril cambiaría,
+     * hacia atrás, lo que ese plato "costaba" en marzo.
+     *
+     * <p>Solo escribe si la receta cambió de verdad — mismo criterio que el precio y el
+     * rendimiento. Reordenar los ingredientes no es un cambio (ver {@code sameContentAs}).
+     */
+    private void recordRecipeVersion(Recipe recipe, UUID restaurantId) {
+        RecipeVersion candidate = RecipeVersion.of(restaurantId, recipe.getMenuItemId(),
+                recipe.getServings(), currentUserProvider.currentUserId(),
+                recipe.getItems().stream()
+                        .map(i -> new RecipeVersion.Item(i.getProductId(), i.getQuantity(), i.getUnitId()))
+                        .toList());
+
+        boolean unchanged = recipeVersionRepository.findLatestByMenuItemId(recipe.getMenuItemId())
+                .map(candidate::sameContentAs)
+                .orElse(false);
+        if (unchanged) return;
+
+        recipeVersionRepository.save(candidate);
     }
 
     @Transactional
@@ -221,6 +251,11 @@ public class MenuItemService {
         recipeRepository.findByMenuItemIdAndRestaurantId(menuItemId, restaurantId)
                 .ifPresent(recipe -> {
                     recipeRepository.delete(recipe);
+                    // Una versión vacía marca "desde acá el plato no tiene receta". Sin esto,
+                    // pedir el costo de una fecha posterior al borrado devolvería la última
+                    // composición como si siguiera vigente.
+                    recipeVersionRepository.save(RecipeVersion.of(restaurantId, menuItemId,
+                            recipe.getServings(), currentUserProvider.currentUserId(), List.of()));
                     auditService.log(AuditAction.RECIPE_DELETED, "Recipe", recipe.getId(),
                             Map.of("menuItemId", menuItemId));
                 });

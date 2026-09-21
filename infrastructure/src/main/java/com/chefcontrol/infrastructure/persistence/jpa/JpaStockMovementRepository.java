@@ -47,6 +47,23 @@ public interface JpaStockMovementRepository extends JpaRepository<StockMovementJ
                                           @Param("restaurantId") UUID restaurantId);
 
     /**
+     * Ídem, pero mirando solo las compras hasta {@code at}. Es lo que hace que el food cost
+     * teórico de un período pasado use los precios de ese momento y no los de hoy: sin el corte,
+     * preguntar "¿cuánto costaba en marzo?" promediaba también las compras de abril en adelante.
+     */
+    @Query(value = """
+            SELECT COALESCE(
+                SUM(quantity * cost_per_unit) / NULLIF(SUM(quantity), 0), 0)
+            FROM stock_movements
+            WHERE product_id = :productId AND restaurant_id = :restaurantId
+              AND type = 'PURCHASE' AND cost_per_unit IS NOT NULL
+              AND created_at <= :at
+            """, nativeQuery = true)
+    BigDecimal getWeightedAvgPurchaseCostAsOf(@Param("productId") UUID productId,
+                                              @Param("restaurantId") UUID restaurantId,
+                                              @Param("at") Instant at);
+
+    /**
      * Costo de lo vendido en el período: el SALE de cada receta más la merma estándar de limpieza
      * que ese mismo consumo generó. La merma estándar cuelga del sale_item, así que el filtro por
      * reference_type la separa de la merma registrada a mano (vencidos, robo, daño), que no es

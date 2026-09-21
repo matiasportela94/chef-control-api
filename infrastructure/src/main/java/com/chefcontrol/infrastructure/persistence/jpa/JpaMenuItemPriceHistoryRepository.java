@@ -3,11 +3,16 @@ package com.chefcontrol.infrastructure.persistence.jpa;
 import com.chefcontrol.infrastructure.persistence.entity.MenuItemPriceHistoryJpaEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
-/**
- * Solo el save heredado: las lecturas de la serie se agregan cuando haya quien las llame.
- * El índice (menu_item_id, valid_from DESC) ya está en V22 esperándolas.
- */
 public interface JpaMenuItemPriceHistoryRepository extends JpaRepository<MenuItemPriceHistoryJpaEntity, UUID> {
+
+    /** El tramo vigente en {@code at}: el último que arrancó antes o en ese momento. */
+    Optional<MenuItemPriceHistoryJpaEntity> findFirstByMenuItemIdAndValidFromLessThanEqualOrderByValidFromDesc(
+            UUID menuItemId, Instant at);
+
+    List<MenuItemPriceHistoryJpaEntity> findByMenuItemIdOrderByValidFromAsc(UUID menuItemId);
 }

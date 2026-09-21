@@ -74,6 +74,11 @@ public class StockMovementRepositoryAdapter implements StockMovementRepository {
     }
 
     @Override
+    public BigDecimal getWeightedAvgPurchaseCostAsOf(UUID productId, UUID restaurantId, Instant at) {
+        return jpa.getWeightedAvgPurchaseCostAsOf(productId, restaurantId, at);
+    }
+
+    @Override
     public BigDecimal sumSalesCost(UUID restaurantId, Instant from, Instant to) {
         return jpa.sumSalesCost(restaurantId, from, to);
     }

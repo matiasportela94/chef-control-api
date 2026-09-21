@@ -1,6 +1,7 @@
 package com.chefcontrol.api.menu;
 
 import com.chefcontrol.api.foodcost.dto.MenuItemFoodCostResponse;
+import com.chefcontrol.api.foodcost.dto.PriceEvolutionResponse;
 import com.chefcontrol.api.foodcost.dto.RecipeCostResponse;
 import com.chefcontrol.api.menu.dto.*;
 import com.chefcontrol.api.shared.PagedResponse;
@@ -158,10 +159,31 @@ public class MenuItemController {
         return ResponseEntity.noContent().build();
     }
 
+    /**
+     * Food cost teórico del plato. Sin {@code at} devuelve el de hoy; con {@code at} devuelve el
+     * que regía en ese momento — receta, costos de compra, rendimientos y precio de esa fecha.
+     */
     @GetMapping("/{id}/recipe/cost")
     @PreAuthorize("hasAuthority('PERM_MENU_VIEW')")
-    public ResponseEntity<RecipeCostResponse> getRecipeCost(@PathVariable UUID id) {
-        return ResponseEntity.ok(RecipeCostResponse.from(foodCostService.calculateRecipeCost(id)));
+    public ResponseEntity<RecipeCostResponse> getRecipeCost(
+            @PathVariable UUID id,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant at) {
+        return ResponseEntity.ok(RecipeCostResponse.from(at == null
+                ? foodCostService.calculateRecipeCost(id)
+                : foodCostService.calculateRecipeCostAt(id, at)));
+    }
+
+    /** Precio de venta, costo y food cost del plato en cada cambio de precio del período. */
+    @GetMapping("/{id}/price-evolution")
+    @PreAuthorize("hasAuthority('PERM_FOOD_COST_VIEW')")
+    public ResponseEntity<PriceEvolutionResponse> getPriceEvolution(
+            @PathVariable UUID id,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to) {
+        var menuItem = menuItemService.getMenuItem(id);
+        return ResponseEntity.ok(PriceEvolutionResponse.from(id, menuItem.getName(), from, to,
+                foodCostService.seriesReliableFrom(),
+                foodCostService.calculatePriceEvolution(id, from, to)));
     }
 
     @GetMapping("/{id}/food-cost")
