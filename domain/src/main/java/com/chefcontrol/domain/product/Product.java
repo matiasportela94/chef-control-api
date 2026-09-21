@@ -41,12 +41,17 @@ public class Product {
      *
      * <p>Un rendimiento mayor a 100 es válido y devuelve menos que el neto: el arroz rinde ~250%
      * porque absorbe agua, y 300 g de arroz cocido salen de 120 g de arroz crudo.
+     *
+     * <p>No redondea a la precisión de la base a propósito: el resultado se usa tanto para
+     * descontar stock (que sí redondea, al guardar) como para costear (que no debería). Redondear
+     * acá a 3 decimales rompía el costeo de todo producto medido en una unidad grande — en kg,
+     * 3 decimales son gramos, y 222,222 g de papa se convertían en 222,000.
      */
     public BigDecimal grossQuantityFor(BigDecimal net) {
         if (net == null || yieldPercentage == null || yieldPercentage.compareTo(HUNDRED) == 0) {
             return net;
         }
-        return net.divide(yieldPercentage.divide(HUNDRED, 6, RoundingMode.HALF_UP), 3, RoundingMode.HALF_UP);
+        return net.divide(yieldPercentage.divide(HUNDRED, 6, RoundingMode.HALF_UP), 6, RoundingMode.HALF_UP);
     }
 
     public void deactivate() {

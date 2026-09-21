@@ -19,8 +19,8 @@ public record RecipeCostResponse(
 ) {
     /**
      * {@code quantity} es lo que dice la receta; {@code grossQuantity} lo que hay que comprar
-     * para tenerlo, ya dividido por el rendimiento del producto. El costo se cobra sobre el bruto,
-     * así que sin las dos cantidades el desglose no explica de dónde sale el subtotal.
+     * para tenerlo, ya dividido por el rendimiento, y <b>en la misma unidad</b>. El costo se cobra
+     * sobre el bruto, así que sin las dos cantidades el desglose no explica de dónde sale el subtotal.
      */
     public record IngredientCost(
             UUID productId,

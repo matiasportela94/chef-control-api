@@ -180,9 +180,9 @@ public class SaleService {
                         BigDecimal netQuantity = unitConversionService.convert(
                                 ingredient.quantity(), ingredient.unitId(), defaultUnitId)
                                 .setScale(3, RoundingMode.HALF_UP);
-                        BigDecimal grossQuantity = product != null
+                        BigDecimal grossQuantity = (product != null
                                 ? product.grossQuantityFor(netQuantity)
-                                : netQuantity;
+                                : netQuantity).setScale(3, RoundingMode.HALF_UP);
 
                         BigDecimal avgCost = stockMovementRepository
                                 .getWeightedAvgPurchaseCost(ingredient.productId(), restaurantId);

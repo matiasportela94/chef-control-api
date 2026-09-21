@@ -71,17 +71,24 @@ public class FoodCostService {
                     BigDecimal qtyInDefaultUnit = unitConversionService.convert(
                             item.getQuantity(), item.getUnitId(), defaultUnitId);
                     // El costo se cobra sobre lo que hay que comprar, no sobre lo que entra a la olla:
-                    // 200 g de papa pelada al 90% se pagan como 222,22 g.
-                    BigDecimal grossQuantity = product != null
+                    // 200 g de papa pelada al 90% se pagan como 222,22 g. El costo se calcula en la
+                    // unidad del producto (que es la del precio) pero se informa en la de la receta,
+                    // para que las dos cantidades de la pantalla se puedan comparar entre sí.
+                    BigDecimal grossInDefaultUnit = product != null
                             ? product.grossQuantityFor(qtyInDefaultUnit)
                             : qtyInDefaultUnit;
+                    // Se aplica el rendimiento directo sobre la cantidad de la receta en vez de
+                    // convertir el bruto de vuelta: la ida y vuelta entre unidades pierde precisión.
+                    BigDecimal grossInRecipeUnit = product != null
+                            ? product.grossQuantityFor(item.getQuantity())
+                            : item.getQuantity();
                     BigDecimal unitCost = stockMovementRepository
                             .getWeightedAvgPurchaseCost(item.getProductId(), restaurantId);
-                    BigDecimal totalCost = grossQuantity.multiply(unitCost).setScale(4, RoundingMode.HALF_UP);
+                    BigDecimal totalCost = grossInDefaultUnit.multiply(unitCost).setScale(4, RoundingMode.HALF_UP);
                     return new RecipeIngredientCost(
                             item.getProductId(), item.getProductName(),
                             item.getQuantity(), item.getUnitId(), item.getUnitName(),
-                            grossQuantity, product != null ? product.getYieldPercentage() : null,
+                            grossInRecipeUnit, product != null ? product.getYieldPercentage() : null,
                             unitCost, totalCost);
                 })
                 .toList();
@@ -124,9 +131,10 @@ public class FoodCostService {
     ) {}
 
     /**
-     * {@code quantity} es lo que dice la receta (lo que entra a la olla) en su propia unidad;
-     * {@code grossQuantity} es lo que hay que comprar para tenerlo, en la unidad por defecto del
-     * producto, ya dividido por el rendimiento. {@code totalCost} se cobra sobre el bruto.
+     * {@code quantity} es lo que dice la receta (lo que entra a la olla) y {@code grossQuantity}
+     * lo que hay que comprar para tenerlo, ya dividido por el rendimiento. Las dos van en la
+     * <b>misma unidad</b> —la de la receta— porque la pantalla las muestra una al lado de la otra
+     * y comparar 200 g contra 0,222 kg no le sirve a nadie. {@code totalCost} se cobra sobre el bruto.
      */
     public record RecipeIngredientCost(
             UUID productId,

@@ -21,9 +21,9 @@ class ProductYieldTest {
 
     @Test
     void divideEntreElRendimiento_noSumaElPorcentaje() {
-        // 200 g de papa pelada al 90% salen de 222,222 g comprados — no de 220.
+        // 200 g de papa pelada al 90% salen de 222,22 g comprados — no de 220.
         assertThat(product("90").grossQuantityFor(new BigDecimal("200")))
-                .isEqualByComparingTo("222.222");
+                .isEqualByComparingTo("222.222222");
     }
 
     @Test
