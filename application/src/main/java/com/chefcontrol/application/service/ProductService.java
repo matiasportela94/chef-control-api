@@ -1,7 +1,10 @@
 package com.chefcontrol.application.service;
 
 import com.chefcontrol.application.port.AuditService;
+import com.chefcontrol.application.port.CurrentUserProvider;
 import com.chefcontrol.domain.audit.AuditAction;
+import com.chefcontrol.domain.history.PriceHistoryEntry;
+import com.chefcontrol.domain.repository.PriceHistoryRepository;
 import com.chefcontrol.domain.context.TenantContext;
 import com.chefcontrol.application.exception.AppException;
 import com.chefcontrol.application.exception.ErrorCode;
@@ -30,6 +33,8 @@ public class ProductService {
     private final ProductCategoryRepository categoryRepository;
     private final UnitRepository unitRepository;
     private final AuditService auditService;
+    private final PriceHistoryRepository priceHistoryRepository;
+    private final CurrentUserProvider currentUserProvider;
 
     // ── Categories ──────────────────────────────────────────────────────────
 
@@ -127,6 +132,7 @@ public class ProductService {
         product.setCategoryId(cmd.categoryId());
 
         Product saved = productRepository.save(product);
+        recordYield(saved, null);
         auditService.log(AuditAction.PRODUCT_CREATED, "Product", saved.getId(), payloadOf(saved));
         return saved;
     }
@@ -136,6 +142,7 @@ public class ProductService {
         UUID restaurantId = TenantContext.require();
         Product product = productRepository.findByIdAndRestaurantId(id, restaurantId)
                 .orElseThrow(() -> AppException.notFound(ErrorCode.PRODUCT_NOT_FOUND, "Product not found"));
+        BigDecimal previousYield = product.getYieldPercentage();
 
         if (cmd.sku() != null && !cmd.sku().equals(product.getSku())
                 && productRepository.existsByRestaurantIdAndSku(restaurantId, cmd.sku())) {
@@ -154,6 +161,7 @@ public class ProductService {
         product.setCategoryId(cmd.categoryId());
 
         Product saved = productRepository.save(product);
+        recordYield(saved, previousYield);
         auditService.log(AuditAction.PRODUCT_UPDATED, "Product", id, payloadOf(saved));
         return saved;
     }
@@ -165,6 +173,23 @@ public class ProductService {
         product.deactivate();
         productRepository.save(product);
         auditService.log(AuditAction.PRODUCT_DEACTIVATED, "Product", id);
+    }
+
+    /**
+     * Agrega un punto a la serie de rendimientos del insumo, en la misma transacción que el cambio.
+     *
+     * <p>Es la serie que explica un salto del food cost teórico: cambiar el rendimiento de la papa
+     * reprecia todos los platos que la usan, sin que nadie haya tocado una receta.
+     *
+     * <p>Solo escribe si el valor se movió, comparando con {@code compareTo} y no con
+     * {@code equals} ({@code 90} y {@code 90.00} no son iguales para {@code BigDecimal}).
+     */
+    private void recordYield(Product product, BigDecimal previousYield) {
+        BigDecimal current = product.getYieldPercentage();
+        if (current == null) return;
+        if (previousYield != null && previousYield.compareTo(current) == 0) return;
+        priceHistoryRepository.saveProductYield(PriceHistoryEntry.of(
+                product.getRestaurantId(), product.getId(), current, currentUserProvider.currentUserId()));
     }
 
     /**

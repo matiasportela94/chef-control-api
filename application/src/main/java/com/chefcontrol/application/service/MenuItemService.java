@@ -3,7 +3,10 @@ package com.chefcontrol.application.service;
 import com.chefcontrol.application.exception.AppException;
 import com.chefcontrol.application.exception.ErrorCode;
 import com.chefcontrol.application.port.AuditService;
+import com.chefcontrol.application.port.CurrentUserProvider;
 import com.chefcontrol.domain.audit.AuditAction;
+import com.chefcontrol.domain.history.PriceHistoryEntry;
+import com.chefcontrol.domain.repository.PriceHistoryRepository;
 import com.chefcontrol.domain.context.TenantContext;
 import com.chefcontrol.domain.menu.MenuItem;
 import com.chefcontrol.domain.menu.Recipe;
@@ -40,6 +43,8 @@ public class MenuItemService {
     private final ProductRepository productRepository;
     private final UnitRepository unitRepository;
     private final AuditService auditService;
+    private final PriceHistoryRepository priceHistoryRepository;
+    private final CurrentUserProvider currentUserProvider;
 
     public Page<MenuItem> listMenuItems(boolean active, PageRequest pageRequest) {
         return menuItemRepository.findByRestaurantIdAndActive(TenantContext.require(), active, pageRequest);
@@ -62,6 +67,7 @@ public class MenuItemService {
                 .active(true)
                 .build();
         item = menuItemRepository.save(item);
+        recordPrice(item, null);
         auditService.log(AuditAction.MENU_ITEM_CREATED, "MenuItem", item.getId(),
                 pricePayload(item));
         return item;
@@ -70,6 +76,7 @@ public class MenuItemService {
     @Transactional
     public MenuItem updateMenuItem(UUID id, UpdateMenuItemCommand cmd) {
         MenuItem item = getMenuItem(id);
+        BigDecimal previousPrice = item.getPrice();
         if (cmd.name() != null) item.setName(cmd.name());
         if (cmd.description() != null) item.setDescription(cmd.description());
         if (cmd.price() != null) item.setPrice(cmd.price());
@@ -77,9 +84,29 @@ public class MenuItemService {
             item.setSectionId(resolveSectionId(cmd.sectionId(), item.getRestaurantId()));
         }
         item = menuItemRepository.save(item);
+        recordPrice(item, previousPrice);
         auditService.log(AuditAction.MENU_ITEM_UPDATED, "MenuItem", item.getId(),
                 pricePayload(item));
         return item;
+    }
+
+    /**
+     * Agrega un punto a la serie de precios del plato, en la misma transacción que el cambio.
+     *
+     * <p>Solo escribe si el precio se movió: un save que no lo tocó no es un punto de la serie, y
+     * si igual escribiera, leer "cuánto valía en marzo" sería recorrer filas repetidas.
+     * Se compara con {@code compareTo} y no con {@code equals}: para {@code BigDecimal},
+     * {@code 100} y {@code 100.00} no son iguales pero valen lo mismo.
+     *
+     * <p>A diferencia del audit log —async, otra transacción, se traga los errores— acá la
+     * ausencia de fila significa una sola cosa: el precio no cambió.
+     */
+    private void recordPrice(MenuItem item, BigDecimal previousPrice) {
+        BigDecimal current = item.getPrice();
+        if (current == null) return; // un plato sin precio todavía no tiene serie que registrar
+        if (previousPrice != null && previousPrice.compareTo(current) == 0) return;
+        priceHistoryRepository.saveMenuItemPrice(PriceHistoryEntry.of(
+                item.getRestaurantId(), item.getId(), current, currentUserProvider.currentUserId()));
     }
 
     /**
