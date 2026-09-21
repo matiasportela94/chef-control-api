@@ -17,19 +17,27 @@ public record RecipeCostResponse(
         BigDecimal costPerServing,
         BigDecimal foodCostPercentage
 ) {
+    /**
+     * {@code quantity} es lo que dice la receta; {@code grossQuantity} lo que hay que comprar
+     * para tenerlo, ya dividido por el rendimiento del producto. El costo se cobra sobre el bruto,
+     * así que sin las dos cantidades el desglose no explica de dónde sale el subtotal.
+     */
     public record IngredientCost(
             UUID productId,
             String productName,
             BigDecimal quantity,
             UUID unitId,
             String unitName,
+            BigDecimal grossQuantity,
+            BigDecimal yieldPercentage,
             BigDecimal unitCost,
             BigDecimal totalCost
     ) {
         static IngredientCost from(RecipeIngredientCost ic) {
             return new IngredientCost(
                     ic.productId(), ic.productName(), ic.quantity(),
-                    ic.unitId(), ic.unitName(), ic.unitCost(), ic.totalCost());
+                    ic.unitId(), ic.unitName(), ic.grossQuantity(), ic.yieldPercentage(),
+                    ic.unitCost(), ic.totalCost());
         }
     }
 
