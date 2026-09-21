@@ -104,6 +104,7 @@ public class SaleService {
                         .build();
                 reversal = stockMovementRepository.save(reversal);
                 stockMovementRepository.markReversed(original.getId(), reversal.getId());
+                stockBatchService.reverseAllocations(restaurantId, original.getId(), reversal.getId());
 
                 alertEvaluationService.evaluate(original.getProductId(), restaurantId, reversal.getStockAfter());
             }
