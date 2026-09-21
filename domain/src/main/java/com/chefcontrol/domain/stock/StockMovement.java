@@ -71,6 +71,41 @@ public class StockMovement {
                 .build();
     }
 
+    /**
+     * Merma estándar de limpieza: la parte del bruto que nunca llega al plato porque se pela,
+     * se limpia o se recorta. Cuelga del <b>sale_item</b>, no de un waste_event, por dos razones:
+     * no hay evento que registrar (nadie tiró nada, es el rendimiento del producto), y
+     * {@code SaleService.reverseSale()} revierte todo lo que referencia al sale_item sin filtrar
+     * por tipo — así la reversión sigue siendo exacta sin código nuevo.
+     *
+     * <p><b>Invariante:</b> si este movimiento alguna vez deja de colgar de {@code sale_item},
+     * la reversión de ventas empieza a dejar stock fantasma.
+     *
+     * <p>El par {@code type=WASTE} + {@code referenceType=sale_item} es además el discriminador
+     * que separa la merma estándar de la registrada a mano (que sí cuelga de {@code waste_event}).
+     */
+    public static StockMovement forStandardYieldWaste(UUID restaurantId, UUID productId,
+                                                      BigDecimal quantity, UUID unitId, BigDecimal costPerUnit,
+                                                      BigDecimal stockBefore, UUID saleItemId, UUID userId) {
+        BigDecimal qty = r2(quantity);
+        BigDecimal before = r2(stockBefore);
+        return StockMovement.builder()
+                .restaurantId(restaurantId)
+                .productId(productId)
+                .type(MovementType.WASTE)
+                .direction(MovementDirection.OUT)
+                .quantity(qty)
+                .unitId(unitId)
+                .costPerUnit(costPerUnit)
+                .stockBefore(before)
+                .stockAfter(r2(before.subtract(qty)))
+                .referenceId(saleItemId)
+                .referenceType("sale_item")
+                .userId(userId)
+                .source(MovementSource.DASHBOARD)
+                .build();
+    }
+
     public static StockMovement forWaste(UUID restaurantId, UUID productId,
                                          BigDecimal quantity, UUID unitId, BigDecimal costPerUnit,
                                          BigDecimal stockBefore, UUID referenceId, UUID userId) {

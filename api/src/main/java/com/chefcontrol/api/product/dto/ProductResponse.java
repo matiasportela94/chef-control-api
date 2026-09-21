@@ -14,6 +14,7 @@ public record ProductResponse(
         CategorySummary category,
         BigDecimal minStock,
         BigDecimal maxStock,
+        BigDecimal yieldPercentage,
         boolean isActive,
         BigDecimal currentStock,
         LocalDate nextExpirationDate
@@ -35,6 +36,7 @@ public record ProductResponse(
                 CategorySummary.from(product),
                 product.getMinStock(),
                 product.getMaxStock(),
+                product.getYieldPercentage(),
                 product.isActive(),
                 currentStock,
                 nextExpirationDate);

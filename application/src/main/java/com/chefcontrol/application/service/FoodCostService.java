@@ -3,6 +3,7 @@ package com.chefcontrol.application.service;
 import com.chefcontrol.application.exception.AppException;
 import com.chefcontrol.application.exception.ErrorCode;
 import com.chefcontrol.domain.context.TenantContext;
+import com.chefcontrol.domain.product.Product;
 import com.chefcontrol.domain.finance.FoodCostMetric;
 import com.chefcontrol.domain.menu.MenuItem;
 import com.chefcontrol.domain.menu.Recipe;
@@ -63,18 +64,24 @@ public class FoodCostService {
 
         List<RecipeIngredientCost> ingredients = recipe.getItems().stream()
                 .map(item -> {
-                    UUID defaultUnitId = productRepository
+                    Product product = productRepository
                             .findByIdAndRestaurantId(item.getProductId(), restaurantId)
-                            .map(p -> p.getDefaultUnitId())
-                            .orElse(item.getUnitId());
+                            .orElse(null);
+                    UUID defaultUnitId = product != null ? product.getDefaultUnitId() : item.getUnitId();
                     BigDecimal qtyInDefaultUnit = unitConversionService.convert(
                             item.getQuantity(), item.getUnitId(), defaultUnitId);
+                    // El costo se cobra sobre lo que hay que comprar, no sobre lo que entra a la olla:
+                    // 200 g de papa pelada al 90% se pagan como 222,22 g.
+                    BigDecimal grossQuantity = product != null
+                            ? product.grossQuantityFor(qtyInDefaultUnit)
+                            : qtyInDefaultUnit;
                     BigDecimal unitCost = stockMovementRepository
                             .getWeightedAvgPurchaseCost(item.getProductId(), restaurantId);
-                    BigDecimal totalCost = qtyInDefaultUnit.multiply(unitCost).setScale(4, RoundingMode.HALF_UP);
+                    BigDecimal totalCost = grossQuantity.multiply(unitCost).setScale(4, RoundingMode.HALF_UP);
                     return new RecipeIngredientCost(
                             item.getProductId(), item.getProductName(),
                             item.getQuantity(), item.getUnitId(), item.getUnitName(),
+                            grossQuantity, product != null ? product.getYieldPercentage() : null,
                             unitCost, totalCost);
                 })
                 .toList();
@@ -116,12 +123,19 @@ public class FoodCostService {
             BigDecimal foodCostPercentage
     ) {}
 
+    /**
+     * {@code quantity} es lo que dice la receta (lo que entra a la olla) en su propia unidad;
+     * {@code grossQuantity} es lo que hay que comprar para tenerlo, en la unidad por defecto del
+     * producto, ya dividido por el rendimiento. {@code totalCost} se cobra sobre el bruto.
+     */
     public record RecipeIngredientCost(
             UUID productId,
             String productName,
             BigDecimal quantity,
             UUID unitId,
             String unitName,
+            BigDecimal grossQuantity,
+            BigDecimal yieldPercentage,
             BigDecimal unitCost,
             BigDecimal totalCost
     ) {}

@@ -7,6 +7,7 @@ import com.chefcontrol.application.port.CurrentUserProvider;
 import com.chefcontrol.domain.audit.AuditAction;
 import com.chefcontrol.domain.context.TenantContext;
 import com.chefcontrol.domain.menu.MenuItem;
+import com.chefcontrol.domain.product.Product;
 import com.chefcontrol.domain.menu.RecipeItem;
 import com.chefcontrol.domain.repository.*;
 import com.chefcontrol.domain.sale.Sale;
@@ -168,31 +169,50 @@ public class SaleService {
         recipeRepository.findByMenuItemIdAndRestaurantId(menuItem.getId(), restaurantId)
                 .ifPresent(recipe -> {
                     for (var ingredient : recipe.calculateIngredientsForQuantity(quantity)) {
-                        UUID defaultUnitId = productRepository
+                        Product product = productRepository
                                 .findByIdAndRestaurantId(ingredient.productId(), restaurantId)
-                                .map(p -> p.getDefaultUnitId())
-                                .orElse(ingredient.unitId());
+                                .orElse(null);
+                        UUID defaultUnitId = product != null ? product.getDefaultUnitId() : ingredient.unitId();
 
-                        BigDecimal qtyInDefaultUnit = unitConversionService.convert(
+                        BigDecimal netQuantity = unitConversionService.convert(
                                 ingredient.quantity(), ingredient.unitId(), defaultUnitId);
+                        BigDecimal grossQuantity = product != null
+                                ? product.grossQuantityFor(netQuantity)
+                                : netQuantity;
 
                         BigDecimal avgCost = stockMovementRepository
                                 .getWeightedAvgPurchaseCost(ingredient.productId(), restaurantId);
-                        BigDecimal stockBefore = stockMovementRepository
-                                .getCurrentStock(ingredient.productId(), restaurantId);
 
-                        StockMovement movement = StockMovement.forSale(
-                                restaurantId, ingredient.productId(),
-                                qtyInDefaultUnit, defaultUnitId, avgCost,
-                                stockBefore, saleItemId, userId);
-                        movement = stockMovementRepository.save(movement);
+                        // El stock se descuenta por el bruto, pero partido en dos movimientos: lo que
+                        // llega al plato como SALE y la merma de limpieza como WASTE, para que quede
+                        // medible en vez de escondida dentro del consumo.
+                        // Con rendimiento > 100 (el arroz absorbe agua) el bruto es MENOR que el neto:
+                        // no hay merma, y el SALE va por el bruto.
+                        BigDecimal saleQuantity = netQuantity.min(grossQuantity);
+                        BigDecimal yieldWaste = grossQuantity.subtract(netQuantity);
 
-                        stockBatchService.consumeFifo(restaurantId, ingredient.productId(),
-                                qtyInDefaultUnit, movement.getId());
+                        StockMovement movement = recordConsumption(StockMovement.forSale(
+                                restaurantId, ingredient.productId(), saleQuantity, defaultUnitId, avgCost,
+                                stockMovementRepository.getCurrentStock(ingredient.productId(), restaurantId),
+                                saleItemId, userId), ingredient.productId(), restaurantId);
+
+                        if (yieldWaste.compareTo(BigDecimal.ZERO) > 0) {
+                            movement = recordConsumption(StockMovement.forStandardYieldWaste(
+                                    restaurantId, ingredient.productId(), yieldWaste, defaultUnitId, avgCost,
+                                    stockMovementRepository.getCurrentStock(ingredient.productId(), restaurantId),
+                                    saleItemId, userId), ingredient.productId(), restaurantId);
+                        }
 
                         alertEvaluationService.evaluate(ingredient.productId(), restaurantId, movement.getStockAfter());
                     }
                 });
+    }
+
+    /** Graba el movimiento y consume los lotes FIFO por su cantidad. Devuelve el movimiento con id. */
+    private StockMovement recordConsumption(StockMovement movement, UUID productId, UUID restaurantId) {
+        StockMovement saved = stockMovementRepository.save(movement);
+        stockBatchService.consumeFifo(restaurantId, productId, saved.getQuantity(), saved.getId());
+        return saved;
     }
 
     private void validateIngredientCosts(List<ResolvedItem> resolvedItems, UUID restaurantId) {

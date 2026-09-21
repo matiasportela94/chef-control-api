@@ -118,6 +118,8 @@ public class ProductService {
         product.setSku(cmd.sku());
         product.setMinStock(cmd.minStock());
         product.setMaxStock(cmd.maxStock());
+        // Null = 100: el que no carga rendimiento no cambia de comportamiento.
+        product.setYieldPercentage(cmd.yieldPercentage() != null ? cmd.yieldPercentage() : new BigDecimal("100"));
         resolveUnit(cmd.defaultUnitId()); // validates existence
         resolveCategory(cmd.categoryId(), restaurantId); // validates existence
         product.setDefaultUnitId(cmd.defaultUnitId());
@@ -143,6 +145,8 @@ public class ProductService {
         product.setSku(cmd.sku());
         product.setMinStock(cmd.minStock());
         product.setMaxStock(cmd.maxStock());
+        // Null = 100: el que no carga rendimiento no cambia de comportamiento.
+        product.setYieldPercentage(cmd.yieldPercentage() != null ? cmd.yieldPercentage() : new BigDecimal("100"));
         resolveUnit(cmd.defaultUnitId()); // validates existence
         resolveCategory(cmd.categoryId(), restaurantId); // validates existence
         product.setDefaultUnitId(cmd.defaultUnitId());
@@ -183,7 +187,8 @@ public class ProductService {
             UUID defaultUnitId,
             UUID categoryId,
             BigDecimal minStock,
-            BigDecimal maxStock
+            BigDecimal maxStock,
+            BigDecimal yieldPercentage
     ) {}
 
     public record UpdateProductCommand(
@@ -192,6 +197,7 @@ public class ProductService {
             UUID defaultUnitId,
             UUID categoryId,
             BigDecimal minStock,
-            BigDecimal maxStock
+            BigDecimal maxStock,
+            BigDecimal yieldPercentage
     ) {}
 }

@@ -46,10 +46,18 @@ public interface JpaStockMovementRepository extends JpaRepository<StockMovementJ
     BigDecimal getWeightedAvgPurchaseCost(@Param("productId") UUID productId,
                                           @Param("restaurantId") UUID restaurantId);
 
+    /**
+     * Costo de lo vendido en el período: el SALE de cada receta más la merma estándar de limpieza
+     * que ese mismo consumo generó. La merma estándar cuelga del sale_item, así que el filtro por
+     * reference_type la separa de la merma registrada a mano (vencidos, robo, daño), que no es
+     * costo de lo vendido. Sin el OR, el teórico sube con el rendimiento y el realizado se queda
+     * quieto: la brecha entre ambos sería un artefacto nuestro, no un desvío real.
+     */
     @Query(value = """
             SELECT COALESCE(SUM(quantity * cost_per_unit), 0)
             FROM stock_movements
-            WHERE restaurant_id = :restaurantId AND type = 'SALE'
+            WHERE restaurant_id = :restaurantId
+              AND (type = 'SALE' OR (type = 'WASTE' AND reference_type = 'sale_item'))
               AND cost_per_unit IS NOT NULL
               AND created_at BETWEEN :from AND :to
             """, nativeQuery = true)
@@ -77,13 +85,14 @@ public interface JpaStockMovementRepository extends JpaRepository<StockMovementJ
     BigDecimal findLastPurchaseCostPerUnit(@Param("productId") UUID productId,
                                            @Param("restaurantId") UUID restaurantId);
 
+    /** Ídem {@link #sumSalesCost}, por plato. Acá el join por reference_type = 'sale_item' ya acota la merma. */
     @Query(value = """
             SELECT COALESCE(SUM(sm.quantity * sm.cost_per_unit), 0)
             FROM stock_movements sm
             JOIN sale_items si ON si.id = sm.reference_id AND sm.reference_type = 'sale_item'
             JOIN sales s ON s.id = si.sale_id
             WHERE sm.restaurant_id = :restaurantId
-              AND sm.type = 'SALE'
+              AND sm.type IN ('SALE', 'WASTE')
               AND sm.cost_per_unit IS NOT NULL
               AND si.menu_item_id = :menuItemId
               AND s.sold_at BETWEEN :from AND :to
