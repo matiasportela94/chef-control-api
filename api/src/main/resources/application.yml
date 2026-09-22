@@ -37,6 +37,13 @@ app:
     password-reset-expiration-minutes: 15
     set-password-expiration-hours: 48
 
+  alerts:
+    # Cuánto puede superar la merma registrada a mano a la estándar de limpieza antes de avisar.
+    # 0.20 = 20%. Es un punto de partida elegido, no medido — ajustar con datos reales encima.
+    waste-above-standard-threshold: ${WASTE_ABOVE_STANDARD_THRESHOLD:0.20}
+    # Lunes a las 7. Configurable para poder correr el barrido a demanda sin esperar una semana.
+    waste-sweep-cron: ${WASTE_SWEEP_CRON:0 0 7 * * MON}
+
   ai-service:
     timeout-seconds: 15
 

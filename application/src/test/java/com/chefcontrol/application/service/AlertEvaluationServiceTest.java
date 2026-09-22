@@ -7,6 +7,7 @@ import com.chefcontrol.domain.product.Product;
 import com.chefcontrol.domain.repository.AlertRepository;
 import com.chefcontrol.domain.repository.ProductRepository;
 import com.chefcontrol.domain.repository.StockBatchRepository;
+import com.chefcontrol.domain.repository.StockMovementRepository;
 import com.chefcontrol.domain.stock.StockBatch;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -36,9 +37,11 @@ class AlertEvaluationServiceTest {
     @Mock AlertRepository alertRepository;
     @Mock ProductRepository productRepository;
     @Mock StockBatchRepository stockBatchRepository;
+    @Mock StockMovementRepository stockMovementRepository;
 
     private AlertEvaluationService service() {
-        return new AlertEvaluationService(alertRepository, productRepository, stockBatchRepository);
+        return new AlertEvaluationService(alertRepository, productRepository, stockBatchRepository,
+                stockMovementRepository);
     }
 
     private Product product(UUID id) {

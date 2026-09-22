@@ -35,6 +35,9 @@ public interface StockMovementRepository {
     /** Cuándo entró cada compra del producto en el período: los puntos donde su costo cambió. */
     List<Instant> findPurchaseDates(UUID productId, UUID restaurantId, Instant from, Instant to);
 
+    /** Merma estándar vs. registrada por insumo desde {@code from}, en todos los restaurantes. */
+    List<ProductWasteSummary> sumWasteByProductSince(Instant from);
+
     BigDecimal sumSalesCost(UUID restaurantId, Instant from, Instant to);
 
     BigDecimal sumSalesCostByMenuItemAndPeriod(UUID menuItemId, UUID restaurantId, Instant from, Instant to);

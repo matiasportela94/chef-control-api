@@ -120,6 +120,32 @@ public interface JpaStockMovementRepository extends JpaRepository<StockMovementJ
                                                @Param("to") Instant to);
 
     /**
+     * Merma por insumo en el período, partida entre la estándar (de limpieza, cuelga del
+     * sale_item) y la registrada a mano (cuelga del waste_event).
+     *
+     * <p>{@code reversed_by IS NULL} no es opcional: el ledger es append-only, así que revertir
+     * una merma deja el movimiento original en su lugar y agrega uno de tipo REVERSAL. Sin el
+     * filtro, una merma cargada por error y corregida seguiría contando para la alerta.
+     *
+     * <p>El HAVING deja afuera los productos sin merma estándar en el período — los que nadie
+     * vendió, o a los que todavía no les cargaron rendimiento. Sin eso, el esperado es cero,
+     * cualquier merma lo supera y la alerta dispara para todo el catálogo.
+     */
+    @Query(value = """
+            SELECT restaurant_id,
+                   product_id,
+                   COALESCE(SUM(CASE WHEN reference_type = 'sale_item'   THEN quantity ELSE 0 END), 0),
+                   COALESCE(SUM(CASE WHEN reference_type = 'waste_event' THEN quantity ELSE 0 END), 0)
+            FROM stock_movements
+            WHERE type = 'WASTE'
+              AND reversed_by IS NULL
+              AND created_at >= :from
+            GROUP BY restaurant_id, product_id
+            HAVING SUM(CASE WHEN reference_type = 'sale_item' THEN quantity ELSE 0 END) > 0
+            """, nativeQuery = true)
+    List<Object[]> sumWasteByProductSince(@Param("from") Instant from);
+
+    /**
      * Los momentos en que entró una compra de este producto dentro del período. Cada una mueve el
      * promedio ponderado, así que son los puntos donde el costo del insumo cambió de verdad.
      */
