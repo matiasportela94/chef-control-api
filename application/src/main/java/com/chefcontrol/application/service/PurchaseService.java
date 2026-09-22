@@ -62,9 +62,15 @@ public class PurchaseService {
     public List<PurchaseItem> getPurchaseItems(UUID purchaseId) {
         getPurchase(purchaseId);
         List<PurchaseItem> items = purchaseItemRepository.findByPurchaseIdOrderByCreatedAtAsc(purchaseId);
+        // El vencimiento no es columna de purchase_items: vive en el lote que esta línea creó.
+        // Sale de la misma consulta que quantityRemaining. Sin esto, corregir una compra con
+        // reverse+recreate perdía la fecha en silencio y el lote nuevo nacía sin vencimiento.
         items.forEach(item ->
             stockBatchRepository.findByPurchaseItemId(item.getId())
-                .ifPresent(batch -> item.setQuantityRemaining(batch.getQuantityRemaining())));
+                .ifPresent(batch -> {
+                    item.setQuantityRemaining(batch.getQuantityRemaining());
+                    item.setExpirationDate(batch.getExpirationDate());
+                }));
         return items;
     }
 

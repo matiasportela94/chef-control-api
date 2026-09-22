@@ -5,6 +5,7 @@ import com.chefcontrol.domain.purchase.PurchaseItem;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -37,6 +38,7 @@ public record PurchaseDetailResponse(
             String productSku,
             BigDecimal quantity,
             BigDecimal quantityRemaining,
+            LocalDate expirationDate,
             UUID unitId,
             String unitName,
             String unitAbbreviation,
@@ -51,6 +53,7 @@ public record PurchaseDetailResponse(
                     item.getProductSku(),
                     item.getQuantity(),
                     item.getQuantityRemaining(),
+                    item.getExpirationDate(),
                     item.getUnitId(),
                     item.getUnitName(),
                     item.getUnitAbbreviation(),
