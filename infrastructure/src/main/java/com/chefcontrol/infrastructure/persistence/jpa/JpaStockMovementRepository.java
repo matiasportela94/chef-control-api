@@ -119,6 +119,23 @@ public interface JpaStockMovementRepository extends JpaRepository<StockMovementJ
                                                @Param("from") Instant from,
                                                @Param("to") Instant to);
 
+    /**
+     * Los momentos en que entró una compra de este producto dentro del período. Cada una mueve el
+     * promedio ponderado, así que son los puntos donde el costo del insumo cambió de verdad.
+     */
+    @Query(value = """
+            SELECT created_at
+            FROM stock_movements
+            WHERE product_id = :productId AND restaurant_id = :restaurantId
+              AND type = 'PURCHASE' AND cost_per_unit IS NOT NULL
+              AND created_at BETWEEN :from AND :to
+            ORDER BY created_at
+            """, nativeQuery = true)
+    List<Instant> findPurchaseDates(@Param("productId") UUID productId,
+                                    @Param("restaurantId") UUID restaurantId,
+                                    @Param("from") Instant from,
+                                    @Param("to") Instant to);
+
     @Query(value = """
             SELECT product_id,
                    COALESCE(SUM(CASE WHEN direction = 'IN' THEN quantity ELSE -quantity END), 0)

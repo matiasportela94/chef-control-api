@@ -32,6 +32,9 @@ public interface StockMovementRepository {
     /** Ídem, mirando solo las compras hasta {@code at} — para costear un período pasado. */
     BigDecimal getWeightedAvgPurchaseCostAsOf(UUID productId, UUID restaurantId, Instant at);
 
+    /** Cuándo entró cada compra del producto en el período: los puntos donde su costo cambió. */
+    List<Instant> findPurchaseDates(UUID productId, UUID restaurantId, Instant from, Instant to);
+
     BigDecimal sumSalesCost(UUID restaurantId, Instant from, Instant to);
 
     BigDecimal sumSalesCostByMenuItemAndPeriod(UUID menuItemId, UUID restaurantId, Instant from, Instant to);

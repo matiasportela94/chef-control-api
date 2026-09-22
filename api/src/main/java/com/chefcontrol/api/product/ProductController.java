@@ -2,9 +2,11 @@ package com.chefcontrol.api.product;
 
 import com.chefcontrol.api.product.dto.CreateProductRequest;
 import com.chefcontrol.api.product.dto.ProductResponse;
+import com.chefcontrol.api.foodcost.dto.ProductCostEvolutionResponse;
 import com.chefcontrol.api.product.dto.UpdateProductRequest;
 import com.chefcontrol.api.shared.PagedResponse;
 import com.chefcontrol.application.service.ProductService;
+import com.chefcontrol.application.service.FoodCostService;
 import com.chefcontrol.application.service.ProductService.CreateProductCommand;
 import com.chefcontrol.application.service.ProductService.UpdateProductCommand;
 import com.chefcontrol.application.service.StockBatchService;
@@ -15,9 +17,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 
@@ -28,6 +32,7 @@ public class ProductController {
 
     private final ProductService productService;
     private final StockService stockService;
+    private final FoodCostService foodCostService;
     private final StockBatchService stockBatchService;
 
     @GetMapping
@@ -94,5 +99,19 @@ public class ProductController {
         productService.getProduct(id); // validates product belongs to tenant
         BigDecimal stock = stockService.getCurrentStock(id);
         return ResponseEntity.ok(Map.of("productId", id, "currentStock", stock));
+    }
+
+    /** Costo por unidad comprada y por unidad utilizable, en cada momento en que alguno cambió. */
+    @GetMapping("/{id}/cost-evolution")
+    @PreAuthorize("hasAuthority('PERM_FOOD_COST_VIEW')")
+    public ResponseEntity<ProductCostEvolutionResponse> getProductCostEvolution(
+            @PathVariable UUID id,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to) {
+        var product = productService.getProduct(id);
+        return ResponseEntity.ok(ProductCostEvolutionResponse.from(id, product.getName(),
+                product.getDefaultUnitAbbreviation(), from, to,
+                foodCostService.seriesReliableFrom(),
+                foodCostService.calculateProductCostEvolution(id, from, to)));
     }
 }

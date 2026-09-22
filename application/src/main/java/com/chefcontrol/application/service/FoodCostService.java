@@ -151,6 +151,9 @@ public class FoodCostService {
                     Product product = productRepository
                             .findByIdAndRestaurantId(item.productId(), restaurantId)
                             .orElse(null);
+                    // Acá el fallback al valor de hoy sí conviene: V22 sembró una fila por
+                    // producto, así que no debería faltar ninguna — y si falta, costear con el
+                    // rendimiento actual es mejor que no devolver el costo del plato.
                     BigDecimal yieldAt = priceHistoryRepository.findProductYieldAt(item.productId(), at)
                             .map(PriceHistoryEntry::value)
                             .orElse(product != null ? product.getYieldPercentage() : null);
@@ -266,6 +269,57 @@ public class FoodCostService {
     }
 
     /**
+     * Cómo se movió el costo de un insumo: qué se pagó por unidad y qué rendimiento tenía, en
+     * cada momento en que alguna de las dos cosas cambió.
+     *
+     * <p>Los puntos son las compras del período (cada una mueve el promedio ponderado) más los
+     * cambios de rendimiento, más los extremos del rango.
+     *
+     * <p>A diferencia del plato, esta serie <b>no tiene el agujero del backfill del lado del
+     * costo</b>: {@code stock_movements} es inmutable y está completo desde el día uno. El
+     * rendimiento sí arranca con V22.
+     */
+    public List<ProductCostPoint> calculateProductCostEvolution(UUID productId, Instant from, Instant to) {
+        UUID restaurantId = TenantContext.require();
+        productRepository.findByIdAndRestaurantId(productId, restaurantId)
+                .orElseThrow(() -> AppException.notFound(ErrorCode.PRODUCT_NOT_FOUND, "Product not found"));
+
+        Set<Instant> moments = new TreeSet<>();
+        moments.add(from);
+        moments.add(to);
+        addIfInRange(moments,
+                stockMovementRepository.findPurchaseDates(productId, restaurantId, from, to).stream(),
+                from, to);
+        addIfInRange(moments, priceHistoryRepository.findProductYieldHistory(productId).stream()
+                .map(PriceHistoryEntry::validFrom), from, to);
+
+        return moments.stream().map(when -> {
+            BigDecimal purchaseCost = stockMovementRepository
+                    .getWeightedAvgPurchaseCostAsOf(productId, restaurantId, when);
+            // Sin fila de rendimiento en esa fecha el insumo todavía no existía. Devolver el
+            // rendimiento de hoy sería proyectar el presente sobre un momento en el que no había
+            // nada — el punto no tiene valores, y eso es lo que hay que decir.
+            BigDecimal yieldPercentage = priceHistoryRepository.findProductYieldAt(productId, when)
+                    .map(PriceHistoryEntry::value)
+                    .orElse(null);
+
+            // Lo que cuesta de verdad una unidad que llega al plato: si la papa rinde 90%, el kilo
+            // útil sale 1/0,9 de lo que se pagó. Es el número con el que se costean las recetas.
+            BigDecimal usableCost = purchaseCost;
+            if (yieldPercentage != null && purchaseCost != null) {
+                Product forYield = new Product();
+                forYield.setYieldPercentage(yieldPercentage);
+                usableCost = forYield.grossQuantityFor(purchaseCost);
+            }
+            boolean noPurchasesYet = purchaseCost == null || purchaseCost.compareTo(BigDecimal.ZERO) == 0;
+            return new ProductCostPoint(when,
+                    noPurchasesYet ? null : purchaseCost,
+                    yieldPercentage,
+                    noPurchasesYet ? null : usableCost);
+        }).toList();
+    }
+
+    /**
      * El costo de un ingrediente, compartido entre el cálculo de hoy y el de una fecha pasada:
      * lo único que cambia entre los dos es de dónde salen el rendimiento y el costo unitario.
      */
@@ -311,6 +365,19 @@ public class FoodCostService {
         return new MenuItemFoodCostReport(menuItem.getId(), menuItem.getName(),
                 from, to, quantitySold, revenue, realizedCost, foodCostPercentage);
     }
+
+    /**
+     * Un punto de la evolución de un insumo. {@code purchaseCost} es lo que se pagó por unidad
+     * comprada y {@code usableCost} lo que cuesta la unidad que llega al plato, ya dividida por
+     * el rendimiento. Null cuando todavía no había ninguna compra: devolver cero diría que el
+     * insumo era gratis.
+     */
+    public record ProductCostPoint(
+            Instant at,
+            BigDecimal purchaseCost,
+            BigDecimal yieldPercentage,
+            BigDecimal usableCost
+    ) {}
 
     /** Un punto de la evolución de un plato: qué valía, cuánto costaba y qué food cost daba. */
     public record PriceEvolutionPoint(

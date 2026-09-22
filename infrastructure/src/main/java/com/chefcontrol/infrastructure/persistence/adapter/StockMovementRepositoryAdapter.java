@@ -79,6 +79,11 @@ public class StockMovementRepositoryAdapter implements StockMovementRepository {
     }
 
     @Override
+    public List<Instant> findPurchaseDates(UUID productId, UUID restaurantId, Instant from, Instant to) {
+        return jpa.findPurchaseDates(productId, restaurantId, from, to);
+    }
+
+    @Override
     public BigDecimal sumSalesCost(UUID restaurantId, Instant from, Instant to) {
         return jpa.sumSalesCost(restaurantId, from, to);
     }
