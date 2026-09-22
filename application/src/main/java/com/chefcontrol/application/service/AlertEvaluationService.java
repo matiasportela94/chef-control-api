@@ -21,6 +21,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
@@ -49,6 +50,15 @@ public class AlertEvaluationService {
     /** Ventana del barrido. Una merma puntual no dice nada; la de la semana sí. */
     private static final int WASTE_SWEEP_DAYS = 7;
 
+    /**
+     * Los mensajes de alerta los lee una persona en Argentina: coma decimal y punto de miles.
+     *
+     * <p>Va explícito porque {@code String.format} sin locale usa el del JVM, y entonces el mismo
+     * mensaje sale "6,50" en una máquina y "6.50" en otra según dónde se despliegue. Un texto que
+     * cambia según el servidor es peor que uno equivocado: no se reproduce.
+     */
+    private static final Locale ES_AR = Locale.forLanguageTag("es-AR");
+
     @Transactional
     public void evaluate(UUID productId, UUID restaurantId, BigDecimal stockAfter) {
         Product product = productRepository.findByIdAndRestaurantId(productId, restaurantId)
@@ -63,7 +73,7 @@ public class AlertEvaluationService {
         if (product.getMinStock() == null) return;
 
         if (product.isLowStock(stockAfter)) {
-            String msg = String.format("Stock de '%s' (%.2f) está por debajo del mínimo (%.2f)",
+            String msg = String.format(ES_AR, "Stock de '%s' (%.2f) está por debajo del mínimo (%.2f)",
                     product.getName(), stockAfter, product.getMinStock());
             AlertSeverity severity = product.lowStockSeverity(stockAfter);
             alertRepository.findByProductIdAndTypeAndResolvedAtIsNull(product.getId(), AlertType.LOW_STOCK)
@@ -81,7 +91,7 @@ public class AlertEvaluationService {
         if (product.getMaxStock() == null) return;
 
         if (product.isOverstock(stockAfter)) {
-            String msg = String.format("Stock de '%s' (%.2f) supera el máximo (%.2f)",
+            String msg = String.format(ES_AR, "Stock de '%s' (%.2f) supera el máximo (%.2f)",
                     product.getName(), stockAfter, product.getMaxStock());
             alertRepository.findByProductIdAndTypeAndResolvedAtIsNull(product.getId(), AlertType.OVERSTOCK)
                     .ifPresentOrElse(existing -> {
@@ -119,12 +129,12 @@ public class AlertEvaluationService {
             long daysLeft = ChronoUnit.DAYS.between(today, batch.getExpirationDate());
             AlertSeverity severity = daysLeft <= 0 ? AlertSeverity.CRITICAL : AlertSeverity.WARNING;
             String msg = daysLeft < 0
-                    ? String.format("'%s' venció hace %d día(s) (%.2f unidades sin usar)",
+                    ? String.format(ES_AR, "'%s' venció hace %d día(s) (%.2f unidades sin usar)",
                             product.getName(), -daysLeft, batch.getQuantityRemaining())
                     : daysLeft == 0
-                    ? String.format("'%s' vence hoy (%.2f unidades sin usar)",
+                    ? String.format(ES_AR, "'%s' vence hoy (%.2f unidades sin usar)",
                             product.getName(), batch.getQuantityRemaining())
-                    : String.format("'%s' vence en %d día(s) (%.2f unidades sin usar)",
+                    : String.format(ES_AR, "'%s' vence en %d día(s) (%.2f unidades sin usar)",
                             product.getName(), daysLeft, batch.getQuantityRemaining());
 
             alertRepository.findByProductIdAndTypeAndResolvedAtIsNull(product.getId(), AlertType.EXPIRATION)
@@ -170,7 +180,7 @@ public class AlertEvaluationService {
             // ya no es un desvío, es otra cosa pasando.
             AlertSeverity severity = ratio.compareTo(BigDecimal.ONE) > 0
                     ? AlertSeverity.CRITICAL : AlertSeverity.WARNING;
-            String msg = String.format(
+            String msg = String.format(ES_AR, 
                     "'%s': se registraron %.2f de merma esta semana contra %.2f de merma estándar (%.0f%% más)",
                     product.getName(), waste.registered(), waste.standard(),
                     ratio.multiply(BigDecimal.valueOf(100)));

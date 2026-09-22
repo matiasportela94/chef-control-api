@@ -164,15 +164,25 @@ public class FoodCostService {
                 })
                 .toList();
 
+        BigDecimal menuPrice = priceHistoryRepository.findMenuItemPriceAt(menuItemId, at)
+                .map(PriceHistoryEntry::value)
+                .orElse(menuItem.getPrice() != null ? menuItem.getPrice() : BigDecimal.ZERO);
+
+        // Si en esa fecha ningún insumo tenía compras todavía, el costo no es cero: es
+        // desconocido. Devolver cero pone un "food cost 0%" en el gráfico, que se lee como que
+        // el plato salía gratis en vez de como que no hay con qué calcularlo.
+        boolean noCostData = !ingredients.isEmpty() && ingredients.stream()
+                .allMatch(i -> i.unitCost() == null || i.unitCost().compareTo(BigDecimal.ZERO) == 0);
+        if (noCostData) {
+            return new RecipeCostReport(menuItem.getId(), menuItem.getName(), version.servings(),
+                    menuPrice, ingredients, null, null, null);
+        }
+
         BigDecimal totalCost = ingredients.stream()
                 .map(RecipeIngredientCost::totalCost)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal costPerServing = version.servings() == 0 ? BigDecimal.ZERO
                 : totalCost.divide(BigDecimal.valueOf(version.servings()), 4, RoundingMode.HALF_UP);
-
-        BigDecimal menuPrice = priceHistoryRepository.findMenuItemPriceAt(menuItemId, at)
-                .map(PriceHistoryEntry::value)
-                .orElse(menuItem.getPrice() != null ? menuItem.getPrice() : BigDecimal.ZERO);
 
         return new RecipeCostReport(menuItem.getId(), menuItem.getName(), version.servings(), menuPrice,
                 ingredients, totalCost, costPerServing,
