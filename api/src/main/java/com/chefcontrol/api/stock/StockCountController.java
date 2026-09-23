@@ -11,6 +11,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
@@ -23,20 +24,23 @@ public class StockCountController {
     private final StockCountService stockCountService;
 
     @GetMapping
-    public ResponseEntity<PagedResponse<StockCountResponse>> list(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
+    @PreAuthorize("hasAuthority('PERM_STOCK_COUNTS_VIEW')")
+    public ResponseEntity<PagedResponse<StockCountResponse>> listStockCounts(
+                                                                             @RequestParam(defaultValue = "0") int page,
+                                                                             @RequestParam(defaultValue = "20") int size) {
         return ResponseEntity.ok(PagedResponse.of(
                 stockCountService.listCounts(PageRequest.of(page, size)).map(StockCountResponse::summary)));
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<StockCountResponse> get(@PathVariable UUID id) {
+    @PreAuthorize("hasAuthority('PERM_STOCK_COUNTS_VIEW')")
+    public ResponseEntity<StockCountResponse> getStockCount(@PathVariable UUID id) {
         return ResponseEntity.ok(StockCountResponse.from(stockCountService.getCount(id)));
     }
 
     @PostMapping
-    public ResponseEntity<StockCountResponse> create(@Valid @RequestBody CreateStockCountRequest request) {
+    @PreAuthorize("hasAuthority('PERM_STOCK_COUNTS_CREATE')")
+    public ResponseEntity<StockCountResponse> createStockCount(@Valid @RequestBody CreateStockCountRequest request) {
         var command = new CreateStockCountCommand(
                 request.notes(),
                 request.items().stream()

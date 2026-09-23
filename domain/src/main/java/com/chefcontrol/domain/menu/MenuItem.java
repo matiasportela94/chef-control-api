@@ -15,12 +15,20 @@ public class MenuItem {
     private String name;
     private String description;
     private BigDecimal price;
-    private String category;
+    private UUID sectionId;
+    private String sectionName;
+    private String sectionColor;
+    private String sectionIcon;
+    private Integer sectionSortOrder;
     private boolean active = true;
     private Instant createdAt;
 
     public void deactivate() {
         this.active = false;
+    }
+
+    public void activate() {
+        this.active = true;
     }
 
     public void validateCanBeSold() {

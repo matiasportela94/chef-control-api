@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -26,4 +27,6 @@ public interface JpaAlertRepository extends JpaRepository<AlertJpaEntity, UUID> 
     void resolveByProductAndType(@Param("productId") UUID productId,
                                  @Param("type") AlertType type,
                                  @Param("now") Instant now);
+
+    List<AlertJpaEntity> findAllByTypeAndResolvedAtIsNull(AlertType type);
 }

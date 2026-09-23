@@ -7,8 +7,10 @@ import com.chefcontrol.infrastructure.persistence.jpa.JpaRestaurantRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Repository
 @RequiredArgsConstructor
@@ -22,6 +24,11 @@ public class RestaurantRepositoryAdapter implements RestaurantRepository {
     }
 
     @Override
+    public Optional<Restaurant> findById(UUID id) {
+        return jpa.findById(id).map(RestaurantJpaEntity::toDomain);
+    }
+
+    @Override
     public boolean existsBySlug(String slug) {
         return jpa.existsBySlug(slug);
     }
@@ -29,5 +36,17 @@ public class RestaurantRepositoryAdapter implements RestaurantRepository {
     @Override
     public Restaurant save(Restaurant restaurant) {
         return jpa.save(RestaurantJpaEntity.from(restaurant)).toDomain();
+    }
+
+    @Override
+    public List<Restaurant> findAllByAccountId(UUID accountId) {
+        return jpa.findAllByAccountId(accountId).stream()
+                .map(RestaurantJpaEntity::toDomain)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public void deleteById(UUID id) {
+        jpa.deleteById(id);
     }
 }

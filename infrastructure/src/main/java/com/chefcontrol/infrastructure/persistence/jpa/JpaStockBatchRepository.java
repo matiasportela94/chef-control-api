@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -35,4 +36,20 @@ public interface JpaStockBatchRepository extends JpaRepository<StockBatchJpaEnti
     @Query(value = "UPDATE stock_batches SET quantity_remaining = 0 WHERE purchase_item_id = :purchaseItemId",
            nativeQuery = true)
     void zeroQuantityRemainingByPurchaseItemId(@Param("purchaseItemId") UUID purchaseItemId);
+
+    @Query("""
+            SELECT b.productId, MIN(b.expirationDate) FROM StockBatchJpaEntity b
+            WHERE b.restaurantId = :restaurantId
+              AND b.quantityRemaining > 0
+              AND b.expirationDate IS NOT NULL
+            GROUP BY b.productId
+            """)
+    List<Object[]> findNextExpirationByProductRaw(@Param("restaurantId") UUID restaurantId);
+
+    @Query("""
+            SELECT b FROM StockBatchJpaEntity b
+            WHERE b.quantityRemaining > 0 AND b.expirationDate <= :maxDate
+            ORDER BY b.expirationDate ASC
+            """)
+    List<StockBatchJpaEntity> findExpiringSoon(@Param("maxDate") LocalDate maxDate);
 }

@@ -4,10 +4,19 @@ import com.chefcontrol.infrastructure.persistence.entity.AuditLogJpaEntity;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
 import java.util.UUID;
 
-public interface JpaAuditLogRepository extends JpaRepository<AuditLogJpaEntity, UUID> {
+public interface JpaAuditLogRepository extends JpaRepository<AuditLogJpaEntity, UUID>,
+        JpaSpecificationExecutor<AuditLogJpaEntity> {
+
+    @Modifying
+    @Query("DELETE FROM AuditLogJpaEntity a WHERE a.restaurantId = :restaurantId")
+    void deleteByRestaurantId(@Param("restaurantId") UUID restaurantId);
 
     Page<AuditLogJpaEntity> findByActorIdOrderByCreatedAtDesc(UUID actorId, Pageable pageable);
 

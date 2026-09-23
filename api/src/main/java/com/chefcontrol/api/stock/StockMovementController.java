@@ -6,6 +6,7 @@ import com.chefcontrol.application.service.StockService;
 import com.chefcontrol.domain.shared.PageRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
@@ -18,10 +19,11 @@ public class StockMovementController {
     private final StockService stockService;
 
     @GetMapping
-    public ResponseEntity<PagedResponse<StockMovementResponse>> list(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "50") int size,
-            @RequestParam(required = false) UUID productId) {
+    @PreAuthorize("hasAuthority('PERM_STOCK_VIEW')")
+    public ResponseEntity<PagedResponse<StockMovementResponse>> listStockMovements(
+                                                                                   @RequestParam(defaultValue = "0") int page,
+                                                                                   @RequestParam(defaultValue = "50") int size,
+                                                                                   @RequestParam(required = false) UUID productId) {
         var movements = productId != null
                 ? stockService.listMovementsByProduct(productId, PageRequest.of(page, size))
                 : stockService.listMovements(PageRequest.of(page, size));
@@ -29,7 +31,8 @@ public class StockMovementController {
     }
 
     @PostMapping("/{id}/reverse")
-    public ResponseEntity<StockMovementResponse> reverse(@PathVariable UUID id) {
+    @PreAuthorize("hasAuthority('PERM_STOCK_DELETE')")
+    public ResponseEntity<StockMovementResponse> reverseStockMovement(@PathVariable UUID id) {
         return ResponseEntity.ok(StockMovementResponse.from(stockService.reverseMovement(id)));
     }
 }

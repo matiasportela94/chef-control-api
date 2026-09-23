@@ -1,5 +1,6 @@
 package com.chefcontrol.infrastructure.persistence.adapter;
 
+import com.chefcontrol.domain.repository.ProductWasteSummary;
 import com.chefcontrol.domain.repository.StockMovementRepository;
 import com.chefcontrol.domain.shared.Page;
 import com.chefcontrol.domain.shared.PageRequest;
@@ -71,6 +72,25 @@ public class StockMovementRepositoryAdapter implements StockMovementRepository {
     @Override
     public BigDecimal getWeightedAvgPurchaseCost(UUID productId, UUID restaurantId) {
         return jpa.getWeightedAvgPurchaseCost(productId, restaurantId);
+    }
+
+    @Override
+    public BigDecimal getWeightedAvgPurchaseCostAsOf(UUID productId, UUID restaurantId, Instant at) {
+        return jpa.getWeightedAvgPurchaseCostAsOf(productId, restaurantId, at);
+    }
+
+    @Override
+    public List<Instant> findPurchaseDates(UUID productId, UUID restaurantId, Instant from, Instant to) {
+        return jpa.findPurchaseDates(productId, restaurantId, from, to);
+    }
+
+    @Override
+    public List<ProductWasteSummary> sumWasteByProductSince(Instant from) {
+        return jpa.sumWasteByProductSince(from).stream()
+                .map(row -> new ProductWasteSummary(
+                        (UUID) row[0], (UUID) row[1],
+                        (BigDecimal) row[2], (BigDecimal) row[3]))
+                .toList();
     }
 
     @Override

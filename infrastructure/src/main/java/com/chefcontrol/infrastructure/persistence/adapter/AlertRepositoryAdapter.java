@@ -13,8 +13,10 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Repository
 @RequiredArgsConstructor
@@ -48,5 +50,12 @@ public class AlertRepositoryAdapter implements AlertRepository {
     @Override
     public void resolveByProductAndType(UUID productId, AlertType type, Instant now) {
         jpa.resolveByProductAndType(productId, type, now);
+    }
+
+    @Override
+    public List<Alert> findAllByTypeAndResolvedAtIsNull(AlertType type) {
+        return jpa.findAllByTypeAndResolvedAtIsNull(type).stream()
+                .map(AlertJpaEntity::toDomain)
+                .collect(Collectors.toList());
     }
 }

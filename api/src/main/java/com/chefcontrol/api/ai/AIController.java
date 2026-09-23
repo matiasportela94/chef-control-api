@@ -21,7 +21,7 @@ public class AIController {
     private final AIExecuteService     aiExecuteService;
 
     @PostMapping("/interpret")
-    @PreAuthorize("hasAnyRole('OWNER', 'MANAGER', 'KITCHEN')")
+    @PreAuthorize("hasAuthority('PERM_AI_USE')")
     public ResponseEntity<InterpretResponse> interpret(@Valid @RequestBody InterpretRequest request) {
         var r = textInterpretService.interpret(request.message());
         return ResponseEntity.ok(new InterpretResponse(
@@ -29,7 +29,7 @@ public class AIController {
     }
 
     @PostMapping("/execute")
-    @PreAuthorize("hasAnyRole('OWNER', 'MANAGER', 'KITCHEN')")
+    @PreAuthorize("hasAuthority('PERM_AI_USE')")
     public ResponseEntity<ExecuteResponse> execute(@Valid @RequestBody ExecuteRequest request) {
         var result = aiExecuteService.execute(request.intent(), request.data());
         return ResponseEntity.ok(new ExecuteResponse(result.success(), result.message(), result.created(), result.skipped()));

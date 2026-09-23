@@ -17,4 +17,7 @@ public interface UserRestaurantRepository {
     Optional<UserRestaurant> findByUserIdAndRestaurantId(UUID userId, UUID restaurantId);
 
     UserRestaurant save(UserRestaurant membership);
+
+    /** Para bloquear el borrado de un rol que todavía tiene gente asignada. */
+    boolean existsByRoleIdAndIsActiveTrue(UUID roleId);
 }

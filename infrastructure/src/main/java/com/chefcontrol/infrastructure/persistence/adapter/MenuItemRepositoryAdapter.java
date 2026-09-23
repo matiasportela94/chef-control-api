@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -21,9 +22,18 @@ public class MenuItemRepositoryAdapter implements MenuItemRepository {
     private final JpaMenuItemRepository jpa;
 
     @Override
-    public Page<MenuItem> findByRestaurantIdAndActiveTrue(UUID restaurantId, PageRequest pageRequest) {
+    public Page<MenuItem> findByRestaurantIdAndActive(UUID restaurantId, boolean active, PageRequest pageRequest) {
         return PersistenceUtils.toDomain(
-                jpa.findByRestaurantIdAndActiveTrue(restaurantId,
+                jpa.findByRestaurantIdAndActive(restaurantId, active,
+                        PersistenceUtils.toSpring(pageRequest, Sort.by("name").ascending()))
+                   .map(MenuItemJpaEntity::toDomain));
+    }
+
+    @Override
+    public Page<MenuItem> findByRestaurantIdAndActiveAndIdIn(UUID restaurantId, boolean active,
+                                                             Collection<UUID> ids, PageRequest pageRequest) {
+        return PersistenceUtils.toDomain(
+                jpa.findByRestaurantIdAndActiveAndIdIn(restaurantId, active, ids,
                         PersistenceUtils.toSpring(pageRequest, Sort.by("name").ascending()))
                    .map(MenuItemJpaEntity::toDomain));
     }
@@ -31,6 +41,11 @@ public class MenuItemRepositoryAdapter implements MenuItemRepository {
     @Override
     public Optional<MenuItem> findByIdAndRestaurantId(UUID id, UUID restaurantId) {
         return jpa.findByIdAndRestaurantId(id, restaurantId).map(MenuItemJpaEntity::toDomain);
+    }
+
+    @Override
+    public boolean existsBySectionId(UUID sectionId) {
+        return jpa.existsBySectionId(sectionId);
     }
 
     @Override

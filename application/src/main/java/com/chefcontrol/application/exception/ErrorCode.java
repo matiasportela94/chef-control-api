@@ -21,11 +21,18 @@ public enum ErrorCode {
     MOVEMENT_CANNOT_BE_REVERSED (Category.BAD_REQUEST),
     STOCK_COUNT_NOT_FOUND       (Category.NOT_FOUND),
     ALERT_NOT_FOUND             (Category.NOT_FOUND),
+    ROLE_NOT_FOUND              (Category.NOT_FOUND),
+    DUPLICATE_ROLE_NAME         (Category.CONFLICT),
+    SYSTEM_ROLE_IMMUTABLE       (Category.FORBIDDEN),
+    ROLE_IN_USE                 (Category.CONFLICT),
+    PLAN_LIMIT_REACHED          (Category.FORBIDDEN),
 
     // Restaurant access
     RESTAURANT_NOT_FOUND    (Category.NOT_FOUND),
     RESTAURANT_ACCESS_DENIED(Category.FORBIDDEN),
     RESTAURANT_INACTIVE     (Category.FORBIDDEN),
+    CANNOT_MODIFY_CURRENT_RESTAURANT(Category.CONFLICT),
+    NOT_ACCOUNT_OWNER       (Category.FORBIDDEN),
 
     // WhatsApp
     UNREGISTERED_PHONE      (Category.FORBIDDEN),
@@ -41,6 +48,11 @@ public enum ErrorCode {
     RECIPE_NOT_FOUND        (Category.NOT_FOUND),
     MENU_ITEM_NOT_FOUND     (Category.NOT_FOUND),
     MENU_ITEM_INACTIVE      (Category.BAD_REQUEST),
+    CARTA_NOT_FOUND         (Category.NOT_FOUND),
+    MENU_SECTION_NOT_FOUND  (Category.NOT_FOUND),
+    IMAGE_EMPTY                 (Category.BAD_REQUEST),
+    IMAGE_TOO_LARGE             (Category.BAD_REQUEST),
+    IMAGE_FORMAT_NOT_SUPPORTED  (Category.BAD_REQUEST),
     SALE_NOT_FOUND          (Category.NOT_FOUND),
 
     // Business rules
@@ -52,6 +64,9 @@ public enum ErrorCode {
     DUPLICATE_PHONE         (Category.CONFLICT),
     DUPLICATE_SLUG          (Category.CONFLICT),
     DUPLICATE_SKU           (Category.CONFLICT),
+    DUPLICATE_CARTA_NAME    (Category.CONFLICT),
+    DUPLICATE_MENU_SECTION_NAME (Category.CONFLICT),
+    MENU_SECTION_HAS_ITEMS      (Category.CONFLICT),
     CATEGORY_HAS_PRODUCTS       (Category.CONFLICT),
     SYSTEM_CATEGORY_IMMUTABLE   (Category.FORBIDDEN),
 

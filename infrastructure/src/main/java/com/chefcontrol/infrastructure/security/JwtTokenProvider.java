@@ -1,5 +1,6 @@
 package com.chefcontrol.infrastructure.security;
 
+import com.chefcontrol.application.service.PermissionResolutionService;
 import com.chefcontrol.domain.user.User;
 import com.chefcontrol.domain.user.UserRestaurant;
 import io.jsonwebtoken.Claims;
@@ -7,6 +8,7 @@ import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import jakarta.annotation.PostConstruct;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -20,8 +22,11 @@ import java.util.List;
 import java.util.UUID;
 
 @Component
+@RequiredArgsConstructor
 @Slf4j
 public class JwtTokenProvider {
+
+    private final PermissionResolutionService permissionResolutionService;
 
     @Value("${app.jwt.secret}")
     private String secret;
@@ -41,11 +46,14 @@ public class JwtTokenProvider {
                 .map(ur -> ur.getRestaurantId().toString())
                 .toList();
 
-        String roleName = memberships.stream()
+        UserRestaurant activeMembership = memberships.stream()
                 .filter(ur -> ur.getRestaurantId().equals(activeRestaurantId))
-                .map(ur -> ur.getRoleName().name())
                 .findFirst()
-                .orElse("READONLY");
+                .orElseThrow(() -> new IllegalStateException("No membership for active restaurant"));
+
+        List<String> permissions = permissionResolutionService
+                .resolveEffectivePermissions(user.getId(), activeRestaurantId, activeMembership.getRoleId())
+                .stream().map(Enum::name).toList();
 
         return Jwts.builder()
                 .subject(user.getEmail())
@@ -53,7 +61,8 @@ public class JwtTokenProvider {
                 .claim("name", user.getName())
                 .claim("restaurantIds", restaurantIds)
                 .claim("activeRestaurantId", activeRestaurantId.toString())
-                .claim("role", roleName)
+                .claim("role", activeMembership.getRoleName())
+                .claim("permissions", permissions)
                 .issuedAt(Date.from(ChefControlTime.nowInstant()))
                 .expiration(Date.from(ChefControlTime.nowInstant().plusMillis(expirationMs)))
                 .signWith(key)

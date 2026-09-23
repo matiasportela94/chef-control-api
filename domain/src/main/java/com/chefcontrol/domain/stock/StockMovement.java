@@ -30,8 +30,8 @@ public class StockMovement {
     public static StockMovement forPurchase(UUID restaurantId, UUID productId,
                                             BigDecimal quantity, UUID unitId, BigDecimal costPerUnit,
                                             BigDecimal stockBefore, UUID referenceId, UUID userId) {
-        BigDecimal qty = r2(quantity);
-        BigDecimal before = r2(stockBefore);
+        BigDecimal qty = r3(quantity);
+        BigDecimal before = r3(stockBefore);
         return StockMovement.builder()
                 .restaurantId(restaurantId)
                 .productId(productId)
@@ -41,7 +41,7 @@ public class StockMovement {
                 .unitId(unitId)
                 .costPerUnit(costPerUnit)
                 .stockBefore(before)
-                .stockAfter(r2(before.add(qty)))
+                .stockAfter(r3(before.add(qty)))
                 .referenceId(referenceId)
                 .referenceType("purchase_item")
                 .userId(userId)
@@ -52,8 +52,8 @@ public class StockMovement {
     public static StockMovement forSale(UUID restaurantId, UUID productId,
                                         BigDecimal quantity, UUID unitId, BigDecimal avgCost,
                                         BigDecimal stockBefore, UUID referenceId, UUID userId) {
-        BigDecimal qty = r2(quantity);
-        BigDecimal before = r2(stockBefore);
+        BigDecimal qty = r3(quantity);
+        BigDecimal before = r3(stockBefore);
         return StockMovement.builder()
                 .restaurantId(restaurantId)
                 .productId(productId)
@@ -63,7 +63,7 @@ public class StockMovement {
                 .unitId(unitId)
                 .costPerUnit(avgCost)
                 .stockBefore(before)
-                .stockAfter(r2(before.subtract(qty)))
+                .stockAfter(r3(before.subtract(qty)))
                 .referenceId(referenceId)
                 .referenceType("sale_item")
                 .userId(userId)
@@ -71,11 +71,24 @@ public class StockMovement {
                 .build();
     }
 
-    public static StockMovement forWaste(UUID restaurantId, UUID productId,
-                                         BigDecimal quantity, UUID unitId, BigDecimal costPerUnit,
-                                         BigDecimal stockBefore, UUID referenceId, UUID userId) {
-        BigDecimal qty = r2(quantity);
-        BigDecimal before = r2(stockBefore);
+    /**
+     * Merma estándar de limpieza: la parte del bruto que nunca llega al plato porque se pela,
+     * se limpia o se recorta. Cuelga del <b>sale_item</b>, no de un waste_event, por dos razones:
+     * no hay evento que registrar (nadie tiró nada, es el rendimiento del producto), y
+     * {@code SaleService.reverseSale()} revierte todo lo que referencia al sale_item sin filtrar
+     * por tipo — así la reversión sigue siendo exacta sin código nuevo.
+     *
+     * <p><b>Invariante:</b> si este movimiento alguna vez deja de colgar de {@code sale_item},
+     * la reversión de ventas empieza a dejar stock fantasma.
+     *
+     * <p>El par {@code type=WASTE} + {@code referenceType=sale_item} es además el discriminador
+     * que separa la merma estándar de la registrada a mano (que sí cuelga de {@code waste_event}).
+     */
+    public static StockMovement forStandardYieldWaste(UUID restaurantId, UUID productId,
+                                                      BigDecimal quantity, UUID unitId, BigDecimal costPerUnit,
+                                                      BigDecimal stockBefore, UUID saleItemId, UUID userId) {
+        BigDecimal qty = r3(quantity);
+        BigDecimal before = r3(stockBefore);
         return StockMovement.builder()
                 .restaurantId(restaurantId)
                 .productId(productId)
@@ -85,7 +98,29 @@ public class StockMovement {
                 .unitId(unitId)
                 .costPerUnit(costPerUnit)
                 .stockBefore(before)
-                .stockAfter(r2(before.subtract(qty)))
+                .stockAfter(r3(before.subtract(qty)))
+                .referenceId(saleItemId)
+                .referenceType("sale_item")
+                .userId(userId)
+                .source(MovementSource.DASHBOARD)
+                .build();
+    }
+
+    public static StockMovement forWaste(UUID restaurantId, UUID productId,
+                                         BigDecimal quantity, UUID unitId, BigDecimal costPerUnit,
+                                         BigDecimal stockBefore, UUID referenceId, UUID userId) {
+        BigDecimal qty = r3(quantity);
+        BigDecimal before = r3(stockBefore);
+        return StockMovement.builder()
+                .restaurantId(restaurantId)
+                .productId(productId)
+                .type(MovementType.WASTE)
+                .direction(MovementDirection.OUT)
+                .quantity(qty)
+                .unitId(unitId)
+                .costPerUnit(costPerUnit)
+                .stockBefore(before)
+                .stockAfter(r3(before.subtract(qty)))
                 .referenceId(referenceId)
                 .referenceType("waste_event")
                 .userId(userId)
@@ -100,8 +135,8 @@ public class StockMovement {
     public static StockMovement forAdjustment(UUID restaurantId, UUID productId,
                                                BigDecimal currentStock, BigDecimal countedQuantity,
                                                UUID unitId, UUID referenceId, UUID userId) {
-        BigDecimal before = r2(currentStock);
-        BigDecimal after  = r2(countedQuantity);
+        BigDecimal before = r3(currentStock);
+        BigDecimal after  = r3(countedQuantity);
         BigDecimal delta  = after.subtract(before);
         MovementDirection direction = delta.compareTo(BigDecimal.ZERO) > 0
                 ? MovementDirection.IN : MovementDirection.OUT;
@@ -121,7 +156,20 @@ public class StockMovement {
                 .build();
     }
 
-    private static BigDecimal r2(BigDecimal v) {
-        return v == null ? BigDecimal.ZERO : v.setScale(2, RoundingMode.HALF_UP);
+    /**
+     * Redondea una cantidad física a 3 decimales, que es lo que guarda la columna
+     * ({@code NUMERIC(12,3)}).
+     *
+     * <p>Estuvo en 2 decimales hasta el 2026-09-21 y eso rompía todo producto medido en una
+     * unidad grande: 5 g de sal de un producto en kg son 0,005 y se guardaban como <b>0,01</b>
+     * —el doble— mientras que 4 g se guardaban como 0. El ruido visual que motivó el redondeo
+     * original (`-2.135,299` en el historial) era un problema de display, y eso lo resuelve
+     * `formatNum` en el front, no la base.
+     *
+     * <p>Ojo: esto redondea <b>cantidades</b>. La plata se sigue redondeando a 2 decimales en
+     * {@code Money} y en los servicios; son dos cosas distintas.
+     */
+    private static BigDecimal r3(BigDecimal v) {
+        return v == null ? BigDecimal.ZERO : v.setScale(3, RoundingMode.HALF_UP);
     }
 }

@@ -1,5 +1,6 @@
 package com.chefcontrol.infrastructure.security;
 
+import com.chefcontrol.domain.context.RequestIpContext;
 import com.chefcontrol.domain.context.TenantContext;
 import com.chefcontrol.domain.security.ChefControlPrincipal;
 import io.jsonwebtoken.Claims;
@@ -35,6 +36,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     protected void doFilterInternal(@NonNull HttpServletRequest request,
                                     @NonNull HttpServletResponse response,
                                     @NonNull FilterChain filterChain) throws ServletException, IOException {
+        RequestIpContext.set(clientIp(request));
         try {
             String token = extractToken(request);
             if (token != null && jwtTokenProvider.validateToken(token)) {
@@ -49,14 +51,22 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 }
 
                 String role = claims.get("role", String.class);
+                @SuppressWarnings("unchecked")
+                List<String> permissions = claims.get("permissions", List.class);
+                if (permissions == null) permissions = List.of(); // tokens viejos, emitidos antes del claim
+
                 var principal = new ChefControlPrincipal(
                         UUID.fromString(claims.get("userId", String.class)),
                         claims.getSubject(),
                         activeRestaurantId,
-                        role);
+                        role,
+                        permissions);
 
-                var auth = new UsernamePasswordAuthenticationToken(
-                        principal, null, List.of(new SimpleGrantedAuthority("ROLE_" + role)));
+                List<SimpleGrantedAuthority> authorities = new java.util.ArrayList<>();
+                authorities.add(new SimpleGrantedAuthority("ROLE_" + role));
+                permissions.forEach(p -> authorities.add(new SimpleGrantedAuthority("PERM_" + p)));
+
+                var auth = new UsernamePasswordAuthenticationToken(principal, null, authorities);
                 auth.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                 SecurityContextHolder.getContext().setAuthentication(auth);
             }
@@ -68,7 +78,17 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             filterChain.doFilter(request, response);
         } finally {
             TenantContext.clear();
+            RequestIpContext.clear();
         }
+    }
+
+    /** Prioriza X-Forwarded-For (Railway/Vercel están detrás de proxy) sobre la IP directa del socket. */
+    private String clientIp(HttpServletRequest request) {
+        String forwardedFor = request.getHeader("X-Forwarded-For");
+        if (StringUtils.hasText(forwardedFor)) {
+            return forwardedFor.split(",")[0].trim();
+        }
+        return request.getRemoteAddr();
     }
 
     /**

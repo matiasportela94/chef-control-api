@@ -2,7 +2,9 @@ package com.chefcontrol.api.user;
 
 import com.chefcontrol.api.user.dto.CreateUserRequest;
 import com.chefcontrol.api.user.dto.CreateUserResponse;
+import com.chefcontrol.api.user.dto.SetPermissionOverridesRequest;
 import com.chefcontrol.api.user.dto.UpdateUserRequest;
+import com.chefcontrol.api.user.dto.UserPermissionsResponse;
 import com.chefcontrol.api.user.dto.UserResponse;
 import com.chefcontrol.application.service.UserManagementService;
 import com.chefcontrol.application.service.UserManagementService.CreateUserCommand;
@@ -25,44 +27,62 @@ public class UserController {
     private final UserManagementService userManagementService;
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('OWNER', 'MANAGER')")
+    @PreAuthorize("hasAuthority('PERM_USERS_VIEW')")
     public ResponseEntity<List<UserResponse>> listUsers() {
         return ResponseEntity.ok(
                 userManagementService.listUsers().stream().map(UserResponse::from).toList());
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('OWNER', 'MANAGER')")
+    @PreAuthorize("hasAuthority('PERM_USERS_VIEW')")
     public ResponseEntity<UserResponse> getUser(@PathVariable UUID id) {
         return ResponseEntity.ok(UserResponse.from(userManagementService.getUser(id)));
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('OWNER', 'MANAGER')")
+    @PreAuthorize("hasAuthority('PERM_USERS_CREATE')")
     public ResponseEntity<CreateUserResponse> createUser(@Valid @RequestBody CreateUserRequest request) {
         var command = new CreateUserCommand(
                 request.name(),
                 request.email(),
                 request.phone(),
-                request.role());
+                request.roleId());
         var result = userManagementService.createUser(command);
         return ResponseEntity.status(HttpStatus.CREATED).body(
                 new CreateUserResponse(UserResponse.from(result.membership())));
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('OWNER', 'MANAGER')")
+    @PreAuthorize("hasAuthority('PERM_USERS_UPDATE')")
     public ResponseEntity<UserResponse> updateUser(
             @PathVariable UUID id,
             @Valid @RequestBody UpdateUserRequest request) {
-        var command = new UpdateUserCommand(request.name(), request.phone(), request.role());
+        var command = new UpdateUserCommand(request.name(), request.phone(), request.roleId());
         return ResponseEntity.ok(UserResponse.from(userManagementService.updateUser(id, command)));
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAnyRole('OWNER', 'MANAGER')")
+    @PreAuthorize("hasAuthority('PERM_USERS_DELETE')")
     public ResponseEntity<Void> deactivateUser(@PathVariable UUID id) {
         userManagementService.deactivateUser(id);
         return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/{id}/permissions")
+    @PreAuthorize("hasAuthority('PERM_ROLES_VIEW')")
+    public ResponseEntity<UserPermissionsResponse> getPermissions(@PathVariable UUID id) {
+        return ResponseEntity.ok(UserPermissionsResponse.from(userManagementService.getPermissions(id)));
+    }
+
+    @PutMapping("/{id}/permissions")
+    @PreAuthorize("hasAuthority('PERM_ROLES_UPDATE')")
+    public ResponseEntity<UserPermissionsResponse> setPermissions(
+            @PathVariable UUID id,
+            @Valid @RequestBody SetPermissionOverridesRequest request) {
+        var overrides = request.overrides().stream()
+                .map(o -> new UserManagementService.PermissionOverrideCommand(o.permission(), o.granted()))
+                .toList();
+        userManagementService.setPermissionOverrides(id, overrides);
+        return ResponseEntity.ok(UserPermissionsResponse.from(userManagementService.getPermissions(id)));
     }
 }

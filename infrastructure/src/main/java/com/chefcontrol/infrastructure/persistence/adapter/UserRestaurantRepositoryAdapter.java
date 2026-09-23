@@ -61,4 +61,9 @@ public class UserRestaurantRepositoryAdapter implements UserRestaurantRepository
         entity.setCreatedAt(domain.getCreatedAt());
         return jpa.save(entity).toDomain();
     }
+
+    @Override
+    public boolean existsByRoleIdAndIsActiveTrue(UUID roleId) {
+        return jpa.existsByRole_IdAndIsActiveTrue(roleId);
+    }
 }

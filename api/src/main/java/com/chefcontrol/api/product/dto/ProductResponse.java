@@ -3,6 +3,7 @@ package com.chefcontrol.api.product.dto;
 import com.chefcontrol.domain.product.Product;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.UUID;
 
 public record ProductResponse(
@@ -13,14 +14,20 @@ public record ProductResponse(
         CategorySummary category,
         BigDecimal minStock,
         BigDecimal maxStock,
+        BigDecimal yieldPercentage,
         boolean isActive,
-        BigDecimal currentStock
+        BigDecimal currentStock,
+        LocalDate nextExpirationDate
 ) {
     public static ProductResponse from(Product product) {
-        return from(product, null);
+        return from(product, null, null);
     }
 
     public static ProductResponse from(Product product, BigDecimal currentStock) {
+        return from(product, currentStock, null);
+    }
+
+    public static ProductResponse from(Product product, BigDecimal currentStock, LocalDate nextExpirationDate) {
         return new ProductResponse(
                 product.getId(),
                 product.getName(),
@@ -29,8 +36,10 @@ public record ProductResponse(
                 CategorySummary.from(product),
                 product.getMinStock(),
                 product.getMaxStock(),
+                product.getYieldPercentage(),
                 product.isActive(),
-                currentStock);
+                currentStock,
+                nextExpirationDate);
     }
 
     public record UnitSummary(UUID id, String name, String abbreviation) {

@@ -3,6 +3,7 @@ package com.chefcontrol.infrastructure.audit;
 import com.chefcontrol.application.port.AuditService;
 import com.chefcontrol.domain.audit.AuditAction;
 import com.chefcontrol.domain.audit.AuditLog;
+import com.chefcontrol.domain.context.RequestIpContext;
 import com.chefcontrol.domain.context.TenantContext;
 import com.chefcontrol.domain.repository.AuditLogRepository;
 import com.chefcontrol.domain.security.ChefControlPrincipal;
@@ -59,6 +60,7 @@ public class JpaAuditService implements AuditService {
                     .entityType(entityType)
                     .entityId(entityId)
                     .payload(payload)
+                    .ipAddress(RequestIpContext.get())
                     .build();
             auditLogRepository.save(entry);
         } catch (Exception e) {

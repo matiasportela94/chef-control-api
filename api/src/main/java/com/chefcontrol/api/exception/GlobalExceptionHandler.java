@@ -14,6 +14,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import java.util.stream.Collectors;
 
@@ -44,6 +45,18 @@ public class GlobalExceptionHandler {
                 .status(HttpStatus.UNAUTHORIZED)
                 .body(ErrorResponse.of(ErrorCode.INVALID_CREDENTIALS,
                         "Invalid email or password", request.getRequestURI()));
+    }
+
+    /**
+     * El limite de multipart corta el request antes de llegar al servicio, asi que sin esto
+     * una foto grande devuelve 500 en vez de decir que es grande.
+     */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ErrorResponse> handleUploadTooLarge(HttpServletRequest request) {
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of(ErrorCode.IMAGE_TOO_LARGE,
+                        "The file is too large", request.getRequestURI()));
     }
 
     @ExceptionHandler(AuthorizationDeniedException.class)

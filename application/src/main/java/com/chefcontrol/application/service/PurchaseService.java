@@ -62,9 +62,15 @@ public class PurchaseService {
     public List<PurchaseItem> getPurchaseItems(UUID purchaseId) {
         getPurchase(purchaseId);
         List<PurchaseItem> items = purchaseItemRepository.findByPurchaseIdOrderByCreatedAtAsc(purchaseId);
+        // El vencimiento no es columna de purchase_items: vive en el lote que esta línea creó.
+        // Sale de la misma consulta que quantityRemaining. Sin esto, corregir una compra con
+        // reverse+recreate perdía la fecha en silencio y el lote nuevo nacía sin vencimiento.
         items.forEach(item ->
             stockBatchRepository.findByPurchaseItemId(item.getId())
-                .ifPresent(batch -> item.setQuantityRemaining(batch.getQuantityRemaining())));
+                .ifPresent(batch -> {
+                    item.setQuantityRemaining(batch.getQuantityRemaining());
+                    item.setExpirationDate(batch.getExpirationDate());
+                }));
         return items;
     }
 
@@ -167,10 +173,13 @@ public class PurchaseService {
         Purchase purchase = purchaseRepository.findByIdAndRestaurantId(purchaseId, restaurantId)
                 .orElseThrow(() -> AppException.notFound(ErrorCode.PURCHASE_NOT_FOUND, "Purchase not found"));
 
+        BigDecimal oldTotal = purchase.getTotal();
+
         purchase.setSupplierId(cmd.supplierId());
         purchase.setNotes(cmd.notes());
         if (cmd.purchasedAt() != null) purchase.setPurchasedAt(cmd.purchasedAt());
 
+        int itemsUpdated = cmd.items() != null ? cmd.items().size() : 0;
         if (cmd.items() != null) {
             for (ItemPriceUpdate update : cmd.items()) {
                 PurchaseItem item = purchaseItemRepository.findById(update.id())
@@ -192,7 +201,11 @@ public class PurchaseService {
                 .setScale(2, RoundingMode.HALF_UP);
         purchase.setTotal(newTotal);
 
-        return purchaseRepository.save(purchase);
+        purchase = purchaseRepository.save(purchase);
+
+        auditService.log(AuditAction.PURCHASE_UPDATED, "Purchase", purchase.getId(),
+                Map.of("itemsUpdated", itemsUpdated, "oldTotal", oldTotal, "newTotal", newTotal));
+        return purchase;
     }
 
     @Transactional
@@ -244,8 +257,7 @@ public class PurchaseService {
         purchase.setStatus(PurchaseStatus.REVERSED);
         purchase = purchaseRepository.save(purchase);
 
-        auditService.log(AuditAction.PURCHASE_CREATED, "Purchase", purchase.getId(),
-                Map.of("action", "REVERSED"));
+        auditService.log(AuditAction.PURCHASE_REVERSED, "Purchase", purchase.getId(), Map.of());
         return purchase;
     }
 

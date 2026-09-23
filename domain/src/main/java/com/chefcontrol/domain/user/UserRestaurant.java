@@ -1,6 +1,5 @@
 package com.chefcontrol.domain.user;
 
-import com.chefcontrol.domain.plan.PlanTier;
 import lombok.*;
 
 import java.time.Instant;
@@ -14,13 +13,15 @@ public class UserRestaurant {
 
     // Denormalized from role join
     private UUID roleId;
-    private RoleName roleName;
+    private String roleName;
+    private boolean roleIsSystem;
 
     // Denormalized from restaurant join
     private String restaurantName;
+    /** La cuenta dueña del restaurante: permite agrupar el switcher cuando alguien cruza cuentas. */
+    private UUID restaurantAccountId;
     private String restaurantSlug;
     private String restaurantTimezone;
-    private PlanTier restaurantPlan;
 
     // Denormalized from user join (populated when querying by restaurant)
     private String userEmail;

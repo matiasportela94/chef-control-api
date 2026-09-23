@@ -12,6 +12,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
@@ -24,22 +25,25 @@ public class SaleController {
     private final SaleService saleService;
 
     @GetMapping
-    public ResponseEntity<PagedResponse<SaleResponse>> list(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "50") int size) {
+    @PreAuthorize("hasAuthority('PERM_SALES_VIEW')")
+    public ResponseEntity<PagedResponse<SaleResponse>> listSales(
+                                                                 @RequestParam(defaultValue = "0") int page,
+                                                                 @RequestParam(defaultValue = "50") int size) {
         return ResponseEntity.ok(PagedResponse.of(
                 saleService.listSales(PageRequest.of(page, size))
                         .map(sale -> SaleResponse.summary(sale, saleService.getItemCount(sale.getId())))));
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<SaleResponse> get(@PathVariable UUID id) {
+    @PreAuthorize("hasAuthority('PERM_SALES_VIEW')")
+    public ResponseEntity<SaleResponse> getSale(@PathVariable UUID id) {
         Sale sale = saleService.getSale(id);
         return ResponseEntity.ok(SaleResponse.from(sale, saleService.getSaleItems(id)));
     }
 
     @PostMapping
-    public ResponseEntity<SaleResponse> create(@Valid @RequestBody CreateSaleRequest request) {
+    @PreAuthorize("hasAuthority('PERM_SALES_CREATE')")
+    public ResponseEntity<SaleResponse> createSale(@Valid @RequestBody CreateSaleRequest request) {
         var cmd = new CreateSaleCommand(
                 request.notes(),
                 request.soldAt(),
@@ -52,7 +56,8 @@ public class SaleController {
     }
 
     @PostMapping("/{id}/reverse")
-    public ResponseEntity<SaleResponse> reverse(@PathVariable UUID id) {
+    @PreAuthorize("hasAuthority('PERM_SALES_DELETE')")
+    public ResponseEntity<SaleResponse> reverseSale(@PathVariable UUID id) {
         Sale sale = saleService.reverseSale(id);
         return ResponseEntity.ok(SaleResponse.from(sale, saleService.getSaleItems(sale.getId())));
     }
