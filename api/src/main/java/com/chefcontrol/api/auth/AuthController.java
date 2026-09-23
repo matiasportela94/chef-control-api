@@ -15,6 +15,7 @@ import com.chefcontrol.domain.audit.AuditAction;
 import com.chefcontrol.application.exception.AppException;
 import com.chefcontrol.application.exception.ErrorCode;
 import com.chefcontrol.domain.repository.UserRepository;
+import com.chefcontrol.domain.repository.AccountRepository;
 import com.chefcontrol.domain.repository.UserRestaurantRepository;
 import com.chefcontrol.domain.security.ChefControlPrincipal;
 import com.chefcontrol.domain.shared.time.ChefControlTime;
@@ -36,7 +37,9 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 @RestController
@@ -48,6 +51,7 @@ public class AuthController {
     private final JwtTokenProvider jwtTokenProvider;
     private final UserRepository userRepository;
     private final UserRestaurantRepository userRestaurantRepository;
+    private final AccountRepository accountRepository;
     private final PasswordResetService passwordResetService;
     private final RestaurantRegistrationService registrationService;
     private final PermissionResolutionService permissionResolutionService;
@@ -186,11 +190,23 @@ public class AuthController {
                 .findFirst()
                 .orElseThrow(() -> AppException.notFound(ErrorCode.RESTAURANT_NOT_FOUND, "Active restaurant not found"));
 
+        // Los nombres de cuenta se resuelven de una y se reusan: un usuario tiene una o dos
+        // cuentas, no cien, así que un mapa alcanza y evita una consulta por restaurante.
+        Map<UUID, String> accountNames = memberships.stream()
+                .map(UserRestaurant::getRestaurantAccountId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(HashMap::new,
+                        (m, id) -> accountRepository.findById(id).ifPresent(a -> m.put(id, a.getName())),
+                        HashMap::putAll);
+
         List<LoginResponse.RestaurantSummary> restaurants = memberships.stream()
                 .map(ur -> new LoginResponse.RestaurantSummary(
                         ur.getRestaurantId(),
                         ur.getRestaurantName(),
-                        ur.getRoleName()))
+                        ur.getRoleName(),
+                        ur.getRestaurantAccountId(),
+                        accountNames.get(ur.getRestaurantAccountId())))
                 .toList();
 
         long expiresAt = ChefControlTime.nowInstant().plusMillis(jwtExpirationMs).toEpochMilli();

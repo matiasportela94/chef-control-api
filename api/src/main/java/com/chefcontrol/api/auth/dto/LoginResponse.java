@@ -14,5 +14,11 @@ public record LoginResponse(
         long expiresAt,
         List<RestaurantSummary> restaurants
 ) {
-    public record RestaurantSummary(UUID id, String name, String role) {}
+    /**
+     * {@code accountName} está para que el switcher pueda agrupar por cuenta. Sin eso, a quien
+     * lo invitan al restaurante de otro le aparecen locales ajenos mezclados con los propios y
+     * no hay forma de distinguirlos.
+     */
+    public record RestaurantSummary(UUID id, String name, String role,
+                                    UUID accountId, String accountName) {}
 }

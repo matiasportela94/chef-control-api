@@ -49,6 +49,7 @@ public class UserRestaurantJpaEntity {
                 .roleName(role != null ? role.getName() : null)
                 .roleIsSystem(role != null && role.isSystem())
                 .restaurantName(restaurant != null ? restaurant.getName() : null)
+                .restaurantAccountId(restaurant != null ? restaurant.getAccountId() : null)
                 .restaurantSlug(restaurant != null ? restaurant.getSlug() : null)
                 .restaurantTimezone(restaurant != null ? restaurant.getTimezone() : null)
                 .userEmail(user != null ? user.getEmail() : null)

@@ -26,6 +26,7 @@ public enum AuditAction {
     RESTAURANT_DEACTIVATED,
     RESTAURANT_ACTIVATED,
     RESTAURANT_DELETED,
+    ACCOUNT_RENAMED,
 
     // Suppliers
     SUPPLIER_CREATED,

@@ -1,6 +1,7 @@
 package com.chefcontrol.application.service;
 
 import com.chefcontrol.application.exception.AppException;
+import com.chefcontrol.application.port.AuditService;
 import com.chefcontrol.application.port.CurrentUserProvider;
 import com.chefcontrol.domain.account.Account;
 import com.chefcontrol.domain.context.TenantContext;
@@ -36,6 +37,7 @@ class AccountServiceDeleteTest {
     @Mock UserRepository userRepository;
     @Mock UserRestaurantRepository userRestaurantRepository;
     @Mock CurrentUserProvider currentUserProvider;
+    @Mock AuditService auditService;
 
     private final UUID restaurantId = UUID.randomUUID();
     private final UUID accountId = UUID.randomUUID();
@@ -43,7 +45,7 @@ class AccountServiceDeleteTest {
 
     private AccountService service() {
         return new AccountService(accountRepository, restaurantRepository, userRepository,
-                userRestaurantRepository, currentUserProvider);
+                userRestaurantRepository, currentUserProvider, auditService);
     }
 
     @BeforeEach

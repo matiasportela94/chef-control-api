@@ -18,6 +18,8 @@ public class UserRestaurant {
 
     // Denormalized from restaurant join
     private String restaurantName;
+    /** La cuenta dueña del restaurante: permite agrupar el switcher cuando alguien cruza cuentas. */
+    private UUID restaurantAccountId;
     private String restaurantSlug;
     private String restaurantTimezone;
 
