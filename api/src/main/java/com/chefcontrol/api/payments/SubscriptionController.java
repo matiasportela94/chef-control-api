@@ -38,12 +38,14 @@ public class SubscriptionController {
                 .orElseGet(() -> ResponseEntity.noContent().build());
     }
 
-    /** Los planes que se pueden contratar (TRIAL no tiene precio), del más barato al más caro. */
+    /**
+     * Todos los planes, del gratis al más caro. Público (ver SecurityConfig): lo lee la landing sin sesión.
+     * TRIAL viene con los precios en null —no se contrata— para que la landing liste sus features desde acá
+     * y no desde una copia en el front que se desactualice.
+     */
     @GetMapping("/plans")
-    @PreAuthorize("hasAuthority('PERM_ACCOUNT_VIEW')")
     public List<SubscriptionPlanResponse> listSubscriptionPlans() {
         return Arrays.stream(PlanTier.values())
-                .filter(tier -> subscriptionService.priceFor(tier, BillingPeriod.MONTHLY) != null)
                 .map(tier -> new SubscriptionPlanResponse(tier,
                         subscriptionService.priceFor(tier, BillingPeriod.MONTHLY),
                         subscriptionService.priceFor(tier, BillingPeriod.ANNUAL),
