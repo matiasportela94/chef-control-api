@@ -136,7 +136,7 @@ public class RestaurantRegistrationService {
         List<Restaurant> existingRestaurants = restaurantRepository.findAllByAccountId(accountId);
         if (!account.hasFeature(Feature.MULTI_RESTAURANT) && !existingRestaurants.isEmpty()) {
             throw AppException.forbidden(ErrorCode.PLAN_LIMIT_REACHED,
-                    "Your plan (" + account.getPlan() + ") allows only one restaurant per account");
+                    "Your plan (" + account.effectivePlan(java.time.Instant.now()) + ") allows only one restaurant per account");
         }
 
         Restaurant restaurant = new Restaurant();

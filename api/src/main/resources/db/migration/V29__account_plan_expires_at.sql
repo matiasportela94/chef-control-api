@@ -1,0 +1,12 @@
+-- ============================================================
+-- V29: hasta cuándo rige el plan de una cuenta.
+--
+-- NULL = el plan rige sin fecha de corte (el caso normal: TRIAL, o una suscripción que se sigue
+-- cobrando). Con fecha, el plan efectivo es `plan` hasta ese instante (exclusive) y TRIAL desde él.
+-- Se usa cuando alguien cancela habiendo pagado: conserva lo que compró hasta que venza lo pagado.
+--
+-- El corte lo calcula Account.effectivePlan(now) al LEER, no un job que baje el plan: así el límite es
+-- exacto al segundo y no depende de que algo corra a tiempo. La columna `plan` no se toca al vencer;
+-- un job diario la normaliza a TRIAL solo para que lo guardado no mienta.
+-- ============================================================
+ALTER TABLE accounts ADD COLUMN plan_expires_at TIMESTAMPTZ;
