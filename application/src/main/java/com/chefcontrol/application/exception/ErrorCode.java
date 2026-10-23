@@ -17,6 +17,9 @@ public enum ErrorCode {
     TOKEN_ALREADY_USED      (Category.BAD_REQUEST),
     GOOGLE_TOKEN_INVALID    (Category.FORBIDDEN),
     GOOGLE_ACCOUNT_NOT_REGISTERED (Category.NOT_FOUND),
+    GOOGLE_ACCOUNT_ALREADY_LINKED (Category.CONFLICT),   // esa cuenta de Google es de otro usuario
+    USER_ALREADY_LINKED_TO_GOOGLE (Category.CONFLICT),   // el usuario ya tiene otra cuenta de Google vinculada
+    GOOGLE_ACCOUNT_MISMATCH       (Category.CONFLICT),   // al desvincular: el token no es de la cuenta vinculada
 
     // Stock movements
     MOVEMENT_ALREADY_REVERSED   (Category.CONFLICT),

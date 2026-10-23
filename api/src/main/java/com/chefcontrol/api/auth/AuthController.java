@@ -2,11 +2,13 @@ package com.chefcontrol.api.auth;
 
 import com.chefcontrol.api.auth.dto.ForgotPasswordRequest;
 import com.chefcontrol.api.auth.dto.GoogleSignInRequest;
+import com.chefcontrol.api.auth.dto.LinkGoogleAccountRequest;
 import com.chefcontrol.api.auth.dto.LoginRequest;
 import com.chefcontrol.api.auth.dto.LoginResponse;
 import com.chefcontrol.api.auth.dto.RegisterRequest;
 import com.chefcontrol.api.auth.dto.ResetPasswordRequest;
 import com.chefcontrol.api.auth.dto.SwitchRestaurantRequest;
+import com.chefcontrol.api.auth.dto.UnlinkGoogleAccountRequest;
 import com.chefcontrol.application.port.AuditService;
 import com.chefcontrol.application.service.GoogleSignInService;
 import com.chefcontrol.application.service.PasswordResetService;
@@ -97,6 +99,22 @@ public class AuthController {
                     .body(openSession(registered.owner(), registered.restaurant().getId(), registered.memberships(), response));
         }
         return ResponseEntity.ok(logIn(result.user(), "google", response));
+    }
+
+    /** Vincular Google desde el perfil. Sin @PreAuthorize: cada usuario maneja su propio login, como DELETE /account. */
+    @PostMapping("/google/link")
+    public ResponseEntity<Void> linkGoogleAccount(@Valid @RequestBody LinkGoogleAccountRequest request,
+                                                  @AuthenticationPrincipal ChefControlPrincipal principal) {
+        googleSignInService.linkGoogleAccount(principal.userId(), request.idToken());
+        return ResponseEntity.noContent().build();
+    }
+
+    /** POST y no DELETE porque lleva cuerpo: el token de Google que confirma y la contraseña nueva. */
+    @PostMapping("/google/unlink")
+    public ResponseEntity<Void> unlinkGoogleAccount(@Valid @RequestBody UnlinkGoogleAccountRequest request,
+                                                    @AuthenticationPrincipal ChefControlPrincipal principal) {
+        googleSignInService.unlinkGoogleAccount(principal.userId(), request.idToken(), request.newPassword());
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/login")
@@ -249,6 +267,7 @@ public class AuthController {
                 user.getId(),
                 user.getName(),
                 user.getEmail(),
+                user.getGoogleSubject() != null,
                 activeRestaurantId,
                 active.getRestaurantName(),
                 active.getRoleName(),
