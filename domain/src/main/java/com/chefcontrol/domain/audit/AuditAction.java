@@ -39,6 +39,7 @@ public enum AuditAction {
     PRODUCT_CREATED,
     PRODUCT_UPDATED,
     PRODUCT_DEACTIVATED,
+    CATALOG_IMPORTED,
 
     // Purchases
     PURCHASE_CREATED,
