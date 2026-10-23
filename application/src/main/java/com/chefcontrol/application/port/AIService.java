@@ -49,10 +49,24 @@ public interface AIService {
 
     record UnitOption(String name, String abbreviation) {}
 
-    /** {@code row} de cada fila = el {@code ref} de la fila de origen. */
+    /**
+     * {@code row} de cada fila = el {@code ref} de la fila de origen.
+     *
+     * @param proposedProducts insumos que arma la IA porque una receta los usa y no existen ni en el catálogo ni en
+     *                         las filas de insumos; {@code row} = la primera fila de receta que los usa. El front los
+     *                         muestra como propuestos y recién los suma a {@code products} para la vista previa.
+     * @param ingredientMatches  ingredientes que el modelo reconoce como un insumo existente escrito de otra forma
+     *                           ("Tomates" → "Tomate"). Los aplica el servicio, que verifica que el nombre exista;
+     *                           lo que devuelve el servicio ya los trae aplicados y esta lista vacía.
+     */
     record CatalogSpreadsheetInterpretation(
         List<ProductRow> products,
         List<RecipeRow> recipes,
+        List<ProductRow> proposedProducts,
+        List<IngredientMatch> ingredientMatches,
         List<String> warnings
     ) {}
+
+    /** @param row la fila de receta; {@code writtenName} como vino, {@code catalogName} el insumo que el modelo reconoce */
+    record IngredientMatch(int row, String writtenName, String catalogName) {}
 }

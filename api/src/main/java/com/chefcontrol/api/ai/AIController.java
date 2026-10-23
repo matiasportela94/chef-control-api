@@ -5,6 +5,7 @@ import com.chefcontrol.api.catalog.dto.CatalogImportRequest.RecipeImportRow;
 import com.chefcontrol.api.plan.RequiresFeature;
 import com.chefcontrol.application.port.AIService.SpreadsheetRow;
 import com.chefcontrol.application.port.AIService.SpreadsheetSheet;
+import com.chefcontrol.application.service.CatalogImportService.ProductRow;
 import com.chefcontrol.application.service.CatalogSpreadsheetService;
 import com.chefcontrol.domain.plan.Feature;
 import com.chefcontrol.application.service.AIExecuteService;
@@ -61,11 +62,15 @@ public class AIController {
                         .toList()))
                 .toList());
         return ResponseEntity.ok(new InterpretCatalogResult(
-                r.products().stream().map(p -> new ProductImportRow(
-                        p.row(), p.name(), p.unit(), p.category(), p.minStock(), p.yieldPercentage())).toList(),
+                r.products().stream().map(AIController::toImportRow).toList(),
                 r.recipes().stream().map(x -> new RecipeImportRow(
                         x.row(), x.menuItem(), x.price(), x.section(), x.ingredient(), x.quantity(), x.unit())).toList(),
+                r.proposedProducts().stream().map(AIController::toImportRow).toList(),
                 r.warnings()));
+    }
+
+    private static ProductImportRow toImportRow(ProductRow p) {
+        return new ProductImportRow(p.row(), p.name(), p.unit(), p.category(), p.minStock(), p.yieldPercentage());
     }
 
     record InterpretRequest(@NotBlank @Size(max = 500) String message) {}
@@ -86,6 +91,11 @@ public class AIController {
      */
     record SpreadsheetRowRequest(int ref, List<Object> cells) {}
 
-    /** {@code row} de cada fila = el ref de la fila de origen. Las filas son las de /catalog-import, tal cual. */
-    record InterpretCatalogResult(List<ProductImportRow> products, List<RecipeImportRow> recipes, List<String> warnings) {}
+    /**
+     * {@code row} de cada fila = el ref de la fila de origen. Las filas son las de /catalog-import, tal cual.
+     * {@code proposedProducts}: insumos que arma la IA porque una receta los usa y no existen; {@code row} = la primera
+     * fila de receta que los usa. El front los muestra como propuestos y los suma a products para la vista previa.
+     */
+    record InterpretCatalogResult(List<ProductImportRow> products, List<RecipeImportRow> recipes,
+                                  List<ProductImportRow> proposedProducts, List<String> warnings) {}
 }

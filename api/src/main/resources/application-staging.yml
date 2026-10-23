@@ -35,7 +35,7 @@ app:
 
   google:
     api-key: ${GOOGLE_AI_API_KEY:}
-    model: ${GOOGLE_AI_MODEL:gemma-4}
+    model: ${GOOGLE_AI_MODEL:gemini-2.5-flash}
 
   # NoOp stub activo si no se configura
   ai-service:
