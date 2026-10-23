@@ -5,6 +5,7 @@ import com.chefcontrol.application.exception.ErrorCode;
 import com.chefcontrol.application.port.AuditService;
 import com.chefcontrol.application.port.GoogleIdentityVerifier;
 import com.chefcontrol.application.port.GoogleIdentityVerifier.GoogleIdentity;
+import com.chefcontrol.application.port.PasswordEncoderPort;
 import com.chefcontrol.application.service.RestaurantRegistrationService.RegisterCommand;
 import com.chefcontrol.application.service.RestaurantRegistrationService.RegisteredRestaurant;
 import com.chefcontrol.domain.audit.AuditAction;
@@ -33,6 +34,7 @@ class GoogleSignInServiceTest {
     @Mock UserRepository userRepository;
     @Mock RestaurantRegistrationService registrationService;
     @Mock AuditService auditService;
+    @Mock PasswordEncoderPort passwordEncoder;
 
     private static final GoogleIdentity GOOGLE = new GoogleIdentity("sub-1", "juan@gmail.com", "Juan");
 
@@ -40,7 +42,7 @@ class GoogleSignInServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new GoogleSignInService(verifier, userRepository, registrationService, auditService);
+        service = new GoogleSignInService(verifier, userRepository, registrationService, auditService, passwordEncoder);
         when(verifier.verify("token")).thenReturn(GOOGLE);
     }
 
@@ -116,6 +118,84 @@ class GoogleSignInServiceTest {
         assertNull(cmd.getValue().ownerPassword());
         assertEquals("sub-1", cmd.getValue().googleSubject());
         assertSame(registered, result.registered());
+    }
+
+    // ── Vincular / desvincular desde el perfil ─────────────────────────────
+
+    @Test
+    void linkSetsSubjectEvenWithADifferentEmail() {
+        User user = user(null);
+        user.setEmail("juan@restaurante.com");
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(userRepository.findByGoogleSubject("sub-1")).thenReturn(Optional.empty());
+
+        service.linkGoogleAccount(user.getId(), "token");
+
+        assertEquals("sub-1", user.getGoogleSubject());
+        verify(userRepository).save(user);
+        verify(auditService).log(eq(AuditAction.USER_GOOGLE_LINKED), eq("User"), eq(user.getId()), anyMap());
+    }
+
+    @Test
+    void linkingTheSameGoogleAccountAgainDoesNothing() {
+        User user = user("sub-1");
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+
+        service.linkGoogleAccount(user.getId(), "token");
+
+        verify(userRepository, never()).save(any());
+        verifyNoInteractions(auditService);
+    }
+
+    @Test
+    void linkIsRejectedWhenTheUserAlreadyHasAnotherGoogleAccount() {
+        User user = user("otro-sub");
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+
+        var e = assertThrows(AppException.class, () -> service.linkGoogleAccount(user.getId(), "token"));
+        assertEquals(ErrorCode.USER_ALREADY_LINKED_TO_GOOGLE, e.getErrorCode());
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void linkIsRejectedWhenTheGoogleAccountBelongsToAnotherUser() {
+        User user = user(null);
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(userRepository.findByGoogleSubject("sub-1")).thenReturn(Optional.of(user("sub-1")));
+
+        var e = assertThrows(AppException.class, () -> service.linkGoogleAccount(user.getId(), "token"));
+        assertEquals(ErrorCode.GOOGLE_ACCOUNT_ALREADY_LINKED, e.getErrorCode());
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void unlinkReplacesThePasswordAndClearsTheSubject() {
+        User user = user("sub-1");
+        user.setPasswordHash("hash-viejo");
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(passwordEncoder.encode("nueva-clave")).thenReturn("hash-nuevo");
+
+        service.unlinkGoogleAccount(user.getId(), "token", "nueva-clave");
+
+        assertNull(user.getGoogleSubject());
+        assertEquals("hash-nuevo", user.getPasswordHash());
+        verify(userRepository).save(user);
+        verify(auditService).log(eq(AuditAction.USER_GOOGLE_UNLINKED), eq("User"), eq(user.getId()), anyMap());
+    }
+
+    @Test
+    void unlinkNeedsATokenFromTheLinkedGoogleAccount() {
+        User linkedElsewhere = user("otro-sub");
+        User notLinked = user(null);
+        when(userRepository.findById(linkedElsewhere.getId())).thenReturn(Optional.of(linkedElsewhere));
+        when(userRepository.findById(notLinked.getId())).thenReturn(Optional.of(notLinked));
+
+        for (User u : List.of(linkedElsewhere, notLinked)) {
+            var e = assertThrows(AppException.class, () -> service.unlinkGoogleAccount(u.getId(), "token", "nueva-clave"));
+            assertEquals(ErrorCode.GOOGLE_ACCOUNT_MISMATCH, e.getErrorCode());
+        }
+        verify(userRepository, never()).save(any());
+        verifyNoInteractions(passwordEncoder);
     }
 
     private static User user(String googleSubject) {

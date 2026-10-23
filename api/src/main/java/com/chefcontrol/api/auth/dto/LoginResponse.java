@@ -7,6 +7,8 @@ public record LoginResponse(
         UUID userId,
         String name,
         String email,
+        // Si el usuario tiene una cuenta de Google vinculada: el perfil ofrece vincular o desvincular.
+        boolean googleLinked,
         UUID activeRestaurantId,
         String activeRestaurantName,
         String role,
