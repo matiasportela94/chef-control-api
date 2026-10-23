@@ -2,6 +2,7 @@ package com.chefcontrol.application.service;
 
 import com.chefcontrol.application.exception.AppException;
 import com.chefcontrol.application.exception.ErrorCode;
+import com.chefcontrol.application.payments.SubscriptionService;
 import com.chefcontrol.application.port.CurrentUserProvider;
 import com.chefcontrol.application.port.AuditService;
 import com.chefcontrol.domain.account.Account;
@@ -26,9 +27,8 @@ import java.util.stream.Collectors;
 /**
  * Datos de la cuenta (plan, uso, dueño) para la pantalla de administración.
  *
- * ponytail: no hay historial de pagos porque todavía no existe facturación real
- * (ni Stripe/MercadoPago ni tabla de invoices). Cuando se integre el cobro, los pagos
- * salen del proveedor, no de una tabla mantenida a mano que nadie va a mantener.
+ * ponytail: no hay historial de pagos. La suscripción ya existe (ver SubscriptionService), pero los
+ * cobros individuales salen del proveedor, no de una tabla mantenida a mano que nadie va a mantener.
  */
 @Service
 @RequiredArgsConstructor
@@ -40,6 +40,7 @@ public class AccountService {
     private final UserRestaurantRepository userRestaurantRepository;
     private final CurrentUserProvider currentUserProvider;
     private final AuditService auditService;
+    private final SubscriptionService subscriptionService;
 
     /**
      * Cierra la cuenta entera: todos los restaurantes con toda su data, los roles, el audit_log
@@ -59,6 +60,9 @@ public class AccountService {
                     "Only the account owner can delete the account");
         }
 
+        // Antes de borrar: la cascada de la base se lleva la fila de la suscripción pero no la
+        // cancela en MercadoPago, y se seguiría cobrando. Si no se puede cancelar, no se borra.
+        subscriptionService.cancelBeforeAccountClosure(account.getId());
         accountRepository.deleteWithAllData(account.getId());
     }
 

@@ -34,6 +34,14 @@ public enum ErrorCode {
     CANNOT_MODIFY_CURRENT_RESTAURANT(Category.CONFLICT),
     NOT_ACCOUNT_OWNER       (Category.FORBIDDEN),
 
+    // Payments
+    SUBSCRIPTION_NOT_FOUND      (Category.NOT_FOUND),
+    SUBSCRIPTION_ALREADY_ACTIVE (Category.CONFLICT),
+    INVALID_SUBSCRIPTION_PLAN   (Category.BAD_REQUEST),
+    // INTERNAL (500) y no 502/503: el front manda esos dos a la pantalla de "sistema caído", y que
+    // MercadoPago no responda no es que el sistema esté caído.
+    PAYMENT_PROVIDER_UNAVAILABLE(Category.INTERNAL),
+
     // WhatsApp
     UNREGISTERED_PHONE      (Category.FORBIDDEN),
 

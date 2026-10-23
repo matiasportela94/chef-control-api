@@ -1,5 +1,6 @@
 package com.chefcontrol.domain.plan;
 
+import java.util.Collections;
 import java.util.EnumSet;
 import java.util.Set;
 
@@ -45,7 +46,8 @@ public enum PlanTier {
         return features.contains(feature);
     }
 
+    /** En el orden en que se declaran en {@link Feature} (lo básico primero): las pantallas los listan así. */
     public Set<Feature> getFeatures() {
-        return Set.copyOf(features);
+        return Collections.unmodifiableSet(EnumSet.copyOf(features));
     }
 }
