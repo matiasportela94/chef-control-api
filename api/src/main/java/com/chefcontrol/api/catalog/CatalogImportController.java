@@ -9,6 +9,7 @@ import com.chefcontrol.application.service.CatalogImportService;
 import com.chefcontrol.application.service.CatalogImportService.ProductRow;
 import com.chefcontrol.application.service.CatalogImportService.RecipeRow;
 import com.chefcontrol.domain.plan.Feature;
+import com.chefcontrol.domain.user.Permission;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -16,6 +17,9 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.EnumSet;
+import java.util.Set;
 
 @RestController
 @RequestMapping("/catalog-import")
@@ -47,15 +51,25 @@ public class CatalogImportController {
                         p.row(), p.name(), p.unit(), p.category(), p.minStock(), p.yieldPercentage())).toList(),
                 request.recipes().stream().map(r -> new RecipeRow(
                         r.row(), r.menuItem(), r.price(), r.section(), r.ingredient(), r.quantity(), r.unit())).toList(),
-                dryRun);
+                dryRun, permissionsOf(authentication));
         return ResponseEntity.ok(CatalogImportResult.from(report));
     }
 
+    /** Las authorities PERM_X del JWT, de vuelta a {@link Permission}. */
+    private static Set<Permission> permissionsOf(Authentication authentication) {
+        Set<Permission> permissions = EnumSet.noneOf(Permission.class);
+        for (Permission p : Permission.values()) {
+            if (hasAuthority(authentication, "PERM_" + p.name())) permissions.add(p);
+        }
+        return permissions;
+    }
+
+    private static boolean hasAuthority(Authentication authentication, String authority) {
+        return authentication.getAuthorities().stream().map(GrantedAuthority::getAuthority).anyMatch(authority::equals);
+    }
+
     private static void requireAuthority(Authentication authentication, String authority) {
-        boolean granted = authentication.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority)
-                .anyMatch(authority::equals);
-        if (!granted) {
+        if (!hasAuthority(authentication, authority)) {
             throw AppException.forbidden(ErrorCode.FORBIDDEN, "Missing " + authority);
         }
     }

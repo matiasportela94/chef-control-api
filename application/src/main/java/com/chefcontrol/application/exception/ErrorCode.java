@@ -95,6 +95,8 @@ public enum ErrorCode {
     IMPORT_INCOMPATIBLE_UNIT    (Category.BAD_REQUEST),
     IMPORT_DUPLICATE_PRODUCT    (Category.BAD_REQUEST),
     IMPORT_DUPLICATE_INGREDIENT (Category.BAD_REQUEST),
+    IMPORT_AMBIGUOUS_NAME       (Category.BAD_REQUEST),      // el nombre matchea con dos o más del catálogo
+    IMPORT_CATEGORY_CREATE_FORBIDDEN (Category.BAD_REQUEST), // haría falta crear la categoría y no hay CATEGORIES_CREATE
 
     // Generic
     NOT_FOUND               (Category.NOT_FOUND),

@@ -48,6 +48,7 @@ public class MenuItemService {
     private final PriceHistoryRepository priceHistoryRepository;
     private final RecipeVersionRepository recipeVersionRepository;
     private final CurrentUserProvider currentUserProvider;
+    private final UnitConversionService unitConversionService;
 
     public Page<MenuItem> listMenuItems(boolean active, PageRequest pageRequest) {
         return menuItemRepository.findByRestaurantIdAndActive(TenantContext.require(), active, pageRequest);
@@ -200,6 +201,9 @@ public class MenuItemService {
             Unit unit = unitRepository.findById(itemCmd.unitId())
                     .orElseThrow(() -> AppException.notFound(ErrorCode.UNIT_NOT_FOUND,
                             "Unit not found: " + itemCmd.unitId()));
+            // La venta descuenta el insumo convirtiendo a su unidad: si no convierte, que falle al guardar la
+            // receta y no al vender (UNIT_CONVERSION_NOT_FOUND).
+            unitConversionService.convert(itemCmd.quantity(), unit.getId(), product.getDefaultUnitId());
             RecipeItem ri = new RecipeItem();
             ri.setRecipeId(recipe.getId());
             ri.setProductId(product.getId());
