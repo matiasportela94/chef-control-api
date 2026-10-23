@@ -5,9 +5,12 @@ import com.chefcontrol.application.exception.ErrorCode;
 import com.chefcontrol.application.port.AIService;
 import com.chefcontrol.application.port.AIService.CatalogSpreadsheetInterpretation;
 import com.chefcontrol.application.port.AIService.CatalogSpreadsheetRequest;
+import com.chefcontrol.application.port.AIService.IngredientMatch;
 import com.chefcontrol.application.port.AIService.SpreadsheetRow;
 import com.chefcontrol.application.port.AIService.SpreadsheetSheet;
 import com.chefcontrol.application.port.AIService.UnitOption;
+import com.chefcontrol.application.service.CatalogImportService.ProductRow;
+import com.chefcontrol.application.service.CatalogImportService.RecipeRow;
 import com.chefcontrol.domain.context.TenantContext;
 import com.chefcontrol.domain.menu.MenuItem;
 import com.chefcontrol.domain.menu.MenuSection;
@@ -20,7 +23,12 @@ import com.chefcontrol.domain.shared.PageRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -56,21 +64,75 @@ public class CatalogSpreadsheetService {
                 .toList();
         int rows = withData.stream().mapToInt(s -> s.rows().size()).sum();
         if (rows == 0) {
-            return new CatalogSpreadsheetInterpretation(List.of(), List.of(), List.of());
+            return new CatalogSpreadsheetInterpretation(List.of(), List.of(), List.of(), List.of(), List.of());
         }
         if (rows > MAX_ROWS) {
             throw AppException.badRequest(ErrorCode.AI_SPREADSHEET_TOO_LARGE,
                     "The spreadsheet has " + rows + " rows with data; the limit is " + MAX_ROWS);
         }
 
-        return aiService.interpretCatalogSpreadsheet(new CatalogSpreadsheetRequest(
+        List<String> productNames = productRepository.findByRestaurantIdAndIsActiveTrue(restaurantId, ALL).content()
+                .stream().map(Product::getName).toList();
+        CatalogSpreadsheetInterpretation result = aiService.interpretCatalogSpreadsheet(new CatalogSpreadsheetRequest(
                 withData,
                 unitRepository.findAll().stream().map(u -> new UnitOption(u.getName(), u.getAbbreviation())).toList(),
-                productRepository.findByRestaurantIdAndIsActiveTrue(restaurantId, ALL).content().stream()
-                        .map(Product::getName).toList(),
+                productNames,
                 menuItemRepository.findByRestaurantIdAndActive(restaurantId, true, ALL).content().stream()
                         .map(MenuItem::getName).toList(),
                 menuSectionRepository.findAllByRestaurantId(restaurantId).stream().map(MenuSection::getName).toList()));
+        return applyMatches(result, productNames);
+    }
+
+    /**
+     * Lo que el modelo reconoce como un insumo existente escrito de otra forma ("Tomates" → "Tomate") se aplica acá y
+     * no en el modelo: en la prueba del 2026-10-23 gemini-2.5-flash avisó "usé 'Tomate'" y dejó "Tomates" en la fila.
+     * Así el aviso siempre dice lo que pasó con los datos, y un nombre que no existe no se acepta: se reemplaza por
+     * la escritura del catálogo (o de las filas de insumos) que coincide con la comparación del import.
+     *
+     * <p>Un "insumo" que el modelo sacó de una fila de receta (misma fila que un ingrediente) es una propuesta aunque
+     * lo haya puesto en products: pasó en la prueba con "limon". Y un insumo propuesto que ya existe, ya viene en las
+     * filas de insumos, ya se propuso o es un nombre que se acaba de reconocer se descarta: proponerlo crearía justo
+     * el duplicado que la propuesta quiere evitar.
+     */
+    private static CatalogSpreadsheetInterpretation applyMatches(CatalogSpreadsheetInterpretation r, List<String> catalog) {
+        Set<Integer> recipeRows = new HashSet<>();
+        r.recipes().forEach(x -> recipeRows.add(x.row()));
+        List<ProductRow> products = r.products().stream().filter(p -> !recipeRows.contains(p.row())).toList();
+        List<ProductRow> candidates = new ArrayList<>(r.products().stream().filter(p -> recipeRows.contains(p.row())).toList());
+        candidates.addAll(r.proposedProducts());
+
+        Map<String, String> known = new HashMap<>();   // clave del import → cómo está escrito
+        Set<String> inCatalog = new HashSet<>();
+        for (String name : catalog) {
+            known.putIfAbsent(CatalogImportService.key(name), name);
+            inCatalog.add(CatalogImportService.key(name));
+        }
+        products.stream().filter(p -> p.name() != null)
+                .forEach(p -> known.putIfAbsent(CatalogImportService.key(p.name()), p.name()));
+
+        Map<Integer, String> renamed = new HashMap<>();
+        Set<String> recognized = new HashSet<>();
+        List<String> warnings = new ArrayList<>(r.warnings());
+        for (IngredientMatch m : r.ingredientMatches()) {
+            String target = known.get(CatalogImportService.key(m.catalogName()));
+            if (target == null) continue;   // el modelo nombró algo que no existe: queda como vino
+            recognized.add(CatalogImportService.key(m.writtenName()));
+            if (CatalogImportService.key(target).equals(CatalogImportService.key(m.writtenName()))) continue; // solo mayúsculas o acentos: el import ya los iguala
+            renamed.put(m.row(), target);
+            warnings.add("Usé '" + target + "' " + (inCatalog.contains(CatalogImportService.key(target))
+                    ? "del catálogo" : "de la hoja de insumos") + " para '" + m.writtenName() + "' (fila " + m.row() + ").");
+        }
+        List<RecipeRow> recipes = r.recipes().stream()
+                .map(x -> renamed.containsKey(x.row()) ? new RecipeRow(x.row(), x.menuItem(), x.price(), x.section(),
+                        renamed.get(x.row()), x.quantity(), x.unit()) : x)
+                .toList();
+
+        Set<String> taken = new HashSet<>(known.keySet());
+        taken.addAll(recognized);
+        List<ProductRow> proposed = candidates.stream()
+                .filter(p -> p.name() != null && taken.add(CatalogImportService.key(p.name())))
+                .toList();
+        return new CatalogSpreadsheetInterpretation(products, recipes, proposed, List.of(), warnings);
     }
 
     private static boolean hasData(SpreadsheetRow row) {

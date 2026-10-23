@@ -4,6 +4,7 @@ import com.chefcontrol.application.exception.AppException;
 import com.chefcontrol.application.exception.ErrorCode;
 import com.chefcontrol.application.port.AIService.CatalogSpreadsheetInterpretation;
 import com.chefcontrol.application.port.AIService.CatalogSpreadsheetRequest;
+import com.chefcontrol.application.port.AIService.IngredientMatch;
 import com.chefcontrol.application.port.AIService.SpreadsheetRow;
 import com.chefcontrol.application.port.AIService.SpreadsheetSheet;
 import com.chefcontrol.application.service.CatalogImportService.ProductRow;
@@ -37,13 +38,17 @@ final class CatalogSpreadsheetPrompt {
 
             SALIDA, con esta forma:
             {"products":[{"row":ref,"name":"...","unit":"kg","category":"...","minStock":10,"yieldPercentage":90}],
-             "dishes":[{"menuItem":"...","price":9500,"section":"...","ingredients":[{"row":ref,"ingredient":"...","quantity":0.25,"unit":"kg"}]}],
+             "dishes":[{"menuItem":"...","price":9500,"section":"...","ingredients":[{"row":ref,"ingredient":"...","quantity":0.25,"unit":"kg","catalogName":"..."}]}],
+             "proposedProducts":[{"row":ref,"name":"...","unit":"kg"}],
              "warnings":["..."]}
             - products: los insumos (lo que el restaurante compra). category, minStock y yieldPercentage solo si la \
             planilla los trae.
             - dishes: los platos con su receta. price (precio de venta) y section (paso del menú: entradas, \
             principales…) solo si la planilla los trae.
-            - row: el ref de la fila de donde sale el dato. En una receta, el ref de la fila del ingrediente.
+            - proposedProducts: insumos que proponés vos porque una receta los usa y no están ni en el CATÁLOGO ni \
+            en las filas de insumos de la planilla (ver regla 6).
+            - row: el ref de la fila de donde sale el dato. En una receta, el ref de la fila del ingrediente. En \
+            proposedProducts, el ref de la primera fila de receta donde aparece el ingrediente.
             - Números como números: sin "$", sin separador de miles, con punto decimal ("$ 9.500" → 9500, "0,05" → 0.05).
 
             REGLAS:
@@ -57,12 +62,20 @@ final class CatalogSpreadsheetPrompt {
             cantidad por N y avisalo en warnings.
             4. Ignorá títulos, encabezados, totales, subtotales, costos, notas y filas vacías. No avises por títulos \
             ni encabezados; sí por los totales, costos y notas que ignores, en un solo warning con sus refs.
-            5. Usá las listas del CATÁLOGO solo para reconocer qué es cada cosa (un insumo, un plato, un paso). Nunca \
-            cambies un nombre de la planilla por uno del catálogo aunque se parezca.
-            6. products sale solo de filas que describen insumos. No armes insumos a partir de los ingredientes de \
-            las recetas.
+            5. Usá las listas del CATÁLOGO para reconocer qué es cada cosa (un insumo, un plato, un paso). Si el \
+            ingrediente de una receta es claramente un insumo del CATÁLOGO o de las filas de insumos de la planilla \
+            escrito de otra forma (plural o singular, acentos, mayúsculas: "Tomates" y "Tomate"), dejá ingredient \
+            como está en la planilla y poné en catalogName el nombre exacto del catálogo o de la planilla. Si no es \
+            claramente el mismo ("Tomate" y "Tomate perita"), no pongas catalogName. No avises nada de esto: el \
+            sistema arma el aviso.
+            6. products sale solo de filas que describen insumos. Si una receta usa un ingrediente que no está en el \
+            CATÁLOGO ni en las filas de insumos y no le pusiste catalogName, agregalo una sola vez a proposedProducts: \
+            con el nombre como aparece en la receta, la unidad típica de compra para el tipo de unidad de la receta \
+            (g → kg, ml → l, u → u; si no es obvia, la misma de la receta) y sin categoría, salvo que la planilla la \
+            diga. Ante la duda entre "es uno del catálogo" y "es otro", proponelo: una persona lo revisa.
             7. Si un dato no se puede interpretar con seguridad, no lo adivines: dejá afuera esa fila y explicá en \
-            warnings cuál (ref) y por qué.
+            warnings cuál (ref) y por qué. Un ingrediente sin cantidad numérica ("c/n", "a gusto", "cantidad \
+            necesaria") queda afuera de la receta y de proposedProducts, con su warning: no pongas 0.
             8. Los warnings van en castellano rioplatense, cortos, para mostrarle al usuario.
             """;
 
@@ -117,7 +130,8 @@ final class CatalogSpreadsheetPrompt {
                 "category", type("string"), "minStock", type("number"), "yieldPercentage", type("number")),
                 List.of("row", "name"));
         Map<String, Object> ingredient = object(Map.of(
-                "row", type("integer"), "ingredient", type("string"), "quantity", type("number"), "unit", type("string")),
+                "row", type("integer"), "ingredient", type("string"), "quantity", type("number"), "unit", type("string"),
+                "catalogName", type("string")),
                 List.of("row", "ingredient"));
         Map<String, Object> dish = object(Map.of(
                 "menuItem", type("string"), "price", type("number"), "section", type("string"),
@@ -126,8 +140,9 @@ final class CatalogSpreadsheetPrompt {
         return object(Map.of(
                 "products", Map.of("type", "array", "items", product),
                 "dishes", Map.of("type", "array", "items", dish),
+                "proposedProducts", Map.of("type", "array", "items", product),
                 "warnings", Map.of("type", "array", "items", type("string"))),
-                List.of("products", "dishes", "warnings"));
+                List.of("products", "dishes", "proposedProducts", "warnings"));
     }
 
     private static Map<String, Object> type(String t) {
@@ -151,12 +166,9 @@ final class CatalogSpreadsheetPrompt {
     }
 
     static CatalogSpreadsheetInterpretation parse(JsonNode root) {
-        List<ProductRow> products = new ArrayList<>();
-        for (JsonNode p : root.path("products")) {
-            products.add(new ProductRow(p.path("row").asInt(0), text(p, "name"), text(p, "unit"),
-                    text(p, "category"), number(p, "minStock"), number(p, "yieldPercentage")));
-        }
+        List<ProductRow> products = productRows(root.path("products"));
         List<RecipeRow> recipes = new ArrayList<>();
+        List<IngredientMatch> matches = new ArrayList<>();
         for (JsonNode d : root.path("dishes")) {
             boolean first = true;
             for (JsonNode i : d.path("ingredients")) {
@@ -164,12 +176,25 @@ final class CatalogSpreadsheetPrompt {
                 recipes.add(new RecipeRow(i.path("row").asInt(0), text(d, "menuItem"),
                         first ? number(d, "price") : null, first ? text(d, "section") : null,
                         text(i, "ingredient"), number(i, "quantity"), text(i, "unit")));
+                if (text(i, "catalogName") != null && text(i, "ingredient") != null) {
+                    matches.add(new IngredientMatch(i.path("row").asInt(0), text(i, "ingredient"), text(i, "catalogName")));
+                }
                 first = false;
             }
         }
         List<String> warnings = new ArrayList<>();
         root.path("warnings").forEach(w -> warnings.add(w.asText()));
-        return new CatalogSpreadsheetInterpretation(products, recipes, warnings);
+        return new CatalogSpreadsheetInterpretation(products, recipes, productRows(root.path("proposedProducts")),
+                matches, warnings);
+    }
+
+    private static List<ProductRow> productRows(JsonNode array) {
+        List<ProductRow> rows = new ArrayList<>();
+        for (JsonNode p : array) {
+            rows.add(new ProductRow(p.path("row").asInt(0), text(p, "name"), text(p, "unit"),
+                    text(p, "category"), number(p, "minStock"), number(p, "yieldPercentage")));
+        }
+        return rows;
     }
 
     private static String text(JsonNode node, String field) {

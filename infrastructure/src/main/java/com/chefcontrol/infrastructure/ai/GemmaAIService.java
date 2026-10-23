@@ -29,7 +29,7 @@ public class GemmaAIService implements AIService {
 
     public GemmaAIService(
             @Value("${app.google.api-key}") String apiKey,
-            @Value("${app.google.model:gemma-3-27b-it}") String model,
+            @Value("${app.google.model:gemini-2.5-flash}") String model,
             ObjectMapper objectMapper) {
         this.model = model;
         this.objectMapper = objectMapper;

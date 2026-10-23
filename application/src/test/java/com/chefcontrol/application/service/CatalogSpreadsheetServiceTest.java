@@ -5,8 +5,11 @@ import com.chefcontrol.application.exception.ErrorCode;
 import com.chefcontrol.application.port.AIService;
 import com.chefcontrol.application.port.AIService.CatalogSpreadsheetInterpretation;
 import com.chefcontrol.application.port.AIService.CatalogSpreadsheetRequest;
+import com.chefcontrol.application.port.AIService.IngredientMatch;
+import com.chefcontrol.application.service.CatalogImportService.RecipeRow;
 import com.chefcontrol.application.port.AIService.SpreadsheetRow;
 import com.chefcontrol.application.port.AIService.SpreadsheetSheet;
+import com.chefcontrol.application.service.CatalogImportService.ProductRow;
 import com.chefcontrol.domain.context.TenantContext;
 import com.chefcontrol.domain.menu.MenuItem;
 import com.chefcontrol.domain.product.Product;
@@ -112,6 +115,65 @@ class CatalogSpreadsheetServiceTest {
         assertEquals(1, ai.requests.size());
     }
 
+    @Test
+    void aProposedProductThatAlreadyExistsOrRepeatsIsDropped() {
+        ai.answer = new CatalogSpreadsheetInterpretation(
+                List.of(new ProductRow(2, "Cebolla", "kg", null, null, null)),
+                List.of(),
+                List.of(new ProductRow(10, "PAPÁ", "kg", null, null, null),     // = "Papa" del catálogo
+                        new ProductRow(11, "cebolla ", "kg", null, null, null), // = la de las filas de insumos
+                        new ProductRow(12, "Ajo", "kg", null, null, null),
+                        new ProductRow(13, "ajo", "kg", null, null, null)),     // repetida
+                List.of(), List.of());
+
+        var result = service.interpretCatalogSpreadsheet(List.of(new SpreadsheetSheet("Recetas", List.of(row(1, "x")))));
+
+        assertEquals(List.of(new ProductRow(12, "Ajo", "kg", null, null, null)), result.proposedProducts());
+    }
+
+    @Test
+    void aRecognizedIngredientIsRenamedOnlyIfTheNameExistsAndTheWarningSaysSo() {
+        ai.answer = new CatalogSpreadsheetInterpretation(
+                List.of(new ProductRow(1, "Cebolla", "kg", null, null, null)),
+                List.of(recipe(5, "Papas"), recipe(6, "cebollas"), recipe(7, "PAPA"), recipe(8, "Tomates")),
+                List.of(new ProductRow(5, "Papas", "kg", null, null, null),       // el modelo igual la propuso
+                        new ProductRow(8, "Tomates", "kg", null, null, null)),
+                List.of(new IngredientMatch(5, "Papas", "papa"),        // existe en el catálogo como "Papa"
+                        new IngredientMatch(6, "cebollas", "Cebolla"),  // existe en la hoja de insumos
+                        new IngredientMatch(7, "PAPA", "Papa"),         // solo mayúsculas: no hace falta tocarlo
+                        new IngredientMatch(8, "Tomates", "Tomate")),   // no existe: queda como vino
+                List.of());
+
+        var result = service.interpretCatalogSpreadsheet(List.of(new SpreadsheetSheet("Recetas", List.of(row(1, "x")))));
+
+        assertEquals(List.of("Papa", "Cebolla", "PAPA", "Tomates"),
+                result.recipes().stream().map(RecipeRow::ingredient).toList());
+        assertEquals(List.of(
+                "Usé 'Papa' del catálogo para 'Papas' (fila 5).",
+                "Usé 'Cebolla' de la hoja de insumos para 'cebollas' (fila 6)."), result.warnings());
+        assertEquals(List.of("Tomates"), result.proposedProducts().stream().map(ProductRow::name).toList());
+        assertTrue(result.ingredientMatches().isEmpty());
+    }
+
+    @Test
+    void aProductTakenFromARecipeRowIsAProposalNotAProduct() {
+        ai.answer = new CatalogSpreadsheetInterpretation(
+                List.of(new ProductRow(13, "limon", "kg", null, null, null),   // pasó así en la prueba real
+                        new ProductRow(14, "Azúcar", "kg", null, null, null),
+                        new ProductRow(2, "Harina", "kg", null, null, null)),  // fila de insumos de verdad
+                List.of(recipe(13, "papa"), recipe(14, "Azúcar")),
+                List.of(), List.of(), List.of());
+
+        var result = service.interpretCatalogSpreadsheet(List.of(new SpreadsheetSheet("Recetas", List.of(row(1, "x")))));
+
+        assertEquals(List.of("Harina"), result.products().stream().map(ProductRow::name).toList());
+        assertEquals(List.of("limon", "Azúcar"), result.proposedProducts().stream().map(ProductRow::name).toList());
+    }
+
+    private static RecipeRow recipe(int row, String ingredient) {
+        return new RecipeRow(row, "Plato", null, null, ingredient, java.math.BigDecimal.ONE, "kg");
+    }
+
     private static SpreadsheetRow row(int ref, Object... cells) {
         return new SpreadsheetRow(ref, Arrays.asList(cells));
     }
@@ -119,6 +181,7 @@ class CatalogSpreadsheetServiceTest {
     /** El puerto falso: guarda lo que le llega y devuelve vacío. */
     private static class FakeAI implements AIService {
         final List<CatalogSpreadsheetRequest> requests = new ArrayList<>();
+        CatalogSpreadsheetInterpretation answer = new CatalogSpreadsheetInterpretation(List.of(), List.of(), List.of(), List.of(), List.of());
 
         @Override
         public AIInterpretation interpret(InterpretRequest request) {
@@ -128,7 +191,7 @@ class CatalogSpreadsheetServiceTest {
         @Override
         public CatalogSpreadsheetInterpretation interpretCatalogSpreadsheet(CatalogSpreadsheetRequest request) {
             requests.add(request);
-            return new CatalogSpreadsheetInterpretation(List.of(), List.of(), List.of());
+            return answer;
         }
     }
 }

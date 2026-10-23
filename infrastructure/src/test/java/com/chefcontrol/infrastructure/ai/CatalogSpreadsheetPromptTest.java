@@ -2,6 +2,7 @@ package com.chefcontrol.infrastructure.ai;
 
 import com.chefcontrol.application.exception.AppException;
 import com.chefcontrol.application.exception.ErrorCode;
+import com.chefcontrol.application.port.AIService.IngredientMatch;
 import com.chefcontrol.application.service.CatalogImportService.RecipeRow;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -29,19 +30,23 @@ class CatalogSpreadsheetPromptTest {
         var result = CatalogSpreadsheetPrompt.parse(mapper.readTree("""
                 {"products":[{"row":3,"name":" Papa ","unit":"kg","minStock":"10,5"}],
                  "dishes":[{"menuItem":"Ñoquis","price":9500,"section":"Pastas","ingredients":[
-                    {"row":12,"ingredient":"Papa","quantity":0.25,"unit":"kg"},
+                    {"row":12,"ingredient":"Papas","quantity":0.25,"unit":"kg","catalogName":"Papa"},
                     {"row":13,"ingredient":"Harina 0000","quantity":"mucha","unit":"g"}]}],
+                 "proposedProducts":[{"row":12,"name":"Cebolla","unit":"kg"}],
                  "warnings":["ignoré la fila 9 (total)"]}
                 """));
 
         assertEquals("Papa", result.products().getFirst().name());
         assertEquals(new BigDecimal("10.5"), result.products().getFirst().minStock());
         assertEquals(List.of(
-                new RecipeRow(12, "Ñoquis", new BigDecimal("9500"), "Pastas", "Papa", new BigDecimal("0.25"), "kg"),
+                new RecipeRow(12, "Ñoquis", new BigDecimal("9500"), "Pastas", "Papas", new BigDecimal("0.25"), "kg"),
                 // lo ilegible queda vacío y el import lo marca en su fila
                 new RecipeRow(13, "Ñoquis", null, null, "Harina 0000", null, "g")),
                 result.recipes());
         assertEquals(List.of("ignoré la fila 9 (total)"), result.warnings());
+        assertEquals("Cebolla", result.proposedProducts().getFirst().name());
+        assertEquals(12, result.proposedProducts().getFirst().row());
+        assertEquals(List.of(new IngredientMatch(12, "Papas", "Papa")), result.ingredientMatches());
     }
 
     @Test
