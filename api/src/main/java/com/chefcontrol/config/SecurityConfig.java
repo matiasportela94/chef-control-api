@@ -5,6 +5,7 @@ import com.chefcontrol.infrastructure.security.CustomUserDetailsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
@@ -41,6 +42,8 @@ public class SecurityConfig {
                                          "/auth/forgot-password", "/auth/reset-password").permitAll()
                         .requestMatchers("/webhook/**", "/webhooks/**").permitAll()
                         .requestMatchers("/actuator/health").permitAll()
+                        // Los precios son públicos: la landing los muestra antes de que exista una sesión.
+                        .requestMatchers(HttpMethod.GET, "/subscription/plans").permitAll()
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**", "/v3/api-docs.yaml", "/v3/api-docs", "/swagger-ui.html").permitAll()
                         .anyRequest().authenticated()
                 )
