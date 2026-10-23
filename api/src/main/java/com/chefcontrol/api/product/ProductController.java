@@ -1,5 +1,7 @@
 package com.chefcontrol.api.product;
 
+import com.chefcontrol.api.plan.RequiresFeature;
+import com.chefcontrol.domain.plan.Feature;
 import com.chefcontrol.api.product.dto.CreateProductRequest;
 import com.chefcontrol.api.product.dto.ProductResponse;
 import com.chefcontrol.api.foodcost.dto.ProductCostEvolutionResponse;
@@ -103,6 +105,7 @@ public class ProductController {
 
     /** Costo por unidad comprada y por unidad utilizable, en cada momento en que alguno cambió. */
     @GetMapping("/{id}/cost-evolution")
+    @RequiresFeature(Feature.ADVANCED_REPORTS)
     @PreAuthorize("hasAuthority('PERM_FOOD_COST_VIEW')")
     public ResponseEntity<ProductCostEvolutionResponse> getProductCostEvolution(
             @PathVariable UUID id,

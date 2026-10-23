@@ -241,6 +241,10 @@ public class AuthController {
                 .resolveEffectivePermissions(user.getId(), activeRestaurantId, active.getRoleId())
                 .stream().map(Enum::name).toList();
 
+        List<String> features = accountRepository.findById(active.getRestaurantAccountId())
+                .map(a -> a.effectivePlan(ChefControlTime.nowInstant()).getFeatures().stream().map(Enum::name).toList())
+                .orElse(List.of());
+
         return new LoginResponse(
                 user.getId(),
                 user.getName(),
@@ -249,6 +253,7 @@ public class AuthController {
                 active.getRestaurantName(),
                 active.getRoleName(),
                 permissions,
+                features,
                 expiresAt,
                 restaurants);
     }
