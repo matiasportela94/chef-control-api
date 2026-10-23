@@ -37,6 +37,11 @@ public class UserRepositoryAdapter implements UserRepository {
     }
 
     @Override
+    public Optional<User> findByGoogleSubject(String googleSubject) {
+        return jpa.findByGoogleSubject(googleSubject).map(UserJpaEntity::toDomain);
+    }
+
+    @Override
     public boolean existsByEmail(String email) {
         return jpa.existsByEmail(email);
     }

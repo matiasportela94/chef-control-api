@@ -38,7 +38,7 @@ public class SecurityConfig {
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/auth/login", "/auth/register",
+                        .requestMatchers("/auth/login", "/auth/register", "/auth/google",
                                          "/auth/forgot-password", "/auth/reset-password").permitAll()
                         .requestMatchers("/webhook/**", "/webhooks/**").permitAll()
                         .requestMatchers("/actuator/health").permitAll()

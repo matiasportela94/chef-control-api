@@ -15,6 +15,8 @@ public enum ErrorCode {
     INVALID_TOKEN           (Category.BAD_REQUEST),
     TOKEN_EXPIRED           (Category.BAD_REQUEST),
     TOKEN_ALREADY_USED      (Category.BAD_REQUEST),
+    GOOGLE_TOKEN_INVALID    (Category.FORBIDDEN),
+    GOOGLE_ACCOUNT_NOT_REGISTERED (Category.NOT_FOUND),
 
     // Stock movements
     MOVEMENT_ALREADY_REVERSED   (Category.CONFLICT),
