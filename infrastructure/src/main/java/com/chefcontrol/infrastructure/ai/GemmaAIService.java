@@ -1,6 +1,8 @@
 package com.chefcontrol.infrastructure.ai;
 
 import com.chefcontrol.application.port.AIService;
+import com.chefcontrol.application.port.AIService.CatalogSpreadsheetInterpretation;
+import com.chefcontrol.application.port.AIService.CatalogSpreadsheetRequest;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -8,6 +10,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -31,6 +34,7 @@ public class GemmaAIService implements AIService {
         this.model = model;
         this.objectMapper = objectMapper;
         this.restClient = RestClient.builder()
+                .requestFactory(AiHttp.requestFactory())
                 .baseUrl("https://generativelanguage.googleapis.com")
                 .defaultHeader("x-goog-api-key", apiKey)
                 .defaultHeader("Content-Type", "application/json")
@@ -184,5 +188,54 @@ public class GemmaAIService implements AIService {
             log.warn("[Gemma] Failed to parse response: {}", e.getMessage());
             return new AIInterpretation("unknown", 0, true, null, "No pude interpretar el mensaje.");
         }
+    }
+
+    /**
+     * Probado el 2026-10-23: gemini-2.5-flash (el del .env local) responde bien en ~20 s para 300 filas.
+     * gemma-4-31b-it devolvió 500 de Google y gemma-4-26b-a4b-it tardó 109 s y mezcló su razonamiento con el texto.
+     */
+    @Override
+    public CatalogSpreadsheetInterpretation interpretCatalogSpreadsheet(CatalogSpreadsheetRequest request) {
+        Map<String, Object> generation = new LinkedHashMap<>();
+        generation.put("maxOutputTokens", CatalogSpreadsheetPrompt.MAX_OUTPUT_TOKENS);
+        generation.put("temperature", 0);
+        generation.put("responseMimeType", "application/json");
+        // ponytail: el razonamiento de 2.5 Flash gasta tokens de salida y una traducción no lo necesita. Otros modelos
+        // no aceptan apagarlo, por eso va por nombre.
+        if (model.startsWith("gemini-2.5-flash")) {
+            generation.put("thinkingConfig", Map.of("thinkingBudget", 0));
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("system_instruction", Map.of("parts", List.of(Map.of("text", CatalogSpreadsheetPrompt.systemPrompt(request,
+                "Respondé solo con ese JSON, compacto (en una sola línea, sin sangría) y sin texto alrededor.")))));
+        body.put("contents", List.of(Map.of("role", "user",
+                "parts", List.of(Map.of("text", CatalogSpreadsheetPrompt.rows(request))))));
+        body.put("generationConfig", generation);
+
+        long start = System.currentTimeMillis();
+        JsonNode response;
+        try {
+            response = restClient.post().uri("/v1beta/models/" + model + ":generateContent")
+                    .body(body).retrieve().body(JsonNode.class);
+        } catch (RestClientException e) {
+            log.error("[Gemma] interpretCatalogSpreadsheet failed: {}", e.getMessage());
+            throw CatalogSpreadsheetPrompt.failed(e.getMessage());
+        }
+        JsonNode usage = response.path("usageMetadata");
+        log.info("[Gemma] interpretCatalogSpreadsheet model={} rows={} input_tokens={} output_tokens={} "
+                        + "thoughts_tokens={} cached_tokens={} ms={}", model, CatalogSpreadsheetPrompt.rowCount(request),
+                usage.path("promptTokenCount").asInt(), usage.path("candidatesTokenCount").asInt(),
+                usage.path("thoughtsTokenCount").asInt(), usage.path("cachedContentTokenCount").asInt(),
+                System.currentTimeMillis() - start);
+
+        JsonNode candidate = response.path("candidates").path(0);
+        if ("MAX_TOKENS".equals(candidate.path("finishReason").asText())) {
+            throw CatalogSpreadsheetPrompt.tooLarge();
+        }
+        StringBuilder text = new StringBuilder();
+        for (JsonNode part : candidate.path("content").path("parts")) {
+            if (!part.path("thought").asBoolean(false)) text.append(part.path("text").asText(""));
+        }
+        return CatalogSpreadsheetPrompt.parse(CatalogSpreadsheetPrompt.extractJson(text.toString(), objectMapper));
     }
 }

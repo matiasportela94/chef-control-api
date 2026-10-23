@@ -47,6 +47,9 @@ public enum ErrorCode {
     // INTERNAL (500) y no 502/503: el front manda esos dos a la pantalla de "sistema caído", y que
     // MercadoPago no responda no es que el sistema esté caído.
     PAYMENT_PROVIDER_UNAVAILABLE(Category.INTERNAL),
+    // IA: INTERNAL (500) y no 503 a propósito, como PAYMENT_PROVIDER_UNAVAILABLE: el front manda 502/503 a /maintenance
+    AI_INTERPRETATION_FAILED    (Category.INTERNAL),
+    AI_SPREADSHEET_TOO_LARGE    (Category.BAD_REQUEST),
 
     // WhatsApp
     UNREGISTERED_PHONE      (Category.FORBIDDEN),
