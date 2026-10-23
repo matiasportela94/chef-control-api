@@ -1,10 +1,22 @@
 package com.chefcontrol.application.port;
 
+import com.chefcontrol.application.service.CatalogImportService.ProductRow;
+import com.chefcontrol.application.service.CatalogImportService.RecipeRow;
+
+import java.util.List;
 import java.util.UUID;
 
 public interface AIService {
 
     AIInterpretation interpret(InterpretRequest request);
+
+    /**
+     * Traduce una planilla de catálogo armada como sea a las filas de /catalog-import. No escribe nada: lo que
+     * devuelve pasa después por la vista previa (dryRun) y la confirmación de siempre. Lanza
+     * {@code AI_SPREADSHEET_TOO_LARGE} si la salida no entra en el máximo del modelo y
+     * {@code AI_INTERPRETATION_FAILED} si el modelo no responde o no se entiende lo que respondió.
+     */
+    CatalogSpreadsheetInterpretation interpretCatalogSpreadsheet(CatalogSpreadsheetRequest request);
 
     record InterpretRequest(
         String message,
@@ -19,5 +31,28 @@ public interface AIService {
         boolean needsConfirmation,
         Object extractedData,
         String responseToUser
+    ) {}
+
+    /** Lo que ya existe va para que el modelo reconozca qué es cada cosa, no para renombrar. */
+    record CatalogSpreadsheetRequest(
+        List<SpreadsheetSheet> sheets,
+        List<UnitOption> units,
+        List<String> productNames,
+        List<String> menuItemNames,
+        List<String> sectionNames
+    ) {}
+
+    record SpreadsheetSheet(String name, List<SpreadsheetRow> rows) {}
+
+    /** @param ref número global de la fila que pone el front, para volver a la hoja y fila originales */
+    record SpreadsheetRow(int ref, List<Object> cells) {}
+
+    record UnitOption(String name, String abbreviation) {}
+
+    /** {@code row} de cada fila = el {@code ref} de la fila de origen. */
+    record CatalogSpreadsheetInterpretation(
+        List<ProductRow> products,
+        List<RecipeRow> recipes,
+        List<String> warnings
     ) {}
 }
