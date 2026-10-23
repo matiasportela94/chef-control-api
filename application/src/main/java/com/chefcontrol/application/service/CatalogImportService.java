@@ -21,6 +21,7 @@ import com.chefcontrol.domain.repository.ProductRepository;
 import com.chefcontrol.domain.repository.RecipeRepository;
 import com.chefcontrol.domain.repository.UnitRepository;
 import com.chefcontrol.domain.shared.PageRequest;
+import com.chefcontrol.domain.user.Permission;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -80,10 +81,15 @@ public class CatalogImportService {
     private final MenuItemService menuItemService;
     private final AuditService auditService;
 
+    /**
+     * @param permissions los del usuario: crear una categoría que falta pide {@code CATEGORIES_CREATE}, como a mano.
+     *                    Va como error de fila y no como 403, para que la vista previa diga cuál falta.
+     */
     @Transactional
-    public Report importCatalog(List<ProductRow> products, List<RecipeRow> recipes, boolean dryRun) {
+    public Report importCatalog(List<ProductRow> products, List<RecipeRow> recipes, boolean dryRun,
+                                Set<Permission> permissions) {
         UUID restaurantId = TenantContext.require();
-        Plan plan = new Plan(restaurantId);
+        Plan plan = new Plan(restaurantId, permissions.contains(Permission.CATEGORIES_CREATE));
         products.forEach(plan::addProduct);
         plan.addRecipes(recipes);
 
@@ -145,12 +151,16 @@ public class CatalogImportService {
     /** Lo que se va a escribir, armado sin escribir nada. */
     private class Plan {
         final UUID restaurantId;
+        final boolean mayCreateCategories;
         final List<RowError> errors = new ArrayList<>();
         final Map<String, Unit> units = new HashMap<>();
         final Map<String, UUID> categoryIds = new HashMap<>();
         final Map<String, UUID> productIds = new HashMap<>();
         final Map<String, UUID> productUnits = new HashMap<>();    // existentes + nuevos: para los ingredientes
         final Map<String, MenuItem> existingDishes = new HashMap<>();
+        // Nombres que en el catálogo matchean con dos o más: elegir uno costearía mal sin que nadie se entere.
+        final Set<String> ambiguousProducts = new HashSet<>();
+        final Set<String> ambiguousDishes = new HashSet<>();
         final Map<String, UUID> sectionIds = new HashMap<>();
         final Map<List<UUID>, Boolean> convertible = new HashMap<>();
 
@@ -162,8 +172,9 @@ public class CatalogImportService {
         final List<PlannedDish> dishes = new ArrayList<>();
         int productsExisting;
 
-        Plan(UUID restaurantId) {
+        Plan(UUID restaurantId, boolean mayCreateCategories) {
             this.restaurantId = restaurantId;
+            this.mayCreateCategories = mayCreateCategories;
             List<Unit> all = unitRepository.findAll();
             all.forEach(u -> units.putIfAbsent(key(u.getName()), u));
             all.stream().filter(u -> u.getAbbreviation() != null)
@@ -172,11 +183,11 @@ public class CatalogImportService {
                 categoryIds.putIfAbsent(key(c.getName()), c.getId());
             }
             for (Product p : productRepository.findByRestaurantIdAndIsActiveTrue(restaurantId, ALL).content()) {
-                productIds.putIfAbsent(key(p.getName()), p.getId());
+                if (productIds.putIfAbsent(key(p.getName()), p.getId()) != null) ambiguousProducts.add(key(p.getName()));
                 productUnits.putIfAbsent(key(p.getName()), p.getDefaultUnitId());
             }
             for (MenuItem m : menuItemRepository.findByRestaurantIdAndActive(restaurantId, true, ALL).content()) {
-                existingDishes.putIfAbsent(key(m.getName()), m);
+                if (existingDishes.putIfAbsent(key(m.getName()), m) != null) ambiguousDishes.add(key(m.getName()));
             }
             for (MenuSection s : menuSectionRepository.findAllByRestaurantId(restaurantId)) {
                 sectionIds.putIfAbsent(key(s.getName()), s.getId());
@@ -194,6 +205,8 @@ public class CatalogImportService {
             } else if (!sheetProducts.add(key)) {
                 error(Sheet.PRODUCTS, r.row(), "name", ErrorCode.IMPORT_DUPLICATE_PRODUCT, name);
                 return;
+            } else if (ambiguousProducts.contains(key)) {
+                error(Sheet.PRODUCTS, r.row(), "name", ErrorCode.IMPORT_AMBIGUOUS_NAME, name);
             }
             Unit unit = unit(Sheet.PRODUCTS, r.row(), r.unit());
             String category = clean(r.category());
@@ -219,6 +232,11 @@ public class CatalogImportService {
             }
             String categoryKey = category == null ? null : key(category);
             if (categoryKey != null && !categoryIds.containsKey(categoryKey)) {
+                if (!mayCreateCategories) {
+                    error(Sheet.PRODUCTS, r.row(), "category", ErrorCode.IMPORT_CATEGORY_CREATE_FORBIDDEN, category);
+                    invalidSheetProducts.add(key);
+                    return;
+                }
                 newCategories.putIfAbsent(categoryKey, category);
             }
             newProducts.put(key, new PlannedProduct(name, unit.getId(), categoryKey, r.minStock(), r.yieldPercentage()));
@@ -244,7 +262,9 @@ public class CatalogImportService {
             RecipeRow first = rows.getFirst();
             String name = clean(first.menuItem());
             MenuItem existing = existingDishes.get(dishKey);
-            if (existing == null && name.length() > MAX_NAME) {
+            if (ambiguousDishes.contains(dishKey)) {
+                error(Sheet.RECIPES, first.row(), "menuItem", ErrorCode.IMPORT_AMBIGUOUS_NAME, name);
+            } else if (existing == null && name.length() > MAX_NAME) {
                 error(Sheet.RECIPES, first.row(), "menuItem", ErrorCode.IMPORT_INVALID_VALUE, name);
             }
 
@@ -292,6 +312,8 @@ public class CatalogImportService {
                 error(Sheet.RECIPES, r.row(), "ingredient", ErrorCode.IMPORT_REQUIRED_FIELD, null);
             } else if (!seenInDish.add(key)) {
                 error(Sheet.RECIPES, r.row(), "ingredient", ErrorCode.IMPORT_DUPLICATE_INGREDIENT, name);
+            } else if (ambiguousProducts.contains(key)) {
+                error(Sheet.RECIPES, r.row(), "ingredient", ErrorCode.IMPORT_AMBIGUOUS_NAME, name);
             } else if (productUnits.containsKey(key)) {
                 productUnit = productUnits.get(key);
             } else if (!invalidSheetProducts.contains(key)) {

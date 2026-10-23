@@ -20,6 +20,7 @@ import com.chefcontrol.domain.product.Unit;
 import com.chefcontrol.domain.product.UnitType;
 import com.chefcontrol.domain.repository.*;
 import com.chefcontrol.domain.shared.Page;
+import com.chefcontrol.domain.user.Permission;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -59,6 +60,7 @@ class CatalogImportServiceTest {
     @Mock CurrentUserProvider currentUserProvider;
 
     private static final UUID R = UUID.randomUUID();
+    private static final Set<Permission> ALL = EnumSet.allOf(Permission.class);
     private final Unit g = unit("Gramo", "g", UnitType.WEIGHT, "1");
     private final Unit kg = unit("Kilogramo", "kg", UnitType.WEIGHT, "1000");
     private final Unit litro = unit("Litro", "l", UnitType.VOLUME, "1000");
@@ -127,12 +129,13 @@ class CatalogImportServiceTest {
         ProductService productService = new ProductService(productRepository, categoryRepository, unitRepository,
                 auditService, priceHistoryRepository, currentUserProvider);
         MenuSectionService sectionService = new MenuSectionService(menuSectionRepository, menuItemRepository, auditService);
+        UnitConversionService conversion = new UnitConversionService(unitConversionRepository, unitRepository);
         MenuItemService menuItemService = new MenuItemService(menuItemRepository, cartaRepository, menuSectionRepository,
                 recipeRepository, productRepository, unitRepository, auditService, priceHistoryRepository,
-                recipeVersionRepository, currentUserProvider);
+                recipeVersionRepository, currentUserProvider, conversion);
         service = new CatalogImportService(productRepository, categoryRepository, unitRepository, menuItemRepository,
-                menuSectionRepository, recipeRepository, new UnitConversionService(unitConversionRepository, unitRepository),
-                productService, sectionService, menuItemService, auditService);
+                menuSectionRepository, recipeRepository, conversion, productService, sectionService, menuItemService,
+                auditService);
     }
 
     @AfterEach
@@ -147,7 +150,7 @@ class CatalogImportServiceTest {
         Report report = service.importCatalog(
                 List.of(new ProductRow(2, " LIMON ", "KG", null, null, null)),
                 List.of(new RecipeRow(2, "Limonada", new BigDecimal("1500"), null, "limón", new BigDecimal("50"), "Gramo")),
-                false);
+                false, ALL);
 
         assertTrue(report.errors().isEmpty(), () -> report.errors().toString());
         assertEquals(1, report.productsExisting());
@@ -163,7 +166,7 @@ class CatalogImportServiceTest {
                 List.of(new ProductRow(2, "Papa", "kg", "Tubérculos", null, null)),
                 List.of(new RecipeRow(2, "Ñoquis", new BigDecimal("8000"), "Pastas", "papa", new BigDecimal("200"), "g"),
                         new RecipeRow(3, "Ñoquis", null, null, "harina 0000", new BigDecimal("50"), "g")),
-                false);
+                false, ALL);
 
         assertFalse(report.saved());
         assertEquals(List.of(new RowError(Sheet.RECIPES, 3, "ingredient", ErrorCode.IMPORT_UNKNOWN_INGREDIENT, "harina 0000")),
@@ -177,7 +180,7 @@ class CatalogImportServiceTest {
                 List.of(new ProductRow(2, "Papa", "kg", "Tubérculos", null, null)),
                 List.of(new RecipeRow(2, "Ñoquis", new BigDecimal("8000"), "Pastas", "papa", new BigDecimal("200"), "g"),
                         new RecipeRow(3, "Milanesa", null, null, "limón", new BigDecimal("10"), "g")),
-                true);
+                true, ALL);
 
         assertFalse(report.saved());
         assertTrue(report.errors().isEmpty());
@@ -193,7 +196,7 @@ class CatalogImportServiceTest {
     @Test
     void existingProductIsLeftUntouched() {
         Report report = service.importCatalog(
-                List.of(new ProductRow(2, "limon", "g", "Cítricos", new BigDecimal("5"), new BigDecimal("40"))), List.of(), false);
+                List.of(new ProductRow(2, "limon", "g", "Cítricos", new BigDecimal("5"), new BigDecimal("40"))), List.of(), false, ALL);
 
         assertTrue(report.saved());
         assertEquals(1, report.productsExisting());
@@ -214,7 +217,7 @@ class CatalogImportServiceTest {
                 List.of(new RecipeRow(2, "Ñoquis", new BigDecimal("8000"), "Pastas", "papa", new BigDecimal("200"), "g"),
                         new RecipeRow(3, "Sorrentinos", null, "pastas", "batata", new BigDecimal("150"), "g"),
                         new RecipeRow(4, "Ensalada", null, "PRINCIPALES", "lechuga", new BigDecimal("1"), "u")),
-                false);
+                false, ALL);
 
         assertTrue(report.saved(), () -> report.errors().toString());
         assertEquals(1, report.categoriesCreated());
@@ -236,7 +239,7 @@ class CatalogImportServiceTest {
     void existingDishGetsItsRecipeReplacedWithANewVersionButKeepsPriceAndSection() {
         Report report = service.importCatalog(List.of(),
                 List.of(new RecipeRow(2, "milanesa", new BigDecimal("1"), "Postres", "Limón", new BigDecimal("30"), "g")),
-                false);
+                false, ALL);
 
         assertTrue(report.saved(), () -> report.errors().toString());
         assertEquals(1, report.recipesReplaced());
@@ -256,7 +259,7 @@ class CatalogImportServiceTest {
     @Test
     void unitThatDoesNotConvertToTheProductsUnitIsRejected() {
         Report report = service.importCatalog(List.of(),
-                List.of(new RecipeRow(5, "Limonada", null, null, "limón", new BigDecimal("1"), "Litro")), false);
+                List.of(new RecipeRow(5, "Limonada", null, null, "limón", new BigDecimal("1"), "Litro")), false, ALL);
 
         assertEquals(List.of(new RowError(Sheet.RECIPES, 5, "unit", ErrorCode.IMPORT_INCOMPATIBLE_UNIT, "Litro")),
                 report.errors());
@@ -270,7 +273,7 @@ class CatalogImportServiceTest {
                         new ProductRow(3, "papá ", "kg", null, null, null)),
                 List.of(new RecipeRow(2, "Ñoquis", null, null, "papa", new BigDecimal("100"), "g"),
                         new RecipeRow(3, "ñoquis", null, null, "Papa", new BigDecimal("50"), "g")),
-                false);
+                false, ALL);
 
         assertEquals(List.of(
                 new RowError(Sheet.PRODUCTS, 3, "name", ErrorCode.IMPORT_DUPLICATE_PRODUCT, "papá"),
@@ -286,7 +289,7 @@ class CatalogImportServiceTest {
                         new ProductRow(3, "Sal", "pizca", null, new BigDecimal("-1"), null)),
                 List.of(new RecipeRow(2, "Ñoquis", new BigDecimal("-5"), null, "papa", new BigDecimal("0"), "g"),
                         new RecipeRow(3, "", null, null, "sal", null, "g")),
-                false);
+                false, ALL);
 
         assertEquals(List.of(
                 new RowError(Sheet.PRODUCTS, 2, "unit", ErrorCode.IMPORT_REQUIRED_FIELD, null),
@@ -297,6 +300,46 @@ class CatalogImportServiceTest {
                 new RowError(Sheet.RECIPES, 2, "price", ErrorCode.IMPORT_INVALID_VALUE, "-5"),
                 new RowError(Sheet.RECIPES, 2, "quantity", ErrorCode.IMPORT_INVALID_VALUE, "0"),
                 new RowError(Sheet.RECIPES, 3, "menuItem", ErrorCode.IMPORT_REQUIRED_FIELD, null)),
+                report.errors());
+        assertNothingWritten();
+    }
+
+    @Test
+    void creatingACategoryNeedsItsPermissionAndSaysWhichOne() {
+        Set<Permission> withoutCategories = EnumSet.allOf(Permission.class);
+        withoutCategories.remove(Permission.CATEGORIES_CREATE);
+
+        Report report = service.importCatalog(
+                List.of(new ProductRow(2, "Papa", "kg", "Tubérculos", null, null),
+                        new ProductRow(3, "Lechuga", "u", "verduras", null, null)), // ya existe: no hace falta el permiso
+                List.of(), false, withoutCategories);
+
+        assertEquals(List.of(new RowError(Sheet.PRODUCTS, 2, "category", ErrorCode.IMPORT_CATEGORY_CREATE_FORBIDDEN, "Tubérculos")),
+                report.errors());
+        assertNothingWritten();
+    }
+
+    @Test
+    void aNameThatMatchesTwoInTheCatalogIsAmbiguous() {
+        Product otroLimon = new Product();
+        otroLimon.setId(UUID.randomUUID());
+        otroLimon.setName("limon");
+        otroLimon.setDefaultUnitId(unidad.getId());
+        products.put(otroLimon.getId(), otroLimon);
+        MenuItem otraMilanesa = MenuItem.builder().id(UUID.randomUUID()).restaurantId(R).name("MILANESA").active(true).build();
+        menuItems.put(otraMilanesa.getId(), otraMilanesa);
+
+        Report report = service.importCatalog(
+                List.of(new ProductRow(2, "Limón", "kg", null, null, null)),
+                List.of(new RecipeRow(2, "Milanesa", null, null, "papa", new BigDecimal("1"), "kg"),
+                        new RecipeRow(3, "Limonada", null, null, "limón", new BigDecimal("1"), "kg")),
+                false, ALL);
+
+        assertEquals(List.of(
+                new RowError(Sheet.PRODUCTS, 2, "name", ErrorCode.IMPORT_AMBIGUOUS_NAME, "Limón"),
+                new RowError(Sheet.RECIPES, 2, "menuItem", ErrorCode.IMPORT_AMBIGUOUS_NAME, "Milanesa"),
+                new RowError(Sheet.RECIPES, 2, "ingredient", ErrorCode.IMPORT_UNKNOWN_INGREDIENT, "papa"),
+                new RowError(Sheet.RECIPES, 3, "ingredient", ErrorCode.IMPORT_AMBIGUOUS_NAME, "limón")),
                 report.errors());
         assertNothingWritten();
     }

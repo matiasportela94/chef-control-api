@@ -9,6 +9,7 @@ import com.chefcontrol.application.service.AccountService;
 import com.chefcontrol.application.service.CatalogImportService;
 import com.chefcontrol.application.service.CatalogImportService.Report;
 import com.chefcontrol.domain.plan.Feature;
+import com.chefcontrol.domain.user.Permission;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -20,6 +21,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 
 import java.math.BigDecimal;
 import java.util.Arrays;
+import java.util.EnumSet;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -41,7 +43,7 @@ class CatalogImportControllerTest {
 
     @Test
     void productsOnlyNeedNeitherMenuPermissionsNorThePlan() {
-        when(catalogImportService.importCatalog(anyList(), anyList(), eq(true))).thenReturn(emptyReport());
+        when(catalogImportService.importCatalog(anyList(), anyList(), eq(true), anySet())).thenReturn(emptyReport());
 
         controller.importCatalog(PRODUCTS_ONLY, true, auth("PERM_PRODUCTS_CREATE"));
 
@@ -71,13 +73,23 @@ class CatalogImportControllerTest {
 
     @Test
     void recipesWithPermissionsAndPlanAreImported() {
-        when(catalogImportService.importCatalog(anyList(), anyList(), eq(false))).thenReturn(emptyReport());
+        when(catalogImportService.importCatalog(anyList(), anyList(), eq(false), anySet())).thenReturn(emptyReport());
 
         var response = controller.importCatalog(WITH_RECIPES, false,
                 auth("PERM_PRODUCTS_CREATE", "PERM_MENU_CREATE", "PERM_MENU_UPDATE"));
 
         assertEquals(200, response.getStatusCode().value());
         verify(accountService).requireFeature(Feature.RECIPES_AND_FOOD_COST);
+    }
+
+    @Test
+    void thePermissionsOfTheSessionReachTheService() {
+        when(catalogImportService.importCatalog(anyList(), anyList(), eq(true), anySet())).thenReturn(emptyReport());
+
+        controller.importCatalog(PRODUCTS_ONLY, true, auth("PERM_PRODUCTS_CREATE", "PERM_CATEGORIES_CREATE", "OTHER"));
+
+        verify(catalogImportService).importCatalog(anyList(), anyList(), eq(true),
+                eq(EnumSet.of(Permission.PRODUCTS_CREATE, Permission.CATEGORIES_CREATE)));
     }
 
     private static Authentication auth(String... authorities) {
