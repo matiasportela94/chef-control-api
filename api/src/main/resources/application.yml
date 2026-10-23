@@ -44,6 +44,11 @@ app:
   jwt:
     expiration-ms: 86400000
 
+  google-sign-in:
+    # OAuth Client ID (tipo "Aplicación web") de Google Cloud Console. Es público: el front lo usa para el
+    # botón y el back para exigir que el token sea para nuestra app. Vacío = el ingreso con Google rechaza todo.
+    client-id: ${GOOGLE_CLIENT_ID:}
+
   cookie:
     secure: ${COOKIE_SECURE:false}
 

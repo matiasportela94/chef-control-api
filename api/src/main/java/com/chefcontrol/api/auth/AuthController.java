@@ -1,12 +1,14 @@
 package com.chefcontrol.api.auth;
 
 import com.chefcontrol.api.auth.dto.ForgotPasswordRequest;
+import com.chefcontrol.api.auth.dto.GoogleSignInRequest;
 import com.chefcontrol.api.auth.dto.LoginRequest;
 import com.chefcontrol.api.auth.dto.LoginResponse;
 import com.chefcontrol.api.auth.dto.RegisterRequest;
 import com.chefcontrol.api.auth.dto.ResetPasswordRequest;
 import com.chefcontrol.api.auth.dto.SwitchRestaurantRequest;
 import com.chefcontrol.application.port.AuditService;
+import com.chefcontrol.application.service.GoogleSignInService;
 import com.chefcontrol.application.service.PasswordResetService;
 import com.chefcontrol.application.service.PermissionResolutionService;
 import com.chefcontrol.application.service.RestaurantRegistrationService;
@@ -55,6 +57,7 @@ public class AuthController {
     private final PasswordResetService passwordResetService;
     private final RestaurantRegistrationService registrationService;
     private final PermissionResolutionService permissionResolutionService;
+    private final GoogleSignInService googleSignInService;
     private final AuditService auditService;
 
     @Value("${app.cookie.secure}")
@@ -72,13 +75,28 @@ public class AuthController {
         var cmd = new RegisterCommand(
                 request.restaurantName(), request.ownerName(),
                 request.ownerEmail(), request.ownerPassword(),
-                request.ownerPhone(), request.timezone());
+                request.ownerPhone(), request.timezone(), null);
 
         var result = registrationService.register(cmd);
-        String token = jwtTokenProvider.generateToken(result.owner(), result.restaurant().getId(), result.memberships());
-        setAuthCookie(response, token);
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(buildLoginResponse(result.owner(), result.restaurant().getId(), result.memberships()));
+                .body(openSession(result.owner(), result.restaurant().getId(), result.memberships(), response));
+    }
+
+    /**
+     * Entrar (o registrarse) con Google. Usuario conocido → 200 con la sesión abierta. Usuario nuevo con
+     * {@code restaurantName} → 201, alta como en /register. Nuevo sin él → 404 GOOGLE_ACCOUNT_NOT_REGISTERED,
+     * y el front pide el nombre y reintenta con el mismo token.
+     */
+    @PostMapping("/google")
+    public ResponseEntity<LoginResponse> signInWithGoogle(@Valid @RequestBody GoogleSignInRequest request,
+                                                          HttpServletResponse response) {
+        var result = googleSignInService.signIn(request.idToken(), request.restaurantName(), request.timezone());
+        var registered = result.registered();
+        if (registered != null) {
+            return ResponseEntity.status(HttpStatus.CREATED)
+                    .body(openSession(registered.owner(), registered.restaurant().getId(), registered.memberships(), response));
+        }
+        return ResponseEntity.ok(logIn(result.user(), "google", response));
     }
 
     @PostMapping("/login")
@@ -96,20 +114,28 @@ public class AuthController {
         User user = userRepository.findByEmailAndIsActiveTrue(request.email())
                 .orElseThrow(() -> AppException.notFound(ErrorCode.USER_NOT_FOUND, "User not found"));
 
+        return ResponseEntity.ok(logIn(user, "password", response));
+    }
+
+    /** Sesión en el primer restaurante activo del usuario (ya autenticado por contraseña o por Google). */
+    private LoginResponse logIn(User user, String method, HttpServletResponse response) {
         List<UserRestaurant> memberships = userRestaurantRepository.findActiveByUserId(user.getId());
         if (memberships.isEmpty()) {
             throw AppException.forbidden(ErrorCode.NO_ACTIVE_MEMBERSHIPS, "No active restaurant memberships");
         }
 
         UUID activeRestaurantId = memberships.getFirst().getRestaurantId();
-        String token = jwtTokenProvider.generateToken(user, activeRestaurantId, memberships);
-        LoginResponse loginResponse = buildLoginResponse(user, activeRestaurantId, memberships);
+        LoginResponse loginResponse = openSession(user, activeRestaurantId, memberships, response);
 
         auditService.log(AuditAction.USER_LOGIN, "User", user.getId(),
-                Map.of("restaurantId", activeRestaurantId, "role", loginResponse.role()));
+                Map.of("restaurantId", activeRestaurantId, "role", loginResponse.role(), "method", method));
+        return loginResponse;
+    }
 
-        setAuthCookie(response, token);
-        return ResponseEntity.ok(loginResponse);
+    private LoginResponse openSession(User user, UUID restaurantId, List<UserRestaurant> memberships,
+                                      HttpServletResponse response) {
+        setAuthCookie(response, jwtTokenProvider.generateToken(user, restaurantId, memberships));
+        return buildLoginResponse(user, restaurantId, memberships);
     }
 
     @PostMapping("/switch-restaurant")

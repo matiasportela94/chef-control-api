@@ -32,6 +32,9 @@ public class UserJpaEntity {
     @Column(unique = true)
     private String phone;
 
+    @Column(name = "google_subject", unique = true)
+    private String googleSubject;
+
     @Column(name = "is_active", nullable = false)
     private boolean isActive = true;
 
@@ -53,6 +56,7 @@ public class UserJpaEntity {
         e.setPasswordHash(domain.getPasswordHash());
         e.setName(domain.getName());
         e.setPhone(domain.getPhone());
+        e.setGoogleSubject(domain.getGoogleSubject());
         e.setActive(domain.isActive());
         e.setCreatedAt(domain.getCreatedAt());
         return e;
@@ -65,6 +69,7 @@ public class UserJpaEntity {
         u.setPasswordHash(passwordHash);
         u.setName(name);
         u.setPhone(phone);
+        u.setGoogleSubject(googleSubject);
         u.setActive(isActive);
         u.setCreatedAt(createdAt);
         return u;

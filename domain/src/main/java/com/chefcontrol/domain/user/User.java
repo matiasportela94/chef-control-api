@@ -15,6 +15,8 @@ public class User {
     private String passwordHash;
     private String name;
     private String phone;
+    /** Claim "sub" de Google si entra con Google; null si solo tiene contraseña. */
+    private String googleSubject;
     private boolean isActive = true;
     private Instant createdAt;
 }
