@@ -79,7 +79,7 @@ public class TransactionalEmailService implements EmailService {
                 layout("Hola " + esc(userName) + ",",
                         "No pudimos cobrar tu plan <b>" + esc(planName) + "</b>. Mercado Pago va a volver a intentarlo; "
                                 + "para no perder el acceso, revisá tu medio de pago antes del <b>" + until + "</b>. "
-                                + "Pasada esa fecha la cuenta vuelve al plan de prueba.",
+                                + "Pasada esa fecha la cuenta vuelve al plan gratis.",
                         "Revisar mi plan", planLink, BILLING_FOOTER),
                 "Hola " + userName + ",\n\nNo pudimos cobrar tu plan " + planName
                         + ". Revisá tu medio de pago antes del " + until + " para no perder el acceso: " + planLink));
@@ -88,14 +88,14 @@ public class TransactionalEmailService implements EmailService {
     @Override
     public void sendPlanDowngradedToTrial(String toEmail, String userName, String planName, String planLink) {
         deliver(new EmailMessage(toEmail,
-                "Tu cuenta de Chef Control pasó al plan de prueba",
+                "Tu cuenta de Chef Control pasó al plan gratis",
                 layout("Hola " + esc(userName) + ",",
                         "No pudimos cobrar tu plan <b>" + esc(planName) + "</b> y la suscripción quedó cancelada, "
-                                + "así que tu cuenta pasó al plan de prueba. Tus datos siguen ahí: podés volver a "
+                                + "así que tu cuenta pasó al plan gratis. Tus datos siguen ahí: podés volver a "
                                 + "suscribirte cuando quieras.",
                         "Volver a suscribirme", planLink, BILLING_FOOTER),
                 "Hola " + userName + ",\n\nNo pudimos cobrar tu plan " + planName
-                        + " y tu cuenta pasó al plan de prueba. Podés volver a suscribirte acá: " + planLink));
+                        + " y tu cuenta pasó al plan gratis. Podés volver a suscribirte acá: " + planLink));
     }
 
     // Los clientes son de Argentina: la fecha va en su hora, no en la del servidor (UTC en Railway).

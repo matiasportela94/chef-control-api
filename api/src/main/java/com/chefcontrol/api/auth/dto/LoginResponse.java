@@ -11,6 +11,9 @@ public record LoginResponse(
         String activeRestaurantName,
         String role,
         List<String> permissions,
+        // Features del plan efectivo de la cuenta del local activo: el front las usa para no ofrecer lo que el
+        // backend va a rechazar. Pueden quedar viejas hasta renovar la sesión; quien decide es el backend.
+        List<String> features,
         long expiresAt,
         List<RestaurantSummary> restaurants
 ) {

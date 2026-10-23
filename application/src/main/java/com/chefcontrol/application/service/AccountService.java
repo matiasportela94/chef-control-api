@@ -1,5 +1,6 @@
 package com.chefcontrol.application.service;
 
+import com.chefcontrol.domain.plan.Feature;
 import com.chefcontrol.application.exception.AppException;
 import com.chefcontrol.application.exception.ErrorCode;
 import com.chefcontrol.application.payments.SubscriptionService;
@@ -103,6 +104,18 @@ public class AccountService {
                 .collect(Collectors.toSet());
 
         return new AccountOverview(account, owner, restaurants, users.size());
+    }
+
+    /**
+     * Corta si el plan efectivo de la cuenta actual no incluye la feature. Lo llama el gate de los endpoints
+     * pagos (RequiresFeature, en api); usa effectivePlan(), así que un plan vencido ya no habilita nada.
+     */
+    @Transactional(readOnly = true)
+    public void requireFeature(Feature feature) {
+        if (!currentAccount().hasFeature(feature)) {
+            throw AppException.forbidden(ErrorCode.PLAN_FEATURE_REQUIRED,
+                    "Your plan does not include " + feature.name());
+        }
     }
 
     private Account currentAccount() {

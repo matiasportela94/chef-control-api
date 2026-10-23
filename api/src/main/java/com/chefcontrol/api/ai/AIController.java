@@ -1,5 +1,7 @@
 package com.chefcontrol.api.ai;
 
+import com.chefcontrol.api.plan.RequiresFeature;
+import com.chefcontrol.domain.plan.Feature;
 import com.chefcontrol.application.service.AIExecuteService;
 import com.chefcontrol.application.service.TextInterpretService;
 import jakarta.validation.Valid;
@@ -14,6 +16,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/ai")
+@RequiresFeature(Feature.AI_INTERPRETER)
 @RequiredArgsConstructor
 public class AIController {
 
