@@ -87,6 +87,15 @@ public enum ErrorCode {
     // Input
     VALIDATION_ERROR        (Category.BAD_REQUEST),
 
+    // Importación de catálogo: no se lanzan, van como errores de fila en el resultado de /catalog-import
+    IMPORT_REQUIRED_FIELD       (Category.BAD_REQUEST),
+    IMPORT_INVALID_VALUE        (Category.BAD_REQUEST),
+    IMPORT_UNKNOWN_UNIT         (Category.BAD_REQUEST),
+    IMPORT_UNKNOWN_INGREDIENT   (Category.BAD_REQUEST),
+    IMPORT_INCOMPATIBLE_UNIT    (Category.BAD_REQUEST),
+    IMPORT_DUPLICATE_PRODUCT    (Category.BAD_REQUEST),
+    IMPORT_DUPLICATE_INGREDIENT (Category.BAD_REQUEST),
+
     // Generic
     NOT_FOUND               (Category.NOT_FOUND),
     FORBIDDEN               (Category.FORBIDDEN),
