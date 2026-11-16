@@ -6,6 +6,7 @@ import com.chefcontrol.application.port.AIService.CatalogSpreadsheetRequest;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.stereotype.Service;
@@ -28,6 +29,8 @@ public class ClaudeAIService implements AIService {
     private final String model;
     private final ObjectMapper objectMapper;
 
+    // Dos constructores: sin @Autowired Spring busca uno sin argumentos y no arranca (staging, 2026-11-16).
+    @Autowired
     public ClaudeAIService(
             @Value("${app.anthropic.api-key}") String apiKey,
             @Value("${app.anthropic.model:claude-haiku-4-5-20251001}") String model,
