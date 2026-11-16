@@ -29,6 +29,7 @@ CREATE TABLE subscription_change_requests (
     account_id          UUID          NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
     -- la vigente cuando se pidió: solo sus avisos aplican o tiran la solicitud
     subscription_id     UUID          NOT NULL REFERENCES subscriptions(id) ON DELETE CASCADE,
+    change_type         VARCHAR(30)   NOT NULL,
     plan_tier           VARCHAR(20)   NOT NULL,
     billing_period      VARCHAR(10)   NOT NULL,
     amount_ars          NUMERIC(12,2) NOT NULL,

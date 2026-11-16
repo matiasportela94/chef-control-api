@@ -3,6 +3,7 @@ package com.chefcontrol.infrastructure.persistence.entity;
 import com.chefcontrol.domain.payments.BillingPeriod;
 import com.chefcontrol.domain.payments.ChangeRequestStatus;
 import com.chefcontrol.domain.payments.SubscriptionChangeRequest;
+import com.chefcontrol.domain.payments.SubscriptionChangeType;
 import com.chefcontrol.domain.plan.PlanTier;
 import jakarta.persistence.*;
 import lombok.Getter;
@@ -27,6 +28,10 @@ public class SubscriptionChangeRequestJpaEntity {
 
     @Column(name = "subscription_id", nullable = false)
     private UUID subscriptionId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "change_type", nullable = false)
+    private SubscriptionChangeType changeType;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "plan_tier", nullable = false)
@@ -71,6 +76,7 @@ public class SubscriptionChangeRequestJpaEntity {
         e.setId(d.getId());
         e.setAccountId(d.getAccountId());
         e.setSubscriptionId(d.getSubscriptionId());
+        e.setChangeType(d.getChangeType());
         e.setPlanTier(d.getPlanTier());
         e.setBillingPeriod(d.getBillingPeriod());
         e.setAmountArs(d.getAmountArs());
@@ -84,7 +90,7 @@ public class SubscriptionChangeRequestJpaEntity {
 
     public SubscriptionChangeRequest toDomain() {
         return SubscriptionChangeRequest.builder()
-                .id(id).accountId(accountId).subscriptionId(subscriptionId)
+                .id(id).accountId(accountId).subscriptionId(subscriptionId).changeType(changeType)
                 .planTier(planTier).billingPeriod(billingPeriod).amountArs(amountArs)
                 .effectiveAt(effectiveAt).status(status).newSubscriptionId(newSubscriptionId)
                 .createdAt(createdAt).updatedAt(updatedAt)

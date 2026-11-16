@@ -24,6 +24,7 @@ public class SubscriptionChangeRequest {
     private UUID id;
     private UUID accountId;
     private UUID subscriptionId;
+    private SubscriptionChangeType changeType;
     private PlanTier planTier;
     private BillingPeriod billingPeriod;
     private BigDecimal amountArs;
@@ -34,6 +35,6 @@ public class SubscriptionChangeRequest {
     private Instant updatedAt;
 
     public boolean isPeriodChange() {
-        return newSubscriptionId != null;
+        return changeType.isPeriodChange();
     }
 }

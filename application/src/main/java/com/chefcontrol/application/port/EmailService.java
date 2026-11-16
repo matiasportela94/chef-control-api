@@ -28,6 +28,13 @@ public interface EmailService {
     /** Mora: el cobro del plan no entró; conserva el acceso hasta {@code accessUntil}. Va uno por día de gracia. */
     void sendPaymentFailedReminder(String toEmail, String userName, String planName, Instant accessUntil, String planLink);
 
+    /**
+     * Se aplicó un cambio de plan o de período (Mati, 2026-11-16: es el único mail del cambio; el comprobante del
+     * pago único de una suba lo manda MP). {@code amountArs} es lo que se cobra por ciclo desde ahora.
+     */
+    void sendPlanChanged(String toEmail, String userName, String planName, BigDecimal amountArs,
+                         BillingPeriod billingPeriod, String appLink);
+
     /** Mora vencida: la suscripción se canceló y la cuenta pasó a TRIAL. */
     void sendPlanDowngradedToTrial(String toEmail, String userName, String planName, String planLink);
 }
