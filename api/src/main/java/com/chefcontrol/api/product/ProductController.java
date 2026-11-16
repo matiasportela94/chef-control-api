@@ -67,7 +67,8 @@ public class ProductController {
                 request.categoryId(),
                 request.minStock(),
                 request.maxStock(),
-                request.yieldPercentage());
+                request.yieldPercentage(),
+                request.ivaPercentage());
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ProductResponse.from(productService.createProduct(command)));
     }
@@ -84,7 +85,8 @@ public class ProductController {
                 request.categoryId(),
                 request.minStock(),
                 request.maxStock(),
-                request.yieldPercentage());
+                request.yieldPercentage(),
+                request.ivaPercentage());
         return ResponseEntity.ok(ProductResponse.from(productService.updateProduct(id, command)));
     }
 

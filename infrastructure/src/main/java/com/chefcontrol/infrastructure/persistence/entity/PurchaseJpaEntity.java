@@ -46,6 +46,15 @@ public class PurchaseJpaEntity {
     @Column(nullable = false)
     private PurchaseStatus status = PurchaseStatus.ACTIVE;
 
+    @Column(name = "prices_include_iva")
+    private Boolean pricesIncludeIva;
+
+    @Column(name = "net_total", precision = 12, scale = 2)
+    private BigDecimal netTotal;
+
+    @Column(name = "iva_total", precision = 12, scale = 2)
+    private BigDecimal ivaTotal;
+
     @PrePersist
     protected void onCreate() {
         if (createdAt == null) createdAt = Instant.now();
@@ -62,6 +71,9 @@ public class PurchaseJpaEntity {
                 .purchasedAt(domain.getPurchasedAt())
                 .createdAt(domain.getCreatedAt())
                 .status(domain.getStatus() != null ? domain.getStatus() : PurchaseStatus.ACTIVE)
+                .pricesIncludeIva(domain.getPricesIncludeIva())
+                .netTotal(domain.getNetTotal())
+                .ivaTotal(domain.getIvaTotal())
                 .build();
     }
 
@@ -77,6 +89,9 @@ public class PurchaseJpaEntity {
                 .purchasedAt(purchasedAt)
                 .createdAt(createdAt)
                 .status(status)
+                .pricesIncludeIva(pricesIncludeIva)
+                .netTotal(netTotal)
+                .ivaTotal(ivaTotal)
                 .build();
     }
 }

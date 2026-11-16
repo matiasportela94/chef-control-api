@@ -21,6 +21,8 @@ public class Restaurant {
     private String slug;
     private String timezone = "America/Argentina/Buenos_Aires";
     private boolean isActive = true;
+    /** Null = no cargada; se comporta como monotributo (ver {@link TaxCondition}). */
+    private TaxCondition taxCondition;
     private Instant createdAt;
 
     /**

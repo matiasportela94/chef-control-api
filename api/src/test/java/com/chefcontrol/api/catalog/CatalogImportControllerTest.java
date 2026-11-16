@@ -37,7 +37,7 @@ class CatalogImportControllerTest {
     @InjectMocks CatalogImportController controller;
 
     private static final CatalogImportRequest PRODUCTS_ONLY = new CatalogImportRequest(
-            List.of(new ProductImportRow(2, "Papa", "kg", null, null, null)), null);
+            List.of(new ProductImportRow(2, "Papa", "kg", null, null, null, null)), null);
     private static final CatalogImportRequest WITH_RECIPES = new CatalogImportRequest(null,
             List.of(new RecipeImportRow(2, "Ñoquis", null, null, "papa", BigDecimal.ONE, "kg")));
 

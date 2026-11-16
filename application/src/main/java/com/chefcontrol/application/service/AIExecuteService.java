@@ -59,13 +59,13 @@ public class AIExecuteService {
 
             LocalDate expirationDate = parseLocalDate(item.get("expiration_date"));
             commands.add(new PurchaseService.PurchaseItemCommand(
-                    productId, product.getDefaultUnitId(), qty, price, expirationDate));
+                    productId, product.getDefaultUnitId(), qty, price, expirationDate, null));
         }
 
         if (commands.isEmpty()) return ExecuteResult.error("Ningún producto coincide con el catálogo.");
 
         purchaseService.createPurchase(new PurchaseService.CreatePurchaseCommand(
-                supplierId, null, Instant.now(), commands));
+                supplierId, null, Instant.now(), null, commands));
 
         return ExecuteResult.ok(commands.size(), skipped, "Compra registrada");
     }

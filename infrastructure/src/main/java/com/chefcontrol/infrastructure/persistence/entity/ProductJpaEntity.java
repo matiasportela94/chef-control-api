@@ -50,6 +50,9 @@ public class ProductJpaEntity {
     @Column(name = "yield_percentage", nullable = false, precision = 5, scale = 2)
     private BigDecimal yieldPercentage = new BigDecimal("100");
 
+    @Column(name = "iva_percentage", precision = 5, scale = 2)
+    private BigDecimal ivaPercentage;
+
     @Column(name = "is_active", nullable = false)
     private boolean isActive = true;
 
@@ -72,6 +75,7 @@ public class ProductJpaEntity {
         e.setMinStock(domain.getMinStock());
         e.setMaxStock(domain.getMaxStock());
         e.setYieldPercentage(domain.getYieldPercentage());
+        e.setIvaPercentage(domain.getIvaPercentage());
         e.setActive(domain.isActive());
         e.setCreatedAt(domain.getCreatedAt());
         return e;
@@ -93,6 +97,7 @@ public class ProductJpaEntity {
         p.setMinStock(minStock);
         p.setMaxStock(maxStock);
         p.setYieldPercentage(yieldPercentage);
+        p.setIvaPercentage(ivaPercentage);
         p.setActive(isActive);
         p.setCreatedAt(createdAt);
         return p;

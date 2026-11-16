@@ -2,6 +2,7 @@ package com.chefcontrol.api.purchase;
 
 import com.chefcontrol.api.purchase.dto.CreatePurchaseRequest;
 import com.chefcontrol.api.purchase.dto.PurchaseDetailResponse;
+import com.chefcontrol.api.purchase.dto.PurchaseIvaReportResponse;
 import com.chefcontrol.api.purchase.dto.PurchaseResponse;
 import com.chefcontrol.api.purchase.dto.UpdatePurchaseRequest;
 import com.chefcontrol.api.shared.PagedResponse;
@@ -14,11 +15,13 @@ import com.chefcontrol.domain.purchase.Purchase;
 import jakarta.validation.Valid;
 import com.chefcontrol.domain.shared.PageRequest;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Instant;
 import java.util.UUID;
 
 @RestController
@@ -38,6 +41,15 @@ public class PurchaseController {
                         PurchaseResponse::from));
     }
 
+    /** IVA de las compras del período. Mismo criterio de fechas que /food-cost: instantes, extremos incluidos. */
+    @GetMapping("/iva-report")
+    @PreAuthorize("hasAuthority('PERM_PURCHASES_VIEW')")
+    public ResponseEntity<PurchaseIvaReportResponse> getPurchaseIvaReport(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to) {
+        return ResponseEntity.ok(PurchaseIvaReportResponse.from(purchaseService.getPurchaseIvaReport(from, to)));
+    }
+
     @GetMapping("/{id}")
     @PreAuthorize("hasAuthority('PERM_PURCHASES_VIEW')")
     public ResponseEntity<PurchaseDetailResponse> getPurchase(@PathVariable UUID id) {
@@ -55,9 +67,11 @@ public class PurchaseController {
                 request.supplierId(),
                 request.notes(),
                 request.purchasedAt(),
+                request.pricesIncludeIva(),
                 request.items().stream()
                         .map(i -> new PurchaseItemCommand(
-                                i.productId(), i.unitId(), i.quantity(), i.pricePerUnit(), i.expirationDate()))
+                                i.productId(), i.unitId(), i.quantity(), i.pricePerUnit(), i.expirationDate(),
+                                i.ivaPercentage()))
                         .toList());
 
         Purchase purchase = purchaseService.createPurchase(command);

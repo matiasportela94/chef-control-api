@@ -27,6 +27,8 @@ public class Product {
     private BigDecimal minStock;
     private BigDecimal maxStock;
     private BigDecimal yieldPercentage = HUNDRED;
+    /** Alicuota de IVA con la que se compra (ver IvaRates). Null = no cargada: la compra usa 0. */
+    private BigDecimal ivaPercentage;
     private boolean isActive = true;
     private Instant createdAt;
 

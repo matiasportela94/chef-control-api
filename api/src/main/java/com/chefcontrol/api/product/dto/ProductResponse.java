@@ -15,6 +15,7 @@ public record ProductResponse(
         BigDecimal minStock,
         BigDecimal maxStock,
         BigDecimal yieldPercentage,
+        BigDecimal ivaPercentage,
         boolean isActive,
         BigDecimal currentStock,
         LocalDate nextExpirationDate
@@ -37,6 +38,7 @@ public record ProductResponse(
                 product.getMinStock(),
                 product.getMaxStock(),
                 product.getYieldPercentage(),
+                product.getIvaPercentage(),
                 product.isActive(),
                 currentStock,
                 nextExpirationDate);

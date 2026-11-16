@@ -20,7 +20,10 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.chefcontrol.domain.shared.valueobject.IvaRates;
+
 import java.math.BigDecimal;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -126,6 +129,7 @@ public class ProductService {
         product.setMaxStock(cmd.maxStock());
         // Null = 100: el que no carga rendimiento no cambia de comportamiento.
         product.setYieldPercentage(cmd.yieldPercentage() != null ? cmd.yieldPercentage() : new BigDecimal("100"));
+        product.setIvaPercentage(validIvaPercentage(cmd.ivaPercentage()));
         resolveUnit(cmd.defaultUnitId()); // validates existence
         resolveCategory(cmd.categoryId(), restaurantId); // validates existence
         product.setDefaultUnitId(cmd.defaultUnitId());
@@ -155,6 +159,8 @@ public class ProductService {
         product.setMaxStock(cmd.maxStock());
         // Null = 100: el que no carga rendimiento no cambia de comportamiento.
         product.setYieldPercentage(cmd.yieldPercentage() != null ? cmd.yieldPercentage() : new BigDecimal("100"));
+        // Null la borra: es un PUT completo, y "no cargada" es un valor válido.
+        product.setIvaPercentage(validIvaPercentage(cmd.ivaPercentage()));
         resolveUnit(cmd.defaultUnitId()); // validates existence
         resolveCategory(cmd.categoryId(), restaurantId); // validates existence
         product.setDefaultUnitId(cmd.defaultUnitId());
@@ -198,14 +204,24 @@ public class ProductService {
      *
      * <p>Lleva el rendimiento porque cambiarlo <b>reprecia todos los platos que usan el insumo</b>
      * —el food cost teórico se mueve sin que nadie haya tocado una receta— y es justo el dato que
-     * hay que poder rastrear cuando el número cambie sin explicación. Ninguno de los tres puede
-     * ser null: nombre y unidad son obligatorios y el rendimiento cae en 100 por default.
+     * hay que poder rastrear cuando el número cambie sin explicación. El IVA, por lo mismo: para un
+     * responsable inscripto decide qué parte del precio de compra entra al costo. Es el único que puede
+     * ser null (no cargado), por eso HashMap y no Map.of.
      */
     private static Map<String, Object> payloadOf(Product product) {
-        return Map.of(
-                "name", product.getName(),
-                "unitId", product.getDefaultUnitId(),
-                "yieldPercentage", product.getYieldPercentage());
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("name", product.getName());
+        payload.put("unitId", product.getDefaultUnitId());
+        payload.put("yieldPercentage", product.getYieldPercentage());
+        payload.put("ivaPercentage", product.getIvaPercentage());
+        return payload;
+    }
+
+    private static BigDecimal validIvaPercentage(BigDecimal percentage) {
+        if (percentage != null && !IvaRates.isValid(percentage)) {
+            throw AppException.badRequest(ErrorCode.INVALID_IVA_PERCENTAGE, "Invalid IVA percentage: " + percentage);
+        }
+        return percentage;
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -230,7 +246,8 @@ public class ProductService {
             UUID categoryId,
             BigDecimal minStock,
             BigDecimal maxStock,
-            BigDecimal yieldPercentage
+            BigDecimal yieldPercentage,
+            BigDecimal ivaPercentage
     ) {}
 
     public record UpdateProductCommand(
@@ -240,6 +257,7 @@ public class ProductService {
             UUID categoryId,
             BigDecimal minStock,
             BigDecimal maxStock,
-            BigDecimal yieldPercentage
+            BigDecimal yieldPercentage,
+            BigDecimal ivaPercentage
     ) {}
 }

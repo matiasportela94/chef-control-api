@@ -22,7 +22,7 @@ public record CatalogImportRequest(
 
     /** @param row el número de fila del Excel */
     public record ProductImportRow(int row, String name, String unit, String category,
-                                   BigDecimal minStock, BigDecimal yieldPercentage) {}
+                                   BigDecimal minStock, BigDecimal yieldPercentage, BigDecimal ivaPercentage) {}
 
     /** Una fila por ingrediente; las del mismo plato forman su receta. {@code quantity} es para un plato. */
     public record RecipeImportRow(int row, String menuItem, BigDecimal price, String section,

@@ -254,7 +254,8 @@ public class AuthController {
                         ur.getRestaurantName(),
                         ur.getRoleName(),
                         ur.getRestaurantAccountId(),
-                        accountNames.get(ur.getRestaurantAccountId())))
+                        accountNames.get(ur.getRestaurantAccountId()),
+                        ur.getRestaurantTaxCondition()))
                 .toList();
 
         long expiresAt = ChefControlTime.nowInstant().plusMillis(jwtExpirationMs).toEpochMilli();

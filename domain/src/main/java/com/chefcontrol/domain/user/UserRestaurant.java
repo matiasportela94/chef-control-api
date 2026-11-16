@@ -1,5 +1,6 @@
 package com.chefcontrol.domain.user;
 
+import com.chefcontrol.domain.restaurant.TaxCondition;
 import lombok.*;
 
 import java.time.Instant;
@@ -22,6 +23,7 @@ public class UserRestaurant {
     private UUID restaurantAccountId;
     private String restaurantSlug;
     private String restaurantTimezone;
+    private TaxCondition restaurantTaxCondition;
 
     // Denormalized from user join (populated when querying by restaurant)
     private String userEmail;

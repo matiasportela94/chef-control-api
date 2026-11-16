@@ -77,7 +77,7 @@ class RestaurantRegistrationServicePlanLimitTest {
         when(accountRepository.findById(accountId)).thenReturn(Optional.of(account(PlanTier.TRIAL)));
         when(restaurantRepository.findAllByAccountId(accountId)).thenReturn(List.of(currentRestaurant()));
 
-        var cmd = new RestaurantRegistrationService.CreateRestaurantCommand("Segunda sucursal", null);
+        var cmd = new RestaurantRegistrationService.CreateRestaurantCommand("Segunda sucursal", null, null);
 
         assertThatThrownBy(() -> service().createAdditionalRestaurant(cmd))
                 .isInstanceOf(AppException.class);
@@ -100,7 +100,7 @@ class RestaurantRegistrationServicePlanLimitTest {
         when(roleRepository.findByAccountIdAndIsSystemTrue(accountId))
                 .thenReturn(Optional.of(Role.builder().id(superadminRoleId).accountId(accountId).name("SUPERADMIN").isSystem(true).build()));
 
-        var cmd = new RestaurantRegistrationService.CreateRestaurantCommand("Segunda sucursal", null);
+        var cmd = new RestaurantRegistrationService.CreateRestaurantCommand("Segunda sucursal", null, null);
         Restaurant created = service().createAdditionalRestaurant(cmd);
 
         assertThat(created.getAccountId()).isEqualTo(accountId);
@@ -118,7 +118,7 @@ class RestaurantRegistrationServicePlanLimitTest {
         when(roleRepository.findByAccountIdAndIsSystemTrue(accountId))
                 .thenReturn(Optional.of(Role.builder().id(UUID.randomUUID()).accountId(accountId).name("SUPERADMIN").isSystem(true).build()));
 
-        var cmd = new RestaurantRegistrationService.CreateRestaurantCommand("Primera sucursal", null);
+        var cmd = new RestaurantRegistrationService.CreateRestaurantCommand("Primera sucursal", null, null);
 
         service().createAdditionalRestaurant(cmd);
 

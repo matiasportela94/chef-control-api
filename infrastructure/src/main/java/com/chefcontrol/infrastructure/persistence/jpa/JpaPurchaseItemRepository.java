@@ -13,5 +13,8 @@ public interface JpaPurchaseItemRepository extends JpaRepository<PurchaseItemJpa
     List<PurchaseItemJpaEntity> findByPurchaseIdOrderByCreatedAtAsc(UUID purchaseId);
 
     @EntityGraph(attributePaths = {"product", "unit"})
+    List<PurchaseItemJpaEntity> findByPurchaseIdIn(java.util.Collection<UUID> purchaseIds);
+
+    @EntityGraph(attributePaths = {"product", "unit"})
     java.util.Optional<PurchaseItemJpaEntity> findWithRelationshipsById(UUID id);
 }

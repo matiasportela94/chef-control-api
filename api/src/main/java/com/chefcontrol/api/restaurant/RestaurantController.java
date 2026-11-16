@@ -38,7 +38,7 @@ public class RestaurantController {
     @PreAuthorize("hasAuthority('PERM_RESTAURANTS_CREATE')")
     public ResponseEntity<RestaurantResponse> createRestaurant(@Valid @RequestBody CreateRestaurantRequest request) {
         var restaurant = restaurantRegistrationService.createAdditionalRestaurant(
-                new CreateRestaurantCommand(request.name(), request.timezone()));
+                new CreateRestaurantCommand(request.name(), request.timezone(), request.taxCondition()));
         return ResponseEntity.status(HttpStatus.CREATED).body(RestaurantResponse.from(restaurant));
     }
 
@@ -47,7 +47,7 @@ public class RestaurantController {
     public ResponseEntity<RestaurantResponse> updateRestaurant(@PathVariable UUID id,
                                                                @Valid @RequestBody CreateRestaurantRequest request) {
         var restaurant = restaurantRegistrationService.updateRestaurant(
-                id, new CreateRestaurantCommand(request.name(), request.timezone()));
+                id, new CreateRestaurantCommand(request.name(), request.timezone(), request.taxCondition()));
         return ResponseEntity.ok(RestaurantResponse.from(restaurant));
     }
 

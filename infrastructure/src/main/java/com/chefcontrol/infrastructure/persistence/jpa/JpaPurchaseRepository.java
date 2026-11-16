@@ -11,6 +11,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -22,6 +23,12 @@ public interface JpaPurchaseRepository extends JpaRepository<PurchaseJpaEntity, 
 
     @EntityGraph(attributePaths = {"supplier"})
     Optional<PurchaseJpaEntity> findByIdAndRestaurantId(UUID id, UUID restaurantId);
+
+    @Query("SELECT p FROM PurchaseJpaEntity p LEFT JOIN FETCH p.supplier WHERE p.restaurantId = :restaurantId AND p.status = 'ACTIVE' AND p.purchasedAt BETWEEN :from AND :to ORDER BY p.purchasedAt")
+    List<PurchaseJpaEntity> findActiveByRestaurantIdAndPurchasedAtBetween(
+            @Param("restaurantId") UUID restaurantId,
+            @Param("from") Instant from,
+            @Param("to") Instant to);
 
     long countByRestaurantIdAndStatusAndPurchasedAtGreaterThanEqual(UUID restaurantId, PurchaseStatus status, Instant since);
 

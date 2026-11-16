@@ -1,6 +1,7 @@
 package com.chefcontrol.infrastructure.persistence.entity;
 
 import com.chefcontrol.domain.restaurant.Restaurant;
+import com.chefcontrol.domain.restaurant.TaxCondition;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -33,6 +34,10 @@ public class RestaurantJpaEntity {
     @Column(name = "is_active", nullable = false)
     private boolean isActive = true;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "tax_condition")
+    private TaxCondition taxCondition;
+
     @Column(name = "created_at", updatable = false, nullable = false)
     private Instant createdAt;
 
@@ -49,6 +54,7 @@ public class RestaurantJpaEntity {
         e.setSlug(domain.getSlug());
         e.setTimezone(domain.getTimezone());
         e.setActive(domain.isActive());
+        e.setTaxCondition(domain.getTaxCondition());
         e.setCreatedAt(domain.getCreatedAt());
         return e;
     }
@@ -61,6 +67,7 @@ public class RestaurantJpaEntity {
         r.setSlug(slug);
         r.setTimezone(timezone);
         r.setActive(isActive);
+        r.setTaxCondition(taxCondition);
         r.setCreatedAt(createdAt);
         return r;
     }

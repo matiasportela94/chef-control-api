@@ -12,5 +12,8 @@ public record PurchaseItemRequest(
         @NotNull UUID unitId,
         @NotNull @DecimalMin("0.001") BigDecimal quantity,
         @NotNull @DecimalMin("0") BigDecimal pricePerUnit,
-        LocalDate expirationDate
+        LocalDate expirationDate,
+        /** Null = la del insumo, y si no tiene, 0. Un 0 explícito es "sin IVA". Fuera de 0, 2.5, 5, 10.5, 21, 27
+         *  → INVALID_IVA_PERCENTAGE. */
+        BigDecimal ivaPercentage
 ) {}
