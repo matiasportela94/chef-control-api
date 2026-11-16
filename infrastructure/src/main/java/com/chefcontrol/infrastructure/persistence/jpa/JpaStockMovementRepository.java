@@ -69,12 +69,16 @@ public interface JpaStockMovementRepository extends JpaRepository<StockMovementJ
      * reference_type la separa de la merma registrada a mano (vencidos, robo, daño), que no es
      * costo de lo vendido. Sin el OR, el teórico sube con el rendimiento y el realizado se queda
      * quieto: la brecha entre ambos sería un artefacto nuestro, no un desvío real.
+     *
+     * <p>{@code reversed_by IS NULL}: una venta revertida deja sus movimientos originales en el ledger. Sin el
+     * filtro, corregir una venta (revertir + recrear) contaba su costo dos veces.
      */
     @Query(value = """
             SELECT COALESCE(SUM(quantity * cost_per_unit), 0)
             FROM stock_movements
             WHERE restaurant_id = :restaurantId
               AND (type = 'SALE' OR (type = 'WASTE' AND reference_type = 'sale_item'))
+              AND reversed_by IS NULL
               AND cost_per_unit IS NOT NULL
               AND created_at BETWEEN :from AND :to
             """, nativeQuery = true)
@@ -111,6 +115,7 @@ public interface JpaStockMovementRepository extends JpaRepository<StockMovementJ
             WHERE sm.restaurant_id = :restaurantId
               AND sm.type IN ('SALE', 'WASTE')
               AND sm.cost_per_unit IS NOT NULL
+              AND s.status = 'ACTIVE'
               AND si.menu_item_id = :menuItemId
               AND s.sold_at BETWEEN :from AND :to
             """, nativeQuery = true)

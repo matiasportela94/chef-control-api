@@ -15,6 +15,7 @@ public interface SaleItemRepository {
 
     SaleItem save(SaleItem saleItem);
 
+    /** Sin las ventas revertidas, igual que la cantidad vendida. */
     BigDecimal sumRevenueByMenuItemAndPeriod(UUID menuItemId, UUID restaurantId, Instant from, Instant to);
 
     int sumQuantitySoldByMenuItemAndPeriod(UUID menuItemId, UUID restaurantId, Instant from, Instant to);

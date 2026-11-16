@@ -1,5 +1,6 @@
 package com.chefcontrol.infrastructure.persistence.jpa;
 
+import com.chefcontrol.domain.sale.SaleStatus;
 import com.chefcontrol.infrastructure.persistence.entity.SaleJpaEntity;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -18,11 +19,11 @@ public interface JpaSaleRepository extends JpaRepository<SaleJpaEntity, UUID> {
 
     Optional<SaleJpaEntity> findByIdAndRestaurantId(UUID id, UUID restaurantId);
 
-    @Query("SELECT COALESCE(SUM(s.totalAmount), 0) FROM SaleJpaEntity s WHERE s.restaurantId = :restaurantId AND s.soldAt BETWEEN :from AND :to")
+    @Query("SELECT COALESCE(SUM(s.totalAmount), 0) FROM SaleJpaEntity s WHERE s.restaurantId = :restaurantId AND s.status = 'ACTIVE' AND s.soldAt BETWEEN :from AND :to")
     BigDecimal sumTotalAmountByRestaurantIdAndSoldAtBetween(
             @Param("restaurantId") UUID restaurantId,
             @Param("from") Instant from,
             @Param("to") Instant to);
 
-    long countByRestaurantIdAndSoldAtBetween(UUID restaurantId, Instant from, Instant to);
+    long countByRestaurantIdAndStatusAndSoldAtBetween(UUID restaurantId, SaleStatus status, Instant from, Instant to);
 }

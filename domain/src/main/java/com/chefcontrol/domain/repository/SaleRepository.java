@@ -17,6 +17,7 @@ public interface SaleRepository {
 
     Sale save(Sale sale);
 
+    /** Sin las revertidas, como todo lo que suma o cuenta ventas. */
     BigDecimal sumTotalAmountByRestaurantIdAndSoldAtBetween(UUID restaurantId, Instant from, Instant to);
 
     long countByRestaurantIdAndSoldAtBetween(UUID restaurantId, Instant from, Instant to);

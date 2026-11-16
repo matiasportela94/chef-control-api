@@ -26,6 +26,7 @@ public interface JpaSaleItemRepository extends JpaRepository<SaleItemJpaEntity, 
             FROM sale_items si
             JOIN sales s ON s.id = si.sale_id
             WHERE s.restaurant_id = :restaurantId
+              AND s.status = 'ACTIVE'
               AND si.menu_item_id = :menuItemId
               AND s.sold_at BETWEEN :from AND :to
             """, nativeQuery = true)
@@ -39,6 +40,7 @@ public interface JpaSaleItemRepository extends JpaRepository<SaleItemJpaEntity, 
             FROM sale_items si
             JOIN sales s ON s.id = si.sale_id
             WHERE s.restaurant_id = :restaurantId
+              AND s.status = 'ACTIVE'
               AND si.menu_item_id = :menuItemId
               AND s.sold_at BETWEEN :from AND :to
             """, nativeQuery = true)
