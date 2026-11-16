@@ -1,6 +1,7 @@
 package com.chefcontrol.application.service;
 
 import com.chefcontrol.domain.context.TenantContext;
+import com.chefcontrol.domain.finance.FoodCostMetric;
 import com.chefcontrol.domain.repository.ProductRepository;
 import com.chefcontrol.domain.repository.ProductStockProjection;
 import com.chefcontrol.domain.repository.PurchaseRepository;
@@ -52,6 +53,8 @@ public class DashboardService {
         BigDecimal wasteTotalArsThisMonth  = wasteEventRepository.sumCostByRestaurantIdAndCreatedAtBetween(restaurantId, monthStart, now);
 
         BigDecimal salesCostThisMonth      = stockMovementRepository.sumSalesCost(restaurantId, monthStart, now);
+        BigDecimal foodCostThisMonth       = foodCostPercentage(
+                saleRepository.sumNetRevenueByRestaurantIdAndSoldAtBetween(restaurantId, monthStart, now), salesCostThisMonth);
 
         // — Mes anterior —
         long       purchasesLastMonth      = purchaseRepository.countByRestaurantIdAndPurchasedAtBetween(restaurantId, prevMonthStart, prevMonthEnd);
@@ -64,6 +67,8 @@ public class DashboardService {
         BigDecimal wasteTotalArsLastMonth  = wasteEventRepository.sumCostByRestaurantIdAndCreatedAtBetween(restaurantId, prevMonthStart, prevMonthEnd);
 
         BigDecimal salesCostLastMonth      = stockMovementRepository.sumSalesCost(restaurantId, prevMonthStart, prevMonthEnd);
+        BigDecimal foodCostLastMonth       = foodCostPercentage(
+                saleRepository.sumNetRevenueByRestaurantIdAndSoldAtBetween(restaurantId, prevMonthStart, prevMonthEnd), salesCostLastMonth);
 
         KpiSummary kpis = new KpiSummary(
                 stockRows.size(),
@@ -76,15 +81,22 @@ public class DashboardService {
                 wasteEventsThisMonth,
                 wasteTotalArsThisMonth,
                 salesCostThisMonth,
+                foodCostThisMonth,
                 purchasesLastMonth,
                 purchasesTotalLastMonth,
                 salesCountLastMonth,
                 salesTotalLastMonth,
                 wasteEventsLastMonth,
                 wasteTotalArsLastMonth,
-                salesCostLastMonth);
+                salesCostLastMonth,
+                foodCostLastMonth);
 
         return new DashboardSummary(kpis);
+    }
+
+    /** Sobre el ingreso sin IVA, como {@code /food-cost}. Null sin ventas: no hay food cost, no es 0%. */
+    private static BigDecimal foodCostPercentage(BigDecimal netRevenue, BigDecimal salesCost) {
+        return netRevenue.signum() == 0 ? null : new FoodCostMetric(netRevenue, salesCost).percentage();
     }
 
     private boolean isLowStock(ProductStockProjection row) {
@@ -131,6 +143,7 @@ public class DashboardService {
             long       wasteEventsThisMonth,
             BigDecimal wasteTotalArsThisMonth,
             BigDecimal salesCostThisMonth,
+            BigDecimal foodCostPercentageThisMonth,
             // Mes anterior
             long       purchasesLastMonth,
             BigDecimal purchasesTotalLastMonth,
@@ -138,6 +151,7 @@ public class DashboardService {
             BigDecimal salesTotalLastMonth,
             long       wasteEventsLastMonth,
             BigDecimal wasteTotalArsLastMonth,
-            BigDecimal salesCostLastMonth
+            BigDecimal salesCostLastMonth,
+            BigDecimal foodCostPercentageLastMonth
     ) {}
 }

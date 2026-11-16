@@ -1,6 +1,6 @@
 package com.chefcontrol.api.purchase.dto;
 
-import com.chefcontrol.application.service.PurchaseService.IvaRateTotal;
+import com.chefcontrol.domain.shared.valueobject.IvaRateTotal;
 import com.chefcontrol.application.service.PurchaseService.IvaReport;
 
 import java.math.BigDecimal;

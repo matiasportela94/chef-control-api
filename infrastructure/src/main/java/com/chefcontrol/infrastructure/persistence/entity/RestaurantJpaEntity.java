@@ -7,6 +7,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -38,6 +39,9 @@ public class RestaurantJpaEntity {
     @Column(name = "tax_condition")
     private TaxCondition taxCondition;
 
+    @Column(name = "sales_iva_percentage", nullable = false, precision = 5, scale = 2)
+    private BigDecimal salesIvaPercentage = new BigDecimal("21");
+
     @Column(name = "created_at", updatable = false, nullable = false)
     private Instant createdAt;
 
@@ -55,6 +59,7 @@ public class RestaurantJpaEntity {
         e.setTimezone(domain.getTimezone());
         e.setActive(domain.isActive());
         e.setTaxCondition(domain.getTaxCondition());
+        e.setSalesIvaPercentage(domain.getSalesIvaPercentage());
         e.setCreatedAt(domain.getCreatedAt());
         return e;
     }
@@ -68,6 +73,7 @@ public class RestaurantJpaEntity {
         r.setTimezone(timezone);
         r.setActive(isActive);
         r.setTaxCondition(taxCondition);
+        r.setSalesIvaPercentage(salesIvaPercentage);
         r.setCreatedAt(createdAt);
         return r;
     }

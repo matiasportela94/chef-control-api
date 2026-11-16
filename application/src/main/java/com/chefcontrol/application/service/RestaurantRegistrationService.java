@@ -17,6 +17,7 @@ import com.chefcontrol.domain.repository.UserRepository;
 import com.chefcontrol.domain.repository.UserRestaurantRepository;
 import com.chefcontrol.domain.restaurant.Restaurant;
 import com.chefcontrol.domain.restaurant.TaxCondition;
+import com.chefcontrol.domain.shared.valueobject.IvaRates;
 import com.chefcontrol.domain.user.Permission;
 import com.chefcontrol.domain.user.Role;
 import com.chefcontrol.domain.user.User;
@@ -25,6 +26,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
@@ -151,6 +153,7 @@ public class RestaurantRegistrationService {
         restaurant.setSlug(uniqueSlug(cmd.name()));
         restaurant.setTimezone(cmd.timezone() != null ? cmd.timezone() : "America/Argentina/Buenos_Aires");
         restaurant.setTaxCondition(cmd.taxCondition());
+        if (cmd.salesIvaPercentage() != null) restaurant.setSalesIvaPercentage(validSalesIva(cmd.salesIvaPercentage()));
         restaurant = restaurantRepository.save(restaurant);
 
         Role superadmin = roleRepository.findByAccountIdAndIsSystemTrue(accountId)
@@ -178,12 +181,14 @@ public class RestaurantRegistrationService {
         if (cmd.timezone() != null) restaurant.setTimezone(cmd.timezone());
         // Null = no se toca, como la zona horaria: "no cargada" es solo el estado inicial, no una opción.
         if (cmd.taxCondition() != null) restaurant.setTaxCondition(cmd.taxCondition());
+        if (cmd.salesIvaPercentage() != null) restaurant.setSalesIvaPercentage(validSalesIva(cmd.salesIvaPercentage()));
         restaurant = restaurantRepository.save(restaurant);
 
         Map<String, Object> payload = new HashMap<>();
         payload.put("name", restaurant.getName());
         payload.put("timezone", restaurant.getTimezone());
         payload.put("taxCondition", restaurant.getTaxCondition());
+        payload.put("salesIvaPercentage", restaurant.getSalesIvaPercentage());
         auditService.log(AuditAction.RESTAURANT_UPDATED, "Restaurant", id, payload);
         return restaurant;
     }
@@ -280,8 +285,19 @@ public class RestaurantRegistrationService {
             String googleSubject   // null salvo en el alta con Google; ahí ownerPassword es null
     ) {}
 
-    /** {@code taxCondition} null = no cargada (al crear) o sin cambios (al editar). */
-    public record CreateRestaurantCommand(String name, String timezone, TaxCondition taxCondition) {}
+    private static BigDecimal validSalesIva(BigDecimal percentage) {
+        if (!IvaRates.isValid(percentage)) {
+            throw AppException.badRequest(ErrorCode.INVALID_IVA_PERCENTAGE, "Invalid IVA percentage: " + percentage);
+        }
+        return percentage;
+    }
+
+    /**
+     * {@code taxCondition} null = no cargada (al crear) o sin cambios (al editar). {@code salesIvaPercentage} null =
+     * 21 (al crear) o sin cambios (al editar); solo cuenta si es RI.
+     */
+    public record CreateRestaurantCommand(String name, String timezone, TaxCondition taxCondition,
+                                          BigDecimal salesIvaPercentage) {}
 
     public record RegisteredRestaurant(User owner, Restaurant restaurant, List<UserRestaurant> memberships) {}
 }

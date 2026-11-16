@@ -14,6 +14,7 @@ import com.chefcontrol.domain.repository.*;
 import com.chefcontrol.domain.restaurant.Restaurant;
 import com.chefcontrol.domain.restaurant.TaxCondition;
 import com.chefcontrol.domain.shared.Page;
+import com.chefcontrol.domain.shared.valueobject.IvaRateTotal;
 import com.chefcontrol.domain.repository.StockBatchRepository;
 import com.chefcontrol.domain.shared.PageRequest;
 import com.chefcontrol.domain.shared.time.ChefControlTime;
@@ -308,7 +309,7 @@ public class PurchaseService {
             if (item.getIvaPercentage() == null) continue;
             byRate.merge(item.getIvaPercentage(),
                     new IvaRateTotal(item.getIvaPercentage(), item.getNetAmount(), item.getIvaAmount()),
-                    (a, b) -> new IvaRateTotal(a.ivaPercentage(), a.netAmount().add(b.netAmount()), a.ivaAmount().add(b.ivaAmount())));
+                    IvaRateTotal::plus);
         }
 
         BigDecimal netTotal = sum(withIva.stream().map(Purchase::getNetTotal).toList());
@@ -363,5 +364,4 @@ public class PurchaseService {
                             List<IvaRateTotal> byRate, List<Purchase> purchases,
                             int purchasesWithoutIvaData, BigDecimal totalWithoutIvaData) {}
 
-    public record IvaRateTotal(BigDecimal ivaPercentage, BigDecimal netAmount, BigDecimal ivaAmount) {}
 }

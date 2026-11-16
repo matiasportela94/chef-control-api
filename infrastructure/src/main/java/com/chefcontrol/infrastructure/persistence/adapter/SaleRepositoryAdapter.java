@@ -14,6 +14,7 @@ import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -44,6 +45,17 @@ public class SaleRepositoryAdapter implements SaleRepository {
     @Override
     public BigDecimal sumTotalAmountByRestaurantIdAndSoldAtBetween(UUID restaurantId, Instant from, Instant to) {
         return jpa.sumTotalAmountByRestaurantIdAndSoldAtBetween(restaurantId, from, to);
+    }
+
+    @Override
+    public BigDecimal sumNetRevenueByRestaurantIdAndSoldAtBetween(UUID restaurantId, Instant from, Instant to) {
+        return jpa.sumNetRevenueByRestaurantIdAndSoldAtBetween(restaurantId, from, to);
+    }
+
+    @Override
+    public List<Sale> findActiveByRestaurantIdAndSoldAtBetween(UUID restaurantId, Instant from, Instant to) {
+        return jpa.findActiveByRestaurantIdAndSoldAtBetween(restaurantId, from, to).stream()
+                .map(SaleJpaEntity::toDomain).toList();
     }
 
     @Override

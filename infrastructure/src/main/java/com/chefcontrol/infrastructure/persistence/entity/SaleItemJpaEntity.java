@@ -32,6 +32,9 @@ public class SaleItemJpaEntity {
     @Column(name = "unit_price", nullable = false, precision = 12, scale = 2)
     private BigDecimal unitPrice;
 
+    @Column(name = "net_amount", precision = 12, scale = 2)
+    private BigDecimal netAmount;
+
     public static SaleItemJpaEntity from(SaleItem domain) {
         return SaleItemJpaEntity.builder()
                 .id(domain.getId())
@@ -39,6 +42,7 @@ public class SaleItemJpaEntity {
                 .menuItemId(domain.getMenuItemId())
                 .quantity(domain.getQuantity())
                 .unitPrice(domain.getUnitPrice())
+                .netAmount(domain.getNetAmount())
                 .build();
     }
 
@@ -50,6 +54,7 @@ public class SaleItemJpaEntity {
                 .menuItemName(menuItem != null ? menuItem.getName() : null)
                 .quantity(quantity)
                 .unitPrice(unitPrice)
+                .netAmount(netAmount)
                 .build();
     }
 }

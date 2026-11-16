@@ -4,6 +4,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.math.BigDecimal;
 import java.text.Normalizer;
 import java.time.Instant;
 import java.util.UUID;
@@ -23,7 +24,17 @@ public class Restaurant {
     private boolean isActive = true;
     /** Null = no cargada; se comporta como monotributo (ver {@link TaxCondition}). */
     private TaxCondition taxCondition;
+    /** La alícuota con la que vende. Solo cuenta si es RI: ver {@link #salesIvaRate()}. */
+    private BigDecimal salesIvaPercentage = new BigDecimal("21");
     private Instant createdAt;
+
+    /**
+     * La alícuota con la que se separa el IVA de lo que vende. Solo el RI le debe al fisco el IVA de sus ventas
+     * (débito fiscal); para el monotributista y quien no cargó la condición, el precio entero es ingreso: 0.
+     */
+    public BigDecimal salesIvaRate() {
+        return taxCondition == TaxCondition.RESPONSABLE_INSCRIPTO ? salesIvaPercentage : BigDecimal.ZERO;
+    }
 
     /**
      * Generates a URL-safe slug from a restaurant name.

@@ -30,11 +30,13 @@ public record PriceEvolutionResponse(
     public record EvolutionPoint(
             Instant at,
             BigDecimal menuPrice,
+            /** {@code menuPrice} sin el IVA de la venta si el restaurante es RI (con la condición de hoy). */
+            BigDecimal netPrice,
             BigDecimal costPerServing,
             BigDecimal foodCostPercentage
     ) {
         static EvolutionPoint from(PriceEvolutionPoint p) {
-            return new EvolutionPoint(p.at(), p.menuPrice(), p.costPerServing(), p.foodCostPercentage());
+            return new EvolutionPoint(p.at(), p.menuPrice(), p.netPrice(), p.costPerServing(), p.foodCostPercentage());
         }
     }
 

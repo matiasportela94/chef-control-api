@@ -1,6 +1,7 @@
 package com.chefcontrol.domain.purchase;
 
 import com.chefcontrol.domain.restaurant.TaxCondition;
+import com.chefcontrol.domain.shared.valueobject.IvaRates;
 import lombok.*;
 
 import java.math.BigDecimal;
@@ -51,7 +52,7 @@ public class PurchaseItem {
         BigDecimal amount = pricePerUnit.multiply(quantity).setScale(2, RoundingMode.HALF_UP);
         BigDecimal rate = percentage.divide(HUNDRED);
         if (pricesIncludeIva) {
-            netAmount = amount.divide(BigDecimal.ONE.add(rate), 2, RoundingMode.HALF_UP);
+            netAmount = IvaRates.netOf(amount, percentage);
             ivaAmount = amount.subtract(netAmount);
         } else {
             netAmount = amount;

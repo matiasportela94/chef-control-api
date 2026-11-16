@@ -49,6 +49,7 @@ class SaleServiceYieldTest {
     @Mock CurrentUserProvider currentUserProvider;
     @Mock ProductRepository productRepository;
     @Mock UnitConversionService unitConversionService;
+    @Mock RestaurantRepository restaurantRepository;
 
     private final UUID restaurantId = UUID.randomUUID();
     private final UUID menuItemId = UUID.randomUUID();
@@ -62,7 +63,7 @@ class SaleServiceYieldTest {
     private SaleService service() {
         return new SaleService(saleRepository, saleItemRepository, menuItemRepository, recipeRepository,
                 stockMovementRepository, stockBatchService, alertEvaluationService, auditService,
-                currentUserProvider, productRepository, unitConversionService);
+                currentUserProvider, productRepository, unitConversionService, restaurantRepository);
     }
 
     private List<StockMovement> movementsForSaleOf(String yieldPercentage) {

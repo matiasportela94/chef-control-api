@@ -14,6 +14,9 @@ import com.chefcontrol.domain.repository.ProductRepository;
 import com.chefcontrol.domain.repository.PriceHistoryRepository;
 import com.chefcontrol.domain.repository.RecipeVersionRepository;
 import com.chefcontrol.domain.repository.RecipeRepository;
+import com.chefcontrol.domain.repository.RestaurantRepository;
+import com.chefcontrol.domain.restaurant.Restaurant;
+import com.chefcontrol.domain.shared.valueobject.IvaRates;
 import com.chefcontrol.domain.repository.SaleItemRepository;
 import com.chefcontrol.domain.repository.SaleRepository;
 import com.chefcontrol.domain.repository.StockMovementRepository;
@@ -47,18 +50,22 @@ public class FoodCostService {
     private final PriceHistoryRepository priceHistoryRepository;
     private final RecipeVersionRepository recipeVersionRepository;
     private final UnitRepository unitRepository;
+    private final RestaurantRepository restaurantRepository;
 
     public FoodCostReport calculate(Instant from, Instant to) {
         var restaurantId = TenantContext.require();
 
         BigDecimal revenue = saleRepository
                 .sumTotalAmountByRestaurantIdAndSoldAtBetween(restaurantId, from, to);
+        // El food cost va sobre lo que queda: el IVA de la venta de un RI es del fisco, no ingreso.
+        BigDecimal netRevenue = saleRepository
+                .sumNetRevenueByRestaurantIdAndSoldAtBetween(restaurantId, from, to);
 
         BigDecimal theoreticalCost = stockMovementRepository
                 .sumSalesCost(restaurantId, from, to);
 
-        FoodCostMetric metric = new FoodCostMetric(revenue, theoreticalCost);
-        return new FoodCostReport(from, to, revenue, theoreticalCost, metric.percentage());
+        FoodCostMetric metric = new FoodCostMetric(netRevenue, theoreticalCost);
+        return new FoodCostReport(from, to, revenue, netRevenue, theoreticalCost, metric.percentage());
     }
 
     /**
@@ -114,9 +121,10 @@ public class FoodCostService {
         BigDecimal costPerServing = totalCost.divide(BigDecimal.valueOf(recipe.getServings()), 4, RoundingMode.HALF_UP);
 
         BigDecimal menuPrice = menuItem.getPrice() != null ? menuItem.getPrice() : BigDecimal.ZERO;
-        BigDecimal foodCostPercentage = new FoodCostMetric(menuPrice, costPerServing).percentage();
+        BigDecimal netPrice = netPrice(menuPrice, restaurantId);
+        BigDecimal foodCostPercentage = new FoodCostMetric(netPrice, costPerServing).percentage();
 
-        return new RecipeCostReport(menuItem.getId(), menuItem.getName(), recipe.getServings(), menuPrice,
+        return new RecipeCostReport(menuItem.getId(), menuItem.getName(), recipe.getServings(), menuPrice, netPrice,
                 ingredients, totalCost, costPerServing, foodCostPercentage);
     }
 
@@ -167,6 +175,7 @@ public class FoodCostService {
         BigDecimal menuPrice = priceHistoryRepository.findMenuItemPriceAt(menuItemId, at)
                 .map(PriceHistoryEntry::value)
                 .orElse(menuItem.getPrice() != null ? menuItem.getPrice() : BigDecimal.ZERO);
+        BigDecimal netPrice = netPrice(menuPrice, restaurantId);
 
         // Si en esa fecha ningún insumo tenía compras todavía, el costo no es cero: es
         // desconocido. Devolver cero pone un "food cost 0%" en el gráfico, que se lee como que
@@ -175,7 +184,7 @@ public class FoodCostService {
                 .allMatch(i -> i.unitCost() == null || i.unitCost().compareTo(BigDecimal.ZERO) == 0);
         if (noCostData) {
             return new RecipeCostReport(menuItem.getId(), menuItem.getName(), version.servings(),
-                    menuPrice, ingredients, null, null, null);
+                    menuPrice, netPrice, ingredients, null, null, null);
         }
 
         BigDecimal totalCost = ingredients.stream()
@@ -184,9 +193,9 @@ public class FoodCostService {
         BigDecimal costPerServing = version.servings() == 0 ? BigDecimal.ZERO
                 : totalCost.divide(BigDecimal.valueOf(version.servings()), 4, RoundingMode.HALF_UP);
 
-        return new RecipeCostReport(menuItem.getId(), menuItem.getName(), version.servings(), menuPrice,
+        return new RecipeCostReport(menuItem.getId(), menuItem.getName(), version.servings(), menuPrice, netPrice,
                 ingredients, totalCost, costPerServing,
-                new FoodCostMetric(menuPrice, costPerServing).percentage());
+                new FoodCostMetric(netPrice, costPerServing).percentage());
     }
 
     /**
@@ -269,12 +278,13 @@ public class FoodCostService {
                 .orElse(null);
         try {
             RecipeCostReport report = calculateRecipeCostAt(menuItemId, when);
-            return new PriceEvolutionPoint(when, report.menuPrice(),
+            return new PriceEvolutionPoint(when, report.menuPrice(), report.netPrice(),
                     report.costPerServing(), report.foodCostPercentage());
         } catch (AppException e) {
             // El plato no tenía receta en ese momento: el precio sigue siendo un dato válido
             // para graficar, el costo no. Devolver null es más honesto que devolver cero.
-            return new PriceEvolutionPoint(when, price, null, null);
+            return new PriceEvolutionPoint(when, price,
+                    price == null ? null : netPrice(price, TenantContext.require()), null, null);
         }
     }
 
@@ -356,6 +366,15 @@ public class FoodCostService {
                 grossInRecipeUnit, yieldPercentage, unitCost, totalCost);
     }
 
+    /**
+     * El precio de la carta sin el IVA de la venta, si el restaurante es RI. Con la condición y la alícuota de HOY,
+     * también para una fecha pasada: no hay historia de la condición fiscal (limitación aceptada).
+     */
+    private BigDecimal netPrice(BigDecimal menuPrice, UUID restaurantId) {
+        return IvaRates.netOf(menuPrice, restaurantRepository.findById(restaurantId)
+                .map(Restaurant::salesIvaRate).orElse(BigDecimal.ZERO));
+    }
+
     private String unitName(UUID unitId) {
         return unitRepository.findById(unitId).map(u -> u.getName()).orElse(null);
     }
@@ -367,13 +386,14 @@ public class FoodCostService {
                 .orElseThrow(() -> AppException.notFound(ErrorCode.MENU_ITEM_NOT_FOUND, "Menu item not found"));
 
         BigDecimal revenue = saleItemRepository.sumRevenueByMenuItemAndPeriod(menuItemId, restaurantId, from, to);
+        BigDecimal netRevenue = saleItemRepository.sumNetRevenueByMenuItemAndPeriod(menuItemId, restaurantId, from, to);
         BigDecimal realizedCost = stockMovementRepository.sumSalesCostByMenuItemAndPeriod(menuItemId, restaurantId, from, to);
         int quantitySold = saleItemRepository.sumQuantitySoldByMenuItemAndPeriod(menuItemId, restaurantId, from, to);
 
-        BigDecimal foodCostPercentage = new FoodCostMetric(revenue, realizedCost).percentage();
+        BigDecimal foodCostPercentage = new FoodCostMetric(netRevenue, realizedCost).percentage();
 
         return new MenuItemFoodCostReport(menuItem.getId(), menuItem.getName(),
-                from, to, quantitySold, revenue, realizedCost, foodCostPercentage);
+                from, to, quantitySold, revenue, netRevenue, realizedCost, foodCostPercentage);
     }
 
     /**
@@ -393,14 +413,17 @@ public class FoodCostService {
     public record PriceEvolutionPoint(
             Instant at,
             BigDecimal menuPrice,
+            BigDecimal netPrice,
             BigDecimal costPerServing,
             BigDecimal foodCostPercentage
     ) {}
 
+    /** {@code revenue} es lo cobrado; {@code netRevenue}, sin el IVA de las ventas, y sobre él va el porcentaje. */
     public record FoodCostReport(
             Instant from,
             Instant to,
             BigDecimal revenue,
+            BigDecimal netRevenue,
             BigDecimal theoreticalCost,
             BigDecimal foodCostPercentage
     ) {}
@@ -430,6 +453,7 @@ public class FoodCostService {
             Instant to,
             int quantitySold,
             BigDecimal revenue,
+            BigDecimal netRevenue,
             BigDecimal realizedCost,
             BigDecimal foodCostPercentage
     ) {}
@@ -439,6 +463,8 @@ public class FoodCostService {
             String menuItemName,
             int servings,
             BigDecimal menuPrice,
+            /** {@code menuPrice} sin el IVA de la venta si el restaurante es RI; si no, igual. El porcentaje va sobre este. */
+            BigDecimal netPrice,
             List<RecipeIngredientCost> ingredients,
             BigDecimal totalCost,
             BigDecimal costPerServing,

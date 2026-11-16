@@ -8,7 +8,10 @@ import java.time.Instant;
 public record FoodCostResponse(
         Instant from,
         Instant to,
+        /** Lo cobrado, con IVA. */
         BigDecimal revenue,
+        /** Sin el IVA de las ventas (en un RI). El porcentaje va sobre este. */
+        BigDecimal netRevenue,
         BigDecimal theoreticalCost,
         BigDecimal foodCostPercentage
 ) {
@@ -17,6 +20,7 @@ public record FoodCostResponse(
                 report.from(),
                 report.to(),
                 report.revenue(),
+                report.netRevenue(),
                 report.theoreticalCost(),
                 report.foodCostPercentage()
         );

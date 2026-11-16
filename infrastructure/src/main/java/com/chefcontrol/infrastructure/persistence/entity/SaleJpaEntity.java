@@ -42,6 +42,12 @@ public class SaleJpaEntity {
     @Column(nullable = false, length = 20)
     private SaleStatus status = SaleStatus.ACTIVE;
 
+    @Column(name = "iva_percentage", precision = 5, scale = 2)
+    private BigDecimal ivaPercentage;
+
+    @Column(name = "net_total", precision = 12, scale = 2)
+    private BigDecimal netTotal;
+
     @PrePersist
     protected void onCreate() {
         if (createdAt == null) createdAt = Instant.now();
@@ -58,6 +64,8 @@ public class SaleJpaEntity {
                 .soldAt(domain.getSoldAt())
                 .createdAt(domain.getCreatedAt())
                 .status(domain.getStatus() != null ? domain.getStatus() : SaleStatus.ACTIVE)
+                .ivaPercentage(domain.getIvaPercentage())
+                .netTotal(domain.getNetTotal())
                 .build();
     }
 
@@ -72,6 +80,8 @@ public class SaleJpaEntity {
                 .soldAt(soldAt)
                 .createdAt(createdAt)
                 .status(status)
+                .ivaPercentage(ivaPercentage)
+                .netTotal(netTotal)
                 .build();
     }
 }

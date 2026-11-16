@@ -35,6 +35,21 @@ public interface JpaSaleItemRepository extends JpaRepository<SaleItemJpaEntity, 
                                              @Param("from") Instant from,
                                              @Param("to") Instant to);
 
+    /** Ídem, sin el IVA de la venta: el neto de cada línea, o el importe si la venta es anterior al IVA (V33). */
+    @Query(value = """
+            SELECT COALESCE(SUM(COALESCE(si.net_amount, si.quantity * si.unit_price)), 0)
+            FROM sale_items si
+            JOIN sales s ON s.id = si.sale_id
+            WHERE s.restaurant_id = :restaurantId
+              AND s.status = 'ACTIVE'
+              AND si.menu_item_id = :menuItemId
+              AND s.sold_at BETWEEN :from AND :to
+            """, nativeQuery = true)
+    BigDecimal sumNetRevenueByMenuItemAndPeriod(@Param("menuItemId") UUID menuItemId,
+                                                @Param("restaurantId") UUID restaurantId,
+                                                @Param("from") Instant from,
+                                                @Param("to") Instant to);
+
     @Query(value = """
             SELECT COALESCE(SUM(si.quantity), 0)
             FROM sale_items si

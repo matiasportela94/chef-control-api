@@ -46,6 +46,7 @@ class HistoricalFoodCostTest {
     @Mock PriceHistoryRepository priceHistoryRepository;
     @Mock RecipeVersionRepository recipeVersionRepository;
     @Mock UnitRepository unitRepository;
+    @Mock RestaurantRepository restaurantRepository;
 
     private final UUID restaurantId = UUID.randomUUID();
     private final UUID menuItemId = UUID.randomUUID();
@@ -59,7 +60,7 @@ class HistoricalFoodCostTest {
     private FoodCostService service() {
         return new FoodCostService(saleRepository, saleItemRepository, stockMovementRepository,
                 menuItemRepository, recipeRepository, productRepository, unitConversionService,
-                priceHistoryRepository, recipeVersionRepository, unitRepository);
+                priceHistoryRepository, recipeVersionRepository, unitRepository, restaurantRepository);
     }
 
     @Test
