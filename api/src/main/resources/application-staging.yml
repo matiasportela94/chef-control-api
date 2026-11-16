@@ -21,6 +21,8 @@ app:
   cookie:
     secure: true
     same-site: None
+    # iOS bloquea la cookie de otro sitio aunque sea SameSite=None; particionada (CHIPS) la guarda. Exige Secure.
+    partitioned: true
 
   frontend:
     url: ${FRONTEND_URL:http://localhost:4200}

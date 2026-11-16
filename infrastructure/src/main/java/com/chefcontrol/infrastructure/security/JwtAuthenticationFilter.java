@@ -30,6 +30,13 @@ import java.util.UUID;
 @Slf4j
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
+    /**
+     * Antes se llamaba {@code auth_token}. Se renombró al particionarla (CHIPS, 2026-11-16): para el navegador una
+     * {@code auth_token} particionada y la vieja sin particionar son dos cookies: se mandarían las dos y este filtro
+     * tomaría la primera (la vieja). Con otro nombre la vieja se ignora hasta que vence.
+     */
+    public static final String AUTH_COOKIE = "cc_session";
+
     private final JwtTokenProvider jwtTokenProvider;
 
     @Override
@@ -105,7 +112,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         Cookie[] cookies = request.getCookies();
         if (cookies != null) {
             return Arrays.stream(cookies)
-                    .filter(c -> "auth_token".equals(c.getName()))
+                    .filter(c -> AUTH_COOKIE.equals(c.getName()))
                     .map(Cookie::getValue)
                     .findFirst()
                     .orElse(null);

@@ -25,6 +25,7 @@ import com.chefcontrol.domain.security.ChefControlPrincipal;
 import com.chefcontrol.domain.shared.time.ChefControlTime;
 import com.chefcontrol.domain.user.User;
 import com.chefcontrol.domain.user.UserRestaurant;
+import com.chefcontrol.infrastructure.security.JwtAuthenticationFilter;
 import com.chefcontrol.infrastructure.security.JwtTokenProvider;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
@@ -67,6 +68,10 @@ public class AuthController {
 
     @Value("${app.cookie.same-site:Strict}")
     private String cookieSameSite;
+
+    /** CHIPS: sin esto iOS no guarda la cookie de un sitio distinto al del front. Solo con secure=true. */
+    @Value("${app.cookie.partitioned:false}")
+    private boolean cookiePartitioned;
 
     @Value("${app.jwt.expiration-ms}")
     private long jwtExpirationMs;
@@ -204,23 +209,22 @@ public class AuthController {
     // ── Cookie helpers ──────────────────────────────────────────────────────
 
     private void setAuthCookie(HttpServletResponse response, String token) {
-        ResponseCookie cookie = ResponseCookie.from("auth_token", token)
-                .httpOnly(true)
-                .secure(cookieSecure)
-                .sameSite(cookieSameSite)
-                .path("/")
-                .maxAge(jwtExpirationMs / 1000)
-                .build();
-        response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
+        writeAuthCookie(response, token, jwtExpirationMs / 1000);
     }
 
+    // Una cookie particionada solo se borra con otra Set-Cookie particionada: por eso el borrado pasa por lo mismo.
     private void clearAuthCookie(HttpServletResponse response) {
-        ResponseCookie cookie = ResponseCookie.from("auth_token", "")
+        writeAuthCookie(response, "", 0);
+    }
+
+    private void writeAuthCookie(HttpServletResponse response, String value, long maxAgeSeconds) {
+        ResponseCookie cookie = ResponseCookie.from(JwtAuthenticationFilter.AUTH_COOKIE, value)
                 .httpOnly(true)
                 .secure(cookieSecure)
                 .sameSite(cookieSameSite)
+                .partitioned(cookiePartitioned)
                 .path("/")
-                .maxAge(0)
+                .maxAge(maxAgeSeconds)
                 .build();
         response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
     }
