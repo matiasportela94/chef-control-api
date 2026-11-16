@@ -1,5 +1,7 @@
 package com.chefcontrol.api.menu;
 
+import com.chefcontrol.api.plan.RequiresFeature;
+import com.chefcontrol.domain.plan.Feature;
 import com.chefcontrol.api.foodcost.dto.MenuItemFoodCostResponse;
 import com.chefcontrol.api.foodcost.dto.PriceEvolutionResponse;
 import com.chefcontrol.api.foodcost.dto.RecipeCostResponse;
@@ -132,6 +134,7 @@ public class MenuItemController {
     }
 
     @GetMapping("/{id}/recipe")
+    @RequiresFeature(Feature.RECIPES_AND_FOOD_COST)
     @PreAuthorize("hasAuthority('PERM_MENU_VIEW')")
     public ResponseEntity<RecipeResponse> getRecipe(@PathVariable UUID id) {
         return menuItemService.getRecipe(id)
@@ -140,6 +143,7 @@ public class MenuItemController {
     }
 
     @PutMapping("/{id}/recipe")
+    @RequiresFeature(Feature.RECIPES_AND_FOOD_COST)
     @PreAuthorize("hasAuthority('PERM_MENU_UPDATE')")
     public ResponseEntity<RecipeResponse> setRecipe(
                                                     @PathVariable UUID id,
@@ -153,6 +157,7 @@ public class MenuItemController {
     }
 
     @DeleteMapping("/{id}/recipe")
+    @RequiresFeature(Feature.RECIPES_AND_FOOD_COST)
     @PreAuthorize("hasAuthority('PERM_MENU_DELETE')")
     public ResponseEntity<Void> deleteRecipe(@PathVariable UUID id) {
         menuItemService.deleteRecipe(id);
@@ -164,6 +169,7 @@ public class MenuItemController {
      * que regía en ese momento — receta, costos de compra, rendimientos y precio de esa fecha.
      */
     @GetMapping("/{id}/recipe/cost")
+    @RequiresFeature(Feature.RECIPES_AND_FOOD_COST)
     @PreAuthorize("hasAuthority('PERM_MENU_VIEW')")
     public ResponseEntity<RecipeCostResponse> getRecipeCost(
             @PathVariable UUID id,
@@ -175,6 +181,7 @@ public class MenuItemController {
 
     /** Precio de venta, costo y food cost del plato en cada cambio de precio del período. */
     @GetMapping("/{id}/price-evolution")
+    @RequiresFeature(Feature.RECIPES_AND_FOOD_COST)
     @PreAuthorize("hasAuthority('PERM_FOOD_COST_VIEW')")
     public ResponseEntity<PriceEvolutionResponse> getPriceEvolution(
             @PathVariable UUID id,
@@ -187,6 +194,7 @@ public class MenuItemController {
     }
 
     @GetMapping("/{id}/food-cost")
+    @RequiresFeature(Feature.RECIPES_AND_FOOD_COST)
     @PreAuthorize("hasAuthority('PERM_FOOD_COST_VIEW')")
     public ResponseEntity<MenuItemFoodCostResponse> getFoodCost(
                                                                 @PathVariable UUID id,

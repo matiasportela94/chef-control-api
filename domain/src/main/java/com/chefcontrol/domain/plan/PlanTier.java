@@ -1,5 +1,6 @@
 package com.chefcontrol.domain.plan;
 
+import java.util.Collections;
 import java.util.EnumSet;
 import java.util.Set;
 
@@ -11,13 +12,15 @@ public enum PlanTier {
             Feature.BASIC_REPORTS
     )),
 
+    /** Food cost desde el plan más barato (Mati, 2026-10-23): es la promesa central del producto. */
     STARTER(EnumSet.of(
             Feature.STOCK_MOVEMENTS,
             Feature.PRODUCT_CATALOG,
             Feature.BASIC_REPORTS,
             Feature.WHATSAPP_INTEGRATION,
             Feature.AI_INTERPRETER,
-            Feature.MULTI_USER
+            Feature.MULTI_USER,
+            Feature.RECIPES_AND_FOOD_COST
     )),
 
     PRO(EnumSet.of(
@@ -45,7 +48,8 @@ public enum PlanTier {
         return features.contains(feature);
     }
 
+    /** En el orden en que se declaran en {@link Feature} (lo básico primero): las pantallas los listan así. */
     public Set<Feature> getFeatures() {
-        return Set.copyOf(features);
+        return Collections.unmodifiableSet(EnumSet.copyOf(features));
     }
 }

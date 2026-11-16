@@ -1,5 +1,7 @@
 package com.chefcontrol.api.user;
 
+import com.chefcontrol.api.plan.RequiresFeature;
+import com.chefcontrol.domain.plan.Feature;
 import com.chefcontrol.api.user.dto.CreateUserRequest;
 import com.chefcontrol.api.user.dto.CreateUserResponse;
 import com.chefcontrol.api.user.dto.SetPermissionOverridesRequest;
@@ -40,6 +42,7 @@ public class UserController {
     }
 
     @PostMapping
+    @RequiresFeature(Feature.MULTI_USER)
     @PreAuthorize("hasAuthority('PERM_USERS_CREATE')")
     public ResponseEntity<CreateUserResponse> createUser(@Valid @RequestBody CreateUserRequest request) {
         var command = new CreateUserCommand(

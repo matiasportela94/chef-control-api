@@ -13,7 +13,13 @@ import com.chefcontrol.domain.repository.MenuItemRepository;
 import com.chefcontrol.domain.repository.MenuSectionRepository;
 import com.chefcontrol.domain.repository.ProductRepository;
 import com.chefcontrol.domain.repository.RecipeRepository;
+import com.chefcontrol.domain.repository.UnitConversionRepository;
 import com.chefcontrol.domain.repository.UnitRepository;
+import com.chefcontrol.application.exception.ErrorCode;
+import com.chefcontrol.domain.product.Product;
+import com.chefcontrol.domain.product.Unit;
+import com.chefcontrol.domain.product.UnitType;
+import java.math.BigDecimal;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -50,13 +56,15 @@ class MenuItemServiceTest {
     @Mock PriceHistoryRepository priceHistoryRepository;
     @Mock CurrentUserProvider currentUserProvider;
     @Mock RecipeVersionRepository recipeVersionRepository;
+    @Mock UnitConversionRepository unitConversionRepository;
 
     private final UUID restaurantId = UUID.randomUUID();
 
     private MenuItemService service() {
         return new MenuItemService(menuItemRepository, cartaRepository, menuSectionRepository,
                 recipeRepository, productRepository, unitRepository, auditService,
-                priceHistoryRepository, recipeVersionRepository, currentUserProvider);
+                priceHistoryRepository, recipeVersionRepository, currentUserProvider,
+                new UnitConversionService(unitConversionRepository, unitRepository));
     }
 
     private MenuItem item(UUID id, boolean active) {
@@ -133,5 +141,38 @@ class MenuItemServiceTest {
 
         assertThat(result.isActive()).isTrue();
         verify(auditService).log(eq(AuditAction.MENU_ITEM_REACTIVATED), eq("MenuItem"), eq(id), any());
+    }
+
+    /** Antes una receta en litros de un insumo en kg se guardaba y recién fallaba al vender. */
+    @Test
+    void setRecipe_unitThatDoesNotConvertToTheProductsUnit_failsAndSavesNothing() {
+        UUID menuItemId = UUID.randomUUID();
+        when(menuItemRepository.findByIdAndRestaurantId(menuItemId, restaurantId)).thenReturn(Optional.of(item(menuItemId, true)));
+        Unit kg = unit(UnitType.WEIGHT, "1000");
+        Unit litro = unit(UnitType.VOLUME, "1000");
+        Product harina = new Product();
+        harina.setId(UUID.randomUUID());
+        harina.setDefaultUnitId(kg.getId());
+        when(productRepository.findByIdAndRestaurantId(harina.getId(), restaurantId)).thenReturn(Optional.of(harina));
+        when(unitRepository.findById(kg.getId())).thenReturn(Optional.of(kg));
+        when(unitRepository.findById(litro.getId())).thenReturn(Optional.of(litro));
+
+        var cmd = new MenuItemService.SetRecipeCommand(1, List.of(
+                new MenuItemService.RecipeItemCommand(harina.getId(), litro.getId(), BigDecimal.ONE)));
+
+        assertThatThrownBy(() -> service().setRecipe(menuItemId, cmd))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.UNIT_CONVERSION_NOT_FOUND);
+        verify(recipeRepository, never()).save(any());
+        verifyNoInteractions(recipeVersionRepository);
+    }
+
+    private static Unit unit(UnitType type, String factor) {
+        Unit u = new Unit();
+        u.setId(UUID.randomUUID());
+        u.setType(type);
+        u.setToBaseFactor(new BigDecimal(factor));
+        return u;
     }
 }

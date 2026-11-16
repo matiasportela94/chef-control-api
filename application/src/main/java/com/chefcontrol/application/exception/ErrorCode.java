@@ -15,6 +15,11 @@ public enum ErrorCode {
     INVALID_TOKEN           (Category.BAD_REQUEST),
     TOKEN_EXPIRED           (Category.BAD_REQUEST),
     TOKEN_ALREADY_USED      (Category.BAD_REQUEST),
+    GOOGLE_TOKEN_INVALID    (Category.FORBIDDEN),
+    GOOGLE_ACCOUNT_NOT_REGISTERED (Category.NOT_FOUND),
+    GOOGLE_ACCOUNT_ALREADY_LINKED (Category.CONFLICT),   // esa cuenta de Google es de otro usuario
+    USER_ALREADY_LINKED_TO_GOOGLE (Category.CONFLICT),   // el usuario ya tiene otra cuenta de Google vinculada
+    GOOGLE_ACCOUNT_MISMATCH       (Category.CONFLICT),   // al desvincular: el token no es de la cuenta vinculada
 
     // Stock movements
     MOVEMENT_ALREADY_REVERSED   (Category.CONFLICT),
@@ -26,6 +31,7 @@ public enum ErrorCode {
     SYSTEM_ROLE_IMMUTABLE       (Category.FORBIDDEN),
     ROLE_IN_USE                 (Category.CONFLICT),
     PLAN_LIMIT_REACHED          (Category.FORBIDDEN),
+    PLAN_FEATURE_REQUIRED       (Category.FORBIDDEN),
 
     // Restaurant access
     RESTAURANT_NOT_FOUND    (Category.NOT_FOUND),
@@ -33,6 +39,17 @@ public enum ErrorCode {
     RESTAURANT_INACTIVE     (Category.FORBIDDEN),
     CANNOT_MODIFY_CURRENT_RESTAURANT(Category.CONFLICT),
     NOT_ACCOUNT_OWNER       (Category.FORBIDDEN),
+
+    // Payments
+    SUBSCRIPTION_NOT_FOUND      (Category.NOT_FOUND),
+    SUBSCRIPTION_ALREADY_ACTIVE (Category.CONFLICT),
+    INVALID_SUBSCRIPTION_PLAN   (Category.BAD_REQUEST),
+    // INTERNAL (500) y no 502/503: el front manda esos dos a la pantalla de "sistema caído", y que
+    // MercadoPago no responda no es que el sistema esté caído.
+    PAYMENT_PROVIDER_UNAVAILABLE(Category.INTERNAL),
+    // IA: INTERNAL (500) y no 503 a propósito, como PAYMENT_PROVIDER_UNAVAILABLE: el front manda 502/503 a /maintenance
+    AI_INTERPRETATION_FAILED    (Category.INTERNAL),
+    AI_SPREADSHEET_TOO_LARGE    (Category.BAD_REQUEST),
 
     // WhatsApp
     UNREGISTERED_PHONE      (Category.FORBIDDEN),
@@ -72,6 +89,17 @@ public enum ErrorCode {
 
     // Input
     VALIDATION_ERROR        (Category.BAD_REQUEST),
+
+    // Importación de catálogo: no se lanzan, van como errores de fila en el resultado de /catalog-import
+    IMPORT_REQUIRED_FIELD       (Category.BAD_REQUEST),
+    IMPORT_INVALID_VALUE        (Category.BAD_REQUEST),
+    IMPORT_UNKNOWN_UNIT         (Category.BAD_REQUEST),
+    IMPORT_UNKNOWN_INGREDIENT   (Category.BAD_REQUEST),
+    IMPORT_INCOMPATIBLE_UNIT    (Category.BAD_REQUEST),
+    IMPORT_DUPLICATE_PRODUCT    (Category.BAD_REQUEST),
+    IMPORT_DUPLICATE_INGREDIENT (Category.BAD_REQUEST),
+    IMPORT_AMBIGUOUS_NAME       (Category.BAD_REQUEST),      // el nombre matchea con dos o más del catálogo
+    IMPORT_CATEGORY_CREATE_FORBIDDEN (Category.BAD_REQUEST), // haría falta crear la categoría y no hay CATEGORIES_CREATE
 
     // Generic
     NOT_FOUND               (Category.NOT_FOUND),

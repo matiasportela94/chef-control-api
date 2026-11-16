@@ -1,6 +1,7 @@
 package com.chefcontrol.application.service;
 
 import com.chefcontrol.application.exception.AppException;
+import com.chefcontrol.application.payments.SubscriptionService;
 import com.chefcontrol.application.port.AuditService;
 import com.chefcontrol.application.port.CurrentUserProvider;
 import com.chefcontrol.domain.account.Account;
@@ -38,6 +39,7 @@ class AccountServiceDeleteTest {
     @Mock UserRestaurantRepository userRestaurantRepository;
     @Mock CurrentUserProvider currentUserProvider;
     @Mock AuditService auditService;
+    @Mock SubscriptionService subscriptionService;
 
     private final UUID restaurantId = UUID.randomUUID();
     private final UUID accountId = UUID.randomUUID();
@@ -45,7 +47,7 @@ class AccountServiceDeleteTest {
 
     private AccountService service() {
         return new AccountService(accountRepository, restaurantRepository, userRepository,
-                userRestaurantRepository, currentUserProvider, auditService);
+                userRestaurantRepository, currentUserProvider, auditService, subscriptionService);
     }
 
     @BeforeEach
@@ -71,7 +73,20 @@ class AccountServiceDeleteTest {
 
         service().deleteCurrentAccount();
 
-        verify(accountRepository).deleteWithAllData(accountId);
+        // La suscripción se cancela ANTES de borrar: si no, se seguiría cobrando a una cuenta que ya no existe.
+        var order = inOrder(subscriptionService, accountRepository);
+        order.verify(subscriptionService).cancelBeforeAccountClosure(accountId);
+        order.verify(accountRepository).deleteWithAllData(accountId);
+    }
+
+    @Test
+    void accountIsNotDeletedIfTheSubscriptionCannotBeCancelled() {
+        when(currentUserProvider.currentUserId()).thenReturn(ownerId);
+        doThrow(new IllegalStateException("provider down")).when(subscriptionService).cancelBeforeAccountClosure(accountId);
+
+        assertThatThrownBy(() -> service().deleteCurrentAccount()).isInstanceOf(IllegalStateException.class);
+
+        verify(accountRepository, never()).deleteWithAllData(any());
     }
 
     @Test

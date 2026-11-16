@@ -1,6 +1,8 @@
 package com.chefcontrol.infrastructure.ai;
 
 import com.chefcontrol.application.port.AIService;
+import com.chefcontrol.application.port.AIService.CatalogSpreadsheetInterpretation;
+import com.chefcontrol.application.port.AIService.CatalogSpreadsheetRequest;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -8,6 +10,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -19,6 +22,7 @@ import java.util.Map;
 public class ClaudeAIService implements AIService {
 
     private static final String TOOL_NAME = "interpret_inventory";
+    private static final String CATALOG_TOOL = "import_catalog";
 
     private final RestClient restClient;
     private final String model;
@@ -28,9 +32,14 @@ public class ClaudeAIService implements AIService {
             @Value("${app.anthropic.api-key}") String apiKey,
             @Value("${app.anthropic.model:claude-haiku-4-5-20251001}") String model,
             ObjectMapper objectMapper) {
+        this(RestClient.builder().requestFactory(AiHttp.requestFactory()), apiKey, model, objectMapper);
+    }
+
+    /** Para los tests: un builder atado a un servidor simulado. */
+    ClaudeAIService(RestClient.Builder builder, String apiKey, String model, ObjectMapper objectMapper) {
         this.model = model;
         this.objectMapper = objectMapper;
-        this.restClient = RestClient.builder()
+        this.restClient = builder
                 .baseUrl("https://api.anthropic.com")
                 .defaultHeader("x-api-key", apiKey)
                 .defaultHeader("anthropic-version", "2023-06-01")
@@ -171,5 +180,45 @@ public class ClaudeAIService implements AIService {
         }
         log.warn("[Claude] No tool_use block in response");
         return new AIInterpretation("unknown", 0, true, null, "No pude interpretar el mensaje.");
+    }
+
+    @Override
+    public CatalogSpreadsheetInterpretation interpretCatalogSpreadsheet(CatalogSpreadsheetRequest request) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("model", model);
+        body.put("max_tokens", CatalogSpreadsheetPrompt.MAX_OUTPUT_TOKENS);
+        body.put("temperature", 0);
+        body.put("system", CatalogSpreadsheetPrompt.systemPrompt(request,
+                "Devolvé el resultado con la herramienta " + CATALOG_TOOL + "."));
+        body.put("tools", List.of(Map.of(
+                "name", CATALOG_TOOL,
+                "description", "Devuelve los insumos y las recetas leídos de la planilla",
+                "input_schema", CatalogSpreadsheetPrompt.jsonSchema())));
+        body.put("tool_choice", Map.of("type", "tool", "name", CATALOG_TOOL));
+        body.put("messages", List.of(Map.of("role", "user", "content", CatalogSpreadsheetPrompt.rows(request))));
+
+        long start = System.currentTimeMillis();
+        JsonNode response;
+        try {
+            response = restClient.post().uri("/v1/messages").body(body).retrieve().body(JsonNode.class);
+        } catch (RestClientException e) {
+            log.error("[Claude] interpretCatalogSpreadsheet failed: {}", e.getMessage());
+            throw CatalogSpreadsheetPrompt.failed(e.getMessage());
+        }
+        JsonNode usage = response.path("usage");
+        log.info("[Claude] interpretCatalogSpreadsheet model={} rows={} input_tokens={} output_tokens={} "
+                        + "cache_read_input_tokens={} ms={}", model, CatalogSpreadsheetPrompt.rowCount(request),
+                usage.path("input_tokens").asInt(), usage.path("output_tokens").asInt(),
+                usage.path("cache_read_input_tokens").asInt(), System.currentTimeMillis() - start);
+
+        if ("max_tokens".equals(response.path("stop_reason").asText())) {
+            throw CatalogSpreadsheetPrompt.tooLarge();
+        }
+        for (JsonNode block : response.path("content")) {
+            if ("tool_use".equals(block.path("type").asText()) && CATALOG_TOOL.equals(block.path("name").asText())) {
+                return CatalogSpreadsheetPrompt.parse(block.path("input"));
+            }
+        }
+        throw CatalogSpreadsheetPrompt.failed("no " + CATALOG_TOOL + " block in the answer");
     }
 }

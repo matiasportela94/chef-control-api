@@ -79,7 +79,11 @@ public class RestaurantRegistrationService {
         owner.setName(cmd.ownerName());
         owner.setEmail(cmd.ownerEmail());
         owner.setPhone(cmd.ownerPhone());
-        owner.setPasswordHash(passwordEncoder.encode(cmd.ownerPassword()));
+        // Sin contraseña (alta con Google) se guarda una al azar, como en las invitaciones: nadie la conoce, y
+        // "olvidé mi contraseña" le deja crear una si algún día quiere entrar también con email.
+        owner.setPasswordHash(passwordEncoder.encode(
+                cmd.ownerPassword() != null ? cmd.ownerPassword() : UUID.randomUUID().toString()));
+        owner.setGoogleSubject(cmd.googleSubject());
         owner = userRepository.save(owner);
 
         Account account = Account.builder()
@@ -136,7 +140,7 @@ public class RestaurantRegistrationService {
         List<Restaurant> existingRestaurants = restaurantRepository.findAllByAccountId(accountId);
         if (!account.hasFeature(Feature.MULTI_RESTAURANT) && !existingRestaurants.isEmpty()) {
             throw AppException.forbidden(ErrorCode.PLAN_LIMIT_REACHED,
-                    "Your plan (" + account.getPlan() + ") allows only one restaurant per account");
+                    "Your plan (" + account.effectivePlan(java.time.Instant.now()) + ") allows only one restaurant per account");
         }
 
         Restaurant restaurant = new Restaurant();
@@ -264,7 +268,8 @@ public class RestaurantRegistrationService {
             String ownerEmail,
             String ownerPassword,
             String ownerPhone,
-            String timezone
+            String timezone,
+            String googleSubject   // null salvo en el alta con Google; ahí ownerPassword es null
     ) {}
 
     public record CreateRestaurantCommand(String name, String timezone) {}

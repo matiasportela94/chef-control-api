@@ -29,6 +29,9 @@ public class AccountJpaEntity {
     @Column(nullable = false)
     private PlanTier plan;
 
+    @Column(name = "plan_expires_at")
+    private Instant planExpiresAt;
+
     @Column(name = "created_at", updatable = false, nullable = false)
     private Instant createdAt;
 
@@ -43,6 +46,7 @@ public class AccountJpaEntity {
         e.setOwnerUserId(domain.getOwnerUserId());
         e.setName(domain.getName());
         e.setPlan(domain.getPlan());
+        e.setPlanExpiresAt(domain.getPlanExpiresAt());
         e.setCreatedAt(domain.getCreatedAt());
         return e;
     }
@@ -53,6 +57,7 @@ public class AccountJpaEntity {
                 .ownerUserId(ownerUserId)
                 .name(name)
                 .plan(plan)
+                .planExpiresAt(planExpiresAt)
                 .createdAt(createdAt)
                 .build();
     }

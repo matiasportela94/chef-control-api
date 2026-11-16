@@ -27,7 +27,7 @@ app:
 
   google:
     api-key: ${GOOGLE_AI_API_KEY:}
-    model: ${GOOGLE_AI_MODEL:gemma-4}
+    model: ${GOOGLE_AI_MODEL:gemini-2.5-flash}
 
   ai-service:
     url: ${AI_SERVICE_URL:http://localhost:8001}

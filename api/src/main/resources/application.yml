@@ -17,6 +17,20 @@ spring:
       max-file-size: 2MB
       max-request-size: 3MB
 
+  # Obligatorio con app.mail.provider=smtp (el default): sin usuario/clave la app no arranca. Gmail: puerto 587 + STARTTLS + contraseña de aplicación.
+  mail:
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: true
+      # Sin timeouts un SMTP colgado cuelga el request (el envío es sincrónico).
+      mail.smtp.connectiontimeout: 5000
+      mail.smtp.timeout: 10000
+      mail.smtp.writetimeout: 10000
+
   flyway:
     enabled: true
     locations: classpath:db/migration
@@ -29,6 +43,11 @@ server:
 app:
   jwt:
     expiration-ms: 86400000
+
+  google-sign-in:
+    # OAuth Client ID (tipo "Aplicación web") de Google Cloud Console. Es público: el front lo usa para el
+    # botón y el back para exigir que el token sea para nuestra app. Vacío = el ingreso con Google rechaza todo.
+    client-id: ${GOOGLE_CLIENT_ID:}
 
   cookie:
     secure: ${COOKIE_SECURE:false}
@@ -44,6 +63,30 @@ app:
     # Lunes a las 7. Configurable para poder correr el barrido a demanda sin esperar una semana.
     waste-sweep-cron: ${WASTE_SWEEP_CRON:0 0 7 * * MON}
 
+  mail:
+    # smtp (default). Un proveedor nuevo (ej. sendgrid) = una clase EmailSender + su valor acá.
+    provider: ${MAIL_PROVIDER:smtp}
+    # Gmail exige que sea la cuenta autenticada (o un alias suyo). Vacío = usa MAIL_USERNAME.
+    from: ${MAIL_FROM:}
+
+  payments:
+    mercadopago:
+      # Clave secreta del webhook (panel de MP > Webhooks). Sin ella /webhooks/mercadopago responde 503:
+      # mejor rechazar todo que aceptar avisos sin poder verificar que vengan de MP.
+      webhook-secret: ${MP_WEBHOOK_SECRET:}
+      # Access Token de la aplicación de MP. Sin él crear/cancelar suscripciones falla con
+      # PAYMENT_PROVIDER_UNAVAILABLE. Usar el de PRUEBA fuera de producción.
+      access-token: ${MP_ACCESS_TOKEN:}
+    # Lo que se cobra por mes, en ARS. Cambiar acá NO actualiza las suscripciones ya creadas: cada una
+    # tiene su monto en MP (el reajuste masivo es el endpoint admin, pendiente).
+    plans:
+      starter-amount-ars: ${SUBSCRIPTION_STARTER_AMOUNT_ARS:100000}
+      pro-amount-ars: ${SUBSCRIPTION_PRO_AMOUNT_ARS:170000}
+      # Valores de ejemplo (2026-10-12): el 225000 se asumió como ENTERPRISE, confirmar.
+      enterprise-amount-ars: ${SUBSCRIPTION_ENTERPRISE_AMOUNT_ARS:225000}
+      # El anual cuesta 12 meses menos este porcentaje, cobrado de una vez.
+      annual-discount-percent: ${SUBSCRIPTION_ANNUAL_DISCOUNT_PERCENT:15}
+
   ai-service:
     timeout-seconds: 15
 
@@ -53,9 +96,13 @@ app:
 
   google:
     api-key: ${GOOGLE_AI_API_KEY:}
-    model: ${GOOGLE_AI_MODEL:gemma-4}
+    model: ${GOOGLE_AI_MODEL:gemini-2.5-flash}
 
 management:
+  health:
+    # El indicador de mail haría DOWN el /health (y el deploy) cuando el SMTP no está configurado.
+    mail:
+      enabled: false
   endpoints:
     web:
       exposure:
