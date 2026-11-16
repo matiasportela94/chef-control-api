@@ -25,14 +25,15 @@ public class SmtpEmailSender implements EmailSender {
     public SmtpEmailSender(JavaMailSender mailSender,
                            @Value("${spring.mail.username:}") String username,
                            @Value("${spring.mail.password:}") String password,
-                           @Value("${app.mail.from:${spring.mail.username:}}") String from) {
+                           @Value("${app.mail.from:}") String from) {
         if (username.isBlank() || password.isBlank()) {
             throw new IllegalStateException(
                     "SMTP mail needs MAIL_USERNAME and MAIL_PASSWORD (Gmail: an app password). "
                             + "Set them in .env / the deploy environment.");
         }
         this.mailSender = mailSender;
-        this.from = from;
+        // application.yml define app.mail.from como "" cuando falta MAIL_FROM: vacío = el usuario SMTP.
+        this.from = from.isBlank() ? username : from;
     }
 
     @Override
