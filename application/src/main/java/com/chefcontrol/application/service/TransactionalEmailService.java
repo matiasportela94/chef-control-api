@@ -62,6 +62,20 @@ public class TransactionalEmailService implements EmailService {
     }
 
     @Override
+    public void sendPlanChanged(String toEmail, String userName, String planName, BigDecimal amountArs,
+                                BillingPeriod billingPeriod, String appLink) {
+        String charge = ars(amountArs) + (billingPeriod == BillingPeriod.ANNUAL ? " por año" : " por mes");
+        deliver(new EmailMessage(toEmail,
+                "Tu plan de Chef Control cambió a " + planName,
+                layout("Hola " + esc(userName) + ",",
+                        "Tu cuenta ya tiene el plan <b>" + esc(planName) + "</b>. Desde ahora se cobra <b>" + charge
+                                + "</b> con Mercado Pago, que te manda el comprobante de cada cobro.",
+                        "Ir a Chef Control", appLink, BILLING_FOOTER),
+                "Hola " + userName + ",\n\nTu cuenta ya tiene el plan " + planName + ". Desde ahora se cobra "
+                        + charge + " con Mercado Pago. " + appLink));
+    }
+
+    @Override
     public void sendPaymentRecovered(String toEmail, String userName, String planName, String appLink) {
         deliver(new EmailMessage(toEmail,
                 "Recibimos tu pago de Chef Control",

@@ -1,7 +1,10 @@
 package com.chefcontrol.api.payments;
 
+import com.chefcontrol.api.payments.dto.ChangeSubscriptionRequest;
 import com.chefcontrol.api.payments.dto.CheckoutResponse;
 import com.chefcontrol.api.payments.dto.CreateSubscriptionRequest;
+import com.chefcontrol.api.payments.dto.SubscriptionChangePreviewResponse;
+import com.chefcontrol.api.payments.dto.SubscriptionChangeResponse;
 import com.chefcontrol.api.payments.dto.SubscriptionPlanResponse;
 import com.chefcontrol.api.payments.dto.SubscriptionResponse;
 import com.chefcontrol.application.payments.SubscriptionService;
@@ -34,7 +37,7 @@ public class SubscriptionController {
     @PreAuthorize("hasAuthority('PERM_ACCOUNT_VIEW')")
     public ResponseEntity<SubscriptionResponse> getSubscription() {
         return subscriptionService.getSubscription()
-                .map(s -> ResponseEntity.ok(SubscriptionResponse.from(s)))
+                .map(d -> ResponseEntity.ok(SubscriptionResponse.from(d.subscription(), d.pendingChange())))
                 .orElseGet(() -> ResponseEntity.noContent().build());
     }
 
@@ -63,5 +66,24 @@ public class SubscriptionController {
     @DeleteMapping
     public ResponseEntity<SubscriptionResponse> cancelSubscription() {
         return ResponseEntity.ok(SubscriptionResponse.from(subscriptionService.cancelSubscription()));
+    }
+
+    /** Qué pasaría con el cambio, sin hacerlo. Solo el dueño, como el cambio mismo. */
+    @GetMapping("/change-preview")
+    public SubscriptionChangePreviewResponse previewSubscriptionChange(@RequestParam PlanTier planTier,
+                                                                       @RequestParam BillingPeriod billingPeriod) {
+        return SubscriptionChangePreviewResponse.from(subscriptionService.previewSubscriptionChange(planTier, billingPeriod));
+    }
+
+    /** Suba: el checkout del pago único. Baja o cambio de período: la solicitud programada (con checkout si es de período). */
+    @PostMapping("/change")
+    public SubscriptionChangeResponse requestSubscriptionChange(@Valid @RequestBody ChangeSubscriptionRequest request) {
+        return SubscriptionChangeResponse.from(
+                subscriptionService.requestSubscriptionChange(request.planTier(), request.billingPeriod()));
+    }
+
+    @DeleteMapping("/change")
+    public SubscriptionResponse cancelSubscriptionChange() {
+        return SubscriptionResponse.from(subscriptionService.cancelSubscriptionChange());
     }
 }
