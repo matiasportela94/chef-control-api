@@ -44,6 +44,12 @@ public enum ErrorCode {
     SUBSCRIPTION_NOT_FOUND      (Category.NOT_FOUND),
     SUBSCRIPTION_ALREADY_ACTIVE (Category.CONFLICT),
     INVALID_SUBSCRIPTION_PLAN   (Category.BAD_REQUEST),
+    SUBSCRIPTION_NOT_ACTIVE     (Category.CONFLICT),
+    SUBSCRIPTION_PAST_DUE       (Category.CONFLICT),
+    SUBSCRIPTION_CHANGE_SAME_PLAN          (Category.BAD_REQUEST),
+    SUBSCRIPTION_UPGRADE_AND_PERIOD_CHANGE (Category.BAD_REQUEST),
+    SUBSCRIPTION_CHANGE_NOT_FOUND          (Category.NOT_FOUND),
+    SUBSCRIPTION_CHANGE_IN_PROGRESS        (Category.CONFLICT),
     // INTERNAL (500) y no 502/503: el front manda esos dos a la pantalla de "sistema caído", y que
     // MercadoPago no responda no es que el sistema esté caído.
     PAYMENT_PROVIDER_UNAVAILABLE(Category.INTERNAL),

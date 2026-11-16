@@ -52,6 +52,9 @@ public class SubscriptionJpaEntity {
     @Column(name = "current_period_end")
     private Instant currentPeriodEnd;
 
+    @Column(name = "starts_at")
+    private Instant startsAt;
+
     @Column(name = "created_at", updatable = false, nullable = false)
     private Instant createdAt;
 
@@ -81,6 +84,7 @@ public class SubscriptionJpaEntity {
         e.setAmountArs(domain.getAmountArs());
         e.setPayerEmail(domain.getPayerEmail());
         e.setCurrentPeriodEnd(domain.getCurrentPeriodEnd());
+        e.setStartsAt(domain.getStartsAt());
         e.setCreatedAt(domain.getCreatedAt());
         e.setUpdatedAt(domain.getUpdatedAt());
         return e;
@@ -98,6 +102,7 @@ public class SubscriptionJpaEntity {
                 .amountArs(amountArs)
                 .payerEmail(payerEmail)
                 .currentPeriodEnd(currentPeriodEnd)
+                .startsAt(startsAt)
                 .createdAt(createdAt)
                 .updatedAt(updatedAt)
                 .build();

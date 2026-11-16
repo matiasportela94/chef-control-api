@@ -44,6 +44,11 @@ app:
   jwt:
     expiration-ms: 86400000
 
+  backend:
+    # URL pública de este backend (https). Va como notification_url en el checkout de los pagos únicos (suba de
+    # plan). Vacía = MP avisa solo si el panel tiene activado el tópico "Pagos". Ver .env.example.
+    public-url: ${BACKEND_PUBLIC_URL:}
+
   google-sign-in:
     # OAuth Client ID (tipo "Aplicación web") de Google Cloud Console. Es público: el front lo usa para el
     # botón y el back para exigir que el token sea para nuestra app. Vacío = el ingreso con Google rechaza todo.

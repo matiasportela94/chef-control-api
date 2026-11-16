@@ -30,10 +30,17 @@ public class Subscription {
     private BigDecimal amountArs;
     private String payerEmail;
     private Instant currentPeriodEnd;
+    /** Solo en la que reemplaza a la vigente en un cambio de período: cuándo se cobra por primera vez (V31). */
+    private Instant startsAt;
     private Instant createdAt;
     private Instant updatedAt;
 
+    /**
+     * Ocupa el único lugar de "suscripción vigente" de la cuenta (ver índice de V31): la que se está cobrando o la que
+     * se está contratando de cero. La de un cambio de período no, hasta que arranca.
+     */
     public boolean isLive() {
-        return status.isLive();
+        return status == SubscriptionStatus.ACTIVE || status == SubscriptionStatus.PAST_DUE
+                || (status == SubscriptionStatus.PENDING && startsAt == null);
     }
 }

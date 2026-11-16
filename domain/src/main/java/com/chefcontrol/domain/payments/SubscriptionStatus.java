@@ -11,10 +11,10 @@ public enum SubscriptionStatus {
      */
     PAST_DUE,
     /** Terminada, por el cliente, por el proveedor (rechazos seguidos), por mora o por cierre de cuenta. */
-    CANCELLED;
-
-    /** Ocupa el único lugar de "suscripción vigente" de la cuenta (ver índice de V28). */
-    public boolean isLive() {
-        return this != CANCELLED;
-    }
+    CANCELLED,
+    /**
+     * La que reemplaza a la vigente en un cambio de período (mensual ↔ anual): autorizada en el proveedor y con el
+     * primer cobro en {@code startsAt}, el fin del período de la vigente. Hasta ese cobro no da derecho a nada.
+     */
+    SCHEDULED
 }
