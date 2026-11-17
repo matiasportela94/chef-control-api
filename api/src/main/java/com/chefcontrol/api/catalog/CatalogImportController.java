@@ -52,7 +52,7 @@ public class CatalogImportController {
                         p.ivaPercentage())).toList(),
                 request.recipes().stream().map(r -> new RecipeRow(
                         r.row(), r.menuItem(), r.price(), r.section(), r.ingredient(), r.quantity(), r.unit())).toList(),
-                dryRun, permissionsOf(authentication));
+                dryRun, permissionsOf(authentication), Set.copyOf(request.replaceRecipeMenuItemIds()));
         return ResponseEntity.ok(CatalogImportResult.from(report));
     }
 

@@ -84,6 +84,9 @@ app:
       # Access Token de la aplicación de MP. Sin él crear/cancelar suscripciones falla con
       # PAYMENT_PROVIDER_UNAVAILABLE. Usar el de PRUEBA fuera de producción.
       access-token: ${MP_ACCESS_TOKEN:}
+    # Email de un comprador de prueba de MP. Solo con credenciales de prueba: MP rechaza un pagador real contra un
+    # vendedor de prueba. Cargado, va como pagador en lugar del email del dueño. Vacío en producción.
+    test-payer-email: ${MP_TEST_PAYER_EMAIL:}
     # Lo que se cobra por mes, en ARS. Cambiar acá NO actualiza las suscripciones ya creadas: cada una
     # tiene su monto en MP (el reajuste masivo es el endpoint admin, pendiente).
     plans:

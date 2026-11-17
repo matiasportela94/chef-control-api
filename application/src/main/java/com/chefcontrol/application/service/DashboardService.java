@@ -8,14 +8,13 @@ import com.chefcontrol.domain.repository.PurchaseRepository;
 import com.chefcontrol.domain.repository.SaleRepository;
 import com.chefcontrol.domain.repository.StockMovementRepository;
 import com.chefcontrol.domain.repository.WasteEventRepository;
+import com.chefcontrol.domain.shared.time.ChefControlTime;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.time.ZoneOffset;
-import java.time.temporal.TemporalAdjusters;
 import java.util.List;
 import java.util.UUID;
 
@@ -33,8 +32,8 @@ public class DashboardService {
     public DashboardSummary getSummary() {
         UUID    restaurantId   = TenantContext.require();
         Instant now            = Instant.now();
-        Instant monthStart     = firstDayOfCurrentMonth();
-        Instant prevMonthStart = firstDayOfPreviousMonth();
+        Instant monthStart     = monthStart(now, 0);
+        Instant prevMonthStart = monthStart(now, 1);
         Instant prevMonthEnd   = monthStart;
 
         List<ProductStockProjection> stockRows = productRepository.findProductStockByRestaurant(restaurantId);
@@ -109,23 +108,13 @@ public class DashboardService {
                 && row.getCurrentStock().compareTo(row.getMaxStock()) > 0;
     }
 
-    private Instant firstDayOfCurrentMonth() {
-        return Instant.now()
-                .atOffset(ZoneOffset.UTC)
-                .with(TemporalAdjusters.firstDayOfMonth())
-                .toLocalDate()
-                .atStartOfDay()
-                .toInstant(ZoneOffset.UTC);
-    }
-
-    private Instant firstDayOfPreviousMonth() {
-        return Instant.now()
-                .atOffset(ZoneOffset.UTC)
-                .with(TemporalAdjusters.firstDayOfMonth())
-                .minusMonths(1)
-                .toLocalDate()
-                .atStartOfDay()
-                .toInstant(ZoneOffset.UTC);
+    /**
+     * El día 1 a las 00:00 en Argentina, {@code monthsBack} meses atrás. En UTC el mes empezaba a las 21 h del último
+     * día de acá: esas tres horas de ventas caían en el mes siguiente, y la noche del último día "este mes" salía vacío.
+     */
+    static Instant monthStart(Instant now, int monthsBack) {
+        return now.atZone(ChefControlTime.DEFAULT_ZONE).toLocalDate().withDayOfMonth(1).minusMonths(monthsBack)
+                .atStartOfDay(ChefControlTime.DEFAULT_ZONE).toInstant();
     }
 
     // ── Result types ──────────────────────────────────────────────────────────

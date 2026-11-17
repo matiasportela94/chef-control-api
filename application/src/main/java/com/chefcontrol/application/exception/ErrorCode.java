@@ -8,7 +8,10 @@ import lombok.RequiredArgsConstructor;
 public enum ErrorCode {
 
     // Auth
+    // 403 y no 401 a propósito: el front manda a /login ante un 401, y una contraseña equivocada no es eso.
     INVALID_CREDENTIALS     (Category.FORBIDDEN),
+    /** Pedido sin sesión (sin cookie, vencida o inválida): el único 401, el que manda al front a /login. */
+    AUTHENTICATION_REQUIRED (Category.UNAUTHORIZED),
     USER_NOT_FOUND          (Category.NOT_FOUND),
     USER_INACTIVE           (Category.FORBIDDEN),
     NO_ACTIVE_MEMBERSHIPS   (Category.FORBIDDEN),
@@ -118,6 +121,7 @@ public enum ErrorCode {
 
     public enum Category {
         NOT_FOUND,
+        UNAUTHORIZED,
         FORBIDDEN,
         CONFLICT,
         BAD_REQUEST,
