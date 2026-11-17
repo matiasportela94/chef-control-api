@@ -59,6 +59,12 @@ public enum ErrorCode {
     // IA: INTERNAL (500) y no 503 a propósito, como PAYMENT_PROVIDER_UNAVAILABLE: el front manda 502/503 a /maintenance
     AI_INTERPRETATION_FAILED    (Category.INTERNAL),
     AI_SPREADSHEET_TOO_LARGE    (Category.BAD_REQUEST),
+    AI_AUDIO_TOO_LARGE          (Category.BAD_REQUEST),
+    AI_AUDIO_FORMAT_NOT_SUPPORTED (Category.BAD_REQUEST),
+    // 500 y no 503, como AI_INTERPRETATION_FAILED: el front manda 502/503 a /maintenance.
+    AI_TRANSCRIPTION_FAILED     (Category.INTERNAL),
+    /** Sin OPENAI_API_KEY: transcribir no está disponible (nunca se inventa un texto). */
+    AI_TRANSCRIPTION_NOT_CONFIGURED (Category.INTERNAL),
 
     // WhatsApp
     UNREGISTERED_PHONE      (Category.FORBIDDEN),

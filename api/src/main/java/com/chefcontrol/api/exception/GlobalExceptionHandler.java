@@ -15,6 +15,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 
 import java.util.stream.Collectors;
 
@@ -53,10 +54,22 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<ErrorResponse> handleUploadTooLarge(HttpServletRequest request) {
+        // El límite es global: el código dice qué era lo que no entraba.
+        ErrorCode code = request.getRequestURI().endsWith("/ai/transcribe")
+                ? ErrorCode.AI_AUDIO_TOO_LARGE : ErrorCode.IMAGE_TOO_LARGE;
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
-                .body(ErrorResponse.of(ErrorCode.IMAGE_TOO_LARGE,
-                        "The file is too large", request.getRequestURI()));
+                .body(ErrorResponse.of(code, "The file is too large", request.getRequestURI()));
+    }
+
+    /** Un multipart sin el archivo esperado: 400, no el 500 del handler genérico. */
+    @ExceptionHandler(MissingServletRequestPartException.class)
+    public ResponseEntity<ErrorResponse> handleMissingPart(MissingServletRequestPartException ex,
+                                                           HttpServletRequest request) {
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of(ErrorCode.VALIDATION_ERROR,
+                        "Missing part: " + ex.getRequestPartName(), request.getRequestURI()));
     }
 
     @ExceptionHandler(AuthorizationDeniedException.class)
