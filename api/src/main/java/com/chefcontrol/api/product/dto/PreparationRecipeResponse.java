@@ -13,14 +13,14 @@ public record PreparationRecipeResponse(
         BigDecimal yieldQuantity,
         UUID yieldUnitId,
         String yieldUnitName,
-        List<Item> items
+        List<PreparationRecipeItemResponse> items
 ) {
-    public record Item(UUID productId, String productName, BigDecimal quantity, UUID unitId, String unitName) {}
+    public record PreparationRecipeItemResponse(UUID productId, String productName, BigDecimal quantity, UUID unitId, String unitName) {}
 
     public static PreparationRecipeResponse from(Recipe recipe, Product product) {
         return new PreparationRecipeResponse(product.getId(), recipe.getYieldQuantity(), product.getDefaultUnitId(),
                 product.getDefaultUnitName(), recipe.getItems().stream()
-                .map(i -> new Item(i.getProductId(), i.getProductName(), i.getQuantity(), i.getUnitId(), i.getUnitName()))
+                .map(i -> new PreparationRecipeItemResponse(i.getProductId(), i.getProductName(), i.getQuantity(), i.getUnitId(), i.getUnitName()))
                 .toList());
     }
 }

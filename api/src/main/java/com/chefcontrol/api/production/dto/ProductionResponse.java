@@ -29,17 +29,17 @@ public record ProductionResponse(
         UUID parentProductionId,
         String status,
         String notes,
-        List<Ingredient> ingredients
+        List<ProductionIngredientResponse> ingredients
 ) {
     /** {@code quantity}: el bruto consumido (incluye {@code standardWaste}), en la unidad del insumo. */
-    public record Ingredient(UUID productId, String productName, BigDecimal quantity, UUID unitId, String unitName,
+    public record ProductionIngredientResponse(UUID productId, String productName, BigDecimal quantity, UUID unitId, String unitName,
                              BigDecimal standardWaste, BigDecimal costPerUnit, BigDecimal totalCost) {}
 
     public static ProductionResponse from(Production p, List<ProductionIngredient> ingredients) {
         return new ProductionResponse(p.getId(), p.getProductId(), p.getProductName(), p.getQuantity(), p.getUnitId(),
                 p.getUnitName(), p.getCostPerUnit(), p.getTotalCost(), p.getExpirationDate(), p.getProducedAt(),
                 p.isAutomatic(), p.getSaleId(), p.getParentProductionId(), p.getStatus().name(), p.getNotes(),
-                ingredients == null ? null : ingredients.stream().map(i -> new Ingredient(i.productId(), i.productName(),
+                ingredients == null ? null : ingredients.stream().map(i -> new ProductionIngredientResponse(i.productId(), i.productName(),
                         i.quantity(), i.unitId(), i.unitName(), i.standardWaste(), i.costPerUnit(), i.totalCost()))
                         .toList());
     }
