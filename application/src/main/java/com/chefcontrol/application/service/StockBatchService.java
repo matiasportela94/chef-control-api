@@ -58,6 +58,22 @@ public class StockBatchService {
         return batch;
     }
 
+    /** El lote de una tanda producida: revertir la producción lo deja en cero (como el de una compra). */
+    public StockBatch createProductionBatch(UUID restaurantId, UUID productId, UUID productionId,
+                                            BigDecimal quantity, LocalDate expirationDate, BigDecimal costPerUnit,
+                                            UUID stockMovementId) {
+        StockBatch batch = stockBatchRepository.save(StockBatch.builder()
+                .restaurantId(restaurantId)
+                .productId(productId)
+                .productionId(productionId)
+                .quantityRemaining(quantity)
+                .expirationDate(expirationDate)
+                .costPerUnit(costPerUnit)
+                .build());
+        allocate(stockMovementId, batch.getId(), quantity);
+        return batch;
+    }
+
     /**
      * Consumes stock FIFO (oldest batch first) across as many batches as needed.
      * If the available batches don't cover the full quantity, consumes what's there and stops —

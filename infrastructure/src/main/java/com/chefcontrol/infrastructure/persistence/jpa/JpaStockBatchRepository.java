@@ -29,6 +29,8 @@ public interface JpaStockBatchRepository extends JpaRepository<StockBatchJpaEnti
     List<StockBatchJpaEntity> findAvailableByProductFifo(@Param("productId") UUID productId,
                                                           @Param("restaurantId") UUID restaurantId);
 
+    java.util.List<StockBatchJpaEntity> findByProductionId(UUID productionId);
+
     @Query("SELECT b FROM StockBatchJpaEntity b WHERE b.purchaseItemId = :purchaseItemId")
     Optional<StockBatchJpaEntity> findByPurchaseItemId(@Param("purchaseItemId") UUID purchaseItemId);
 

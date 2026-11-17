@@ -124,7 +124,9 @@ public interface JpaStockMovementRepository extends JpaRepository<StockMovementJ
 
     /**
      * Merma por insumo en el período, partida entre la estándar (de limpieza, cuelga del
-     * sale_item) y la registrada a mano (cuelga del waste_event).
+     * sale_item o de la producción de una preparación) y la registrada a mano (cuelga del waste_event).
+     * Sin la de las producciones, un insumo que solo se usa para preparar daba esperado cero y cualquier merma
+     * registrada disparaba la alerta.
      *
      * <p>{@code reversed_by IS NULL} no es opcional: el ledger es append-only, así que revertir
      * una merma deja el movimiento original en su lugar y agrega uno de tipo REVERSAL. Sin el
@@ -137,14 +139,14 @@ public interface JpaStockMovementRepository extends JpaRepository<StockMovementJ
     @Query(value = """
             SELECT restaurant_id,
                    product_id,
-                   COALESCE(SUM(CASE WHEN reference_type = 'sale_item'   THEN quantity ELSE 0 END), 0),
+                   COALESCE(SUM(CASE WHEN reference_type IN ('sale_item', 'production') THEN quantity ELSE 0 END), 0),
                    COALESCE(SUM(CASE WHEN reference_type = 'waste_event' THEN quantity ELSE 0 END), 0)
             FROM stock_movements
             WHERE type = 'WASTE'
               AND reversed_by IS NULL
               AND created_at >= :from
             GROUP BY restaurant_id, product_id
-            HAVING SUM(CASE WHEN reference_type = 'sale_item' THEN quantity ELSE 0 END) > 0
+            HAVING SUM(CASE WHEN reference_type IN ('sale_item', 'production') THEN quantity ELSE 0 END) > 0
             """, nativeQuery = true)
     List<Object[]> sumWasteByProductSince(@Param("from") Instant from);
 

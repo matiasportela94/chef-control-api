@@ -33,13 +33,15 @@ public record RecipeCostResponse(
             BigDecimal grossQuantity,
             BigDecimal yieldPercentage,
             BigDecimal unitCost,
-            BigDecimal totalCost
+            BigDecimal totalCost,
+            /** El ingrediente es una preparación: {@code unitCost} es lo que cuesta hacerla hoy (o en esa fecha). */
+            boolean preparation
     ) {
-        static IngredientCost from(RecipeIngredientCost ic) {
+        public static IngredientCost from(RecipeIngredientCost ic) {
             return new IngredientCost(
                     ic.productId(), ic.productName(), ic.quantity(),
                     ic.unitId(), ic.unitName(), ic.grossQuantity(), ic.yieldPercentage(),
-                    ic.unitCost(), ic.totalCost());
+                    ic.unitCost(), ic.totalCost(), ic.preparation());
         }
     }
 

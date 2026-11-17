@@ -55,6 +55,9 @@ class SalesIvaServiceTest {
     @Mock ProductRepository productRepository;
     @Mock UnitConversionService unitConversionService;
     @Mock RestaurantRepository restaurantRepository;
+    @Mock ProductionRepository productionRepository;
+    @Mock FoodCostService foodCostService;
+    @Mock ProductionService productionService;
     @Mock PriceHistoryRepository priceHistoryRepository;
     @Mock RecipeVersionRepository recipeVersionRepository;
     @Mock UnitRepository unitRepository;
@@ -191,9 +194,13 @@ class SalesIvaServiceTest {
     }
 
     private SaleService saleService() {
+        // El consumo real (bruto, merma estándar, costo FIFO) con los mismos mocks: es donde vive la regla.
+        StockConsumptionService consumption = new StockConsumptionService(productRepository, recipeRepository,
+                productionRepository, stockMovementRepository, stockBatchService, unitConversionService,
+                alertEvaluationService, foodCostService, auditService);
         return new SaleService(saleRepository, saleItemRepository, menuItemRepository, recipeRepository,
                 stockMovementRepository, stockBatchService, alertEvaluationService, auditService,
-                currentUserProvider, productRepository, unitConversionService, restaurantRepository);
+                currentUserProvider, restaurantRepository, consumption, productionService);
     }
 
     private FoodCostService foodCostService() {

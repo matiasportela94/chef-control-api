@@ -14,6 +14,8 @@ public class StockBatch {
     private UUID restaurantId;
     private UUID productId;
     private UUID purchaseItemId;
+    /** El lote que entró al producir una preparación. */
+    private UUID productionId;
     private BigDecimal quantityRemaining;
     private LocalDate expirationDate;
     private BigDecimal costPerUnit;

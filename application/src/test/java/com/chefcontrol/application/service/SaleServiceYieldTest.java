@@ -53,6 +53,9 @@ class SaleServiceYieldTest {
     @Mock ProductRepository productRepository;
     @Mock UnitConversionService unitConversionService;
     @Mock RestaurantRepository restaurantRepository;
+    @Mock ProductionRepository productionRepository;
+    @Mock FoodCostService foodCostService;
+    @Mock ProductionService productionService;
 
     private final UUID restaurantId = UUID.randomUUID();
     private final UUID menuItemId = UUID.randomUUID();
@@ -64,9 +67,13 @@ class SaleServiceYieldTest {
     @AfterEach  void clearTenant() { TenantContext.clear(); }
 
     private SaleService service() {
+        // El consumo real (bruto, merma estándar, costo FIFO) con los mismos mocks: es donde vive la regla.
+        StockConsumptionService consumption = new StockConsumptionService(productRepository, recipeRepository,
+                productionRepository, stockMovementRepository, stockBatchService, unitConversionService,
+                alertEvaluationService, foodCostService, auditService);
         return new SaleService(saleRepository, saleItemRepository, menuItemRepository, recipeRepository,
                 stockMovementRepository, stockBatchService, alertEvaluationService, auditService,
-                currentUserProvider, productRepository, unitConversionService, restaurantRepository);
+                currentUserProvider, restaurantRepository, consumption, productionService);
     }
 
     private List<StockMovement> movementsForSaleOf(String yieldPercentage) {

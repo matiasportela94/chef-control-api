@@ -21,8 +21,15 @@ public class RecipeJpaEntity {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(name = "menu_item_id", nullable = false)
+    @Column(name = "menu_item_id")
     private UUID menuItemId;
+
+    /** El dueño es un plato o una preparación (un insumo), nunca los dos: CHECK de V34. */
+    @Column(name = "product_id")
+    private UUID productId;
+
+    @Column(name = "yield_quantity", precision = 12, scale = 3)
+    private java.math.BigDecimal yieldQuantity;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "menu_item_id", insertable = false, updatable = false)
@@ -49,6 +56,8 @@ public class RecipeJpaEntity {
         RecipeJpaEntity e = new RecipeJpaEntity();
         e.setId(domain.getId());
         e.setMenuItemId(domain.getMenuItemId());
+        e.setProductId(domain.getProductId());
+        e.setYieldQuantity(domain.getYieldQuantity());
         e.setRestaurantId(domain.getRestaurantId());
         e.setServings(domain.getServings());
         e.setCreatedAt(domain.getCreatedAt());
@@ -65,6 +74,8 @@ public class RecipeJpaEntity {
         return Recipe.builder()
                 .id(id)
                 .menuItemId(menuItemId)
+                .productId(productId)
+                .yieldQuantity(yieldQuantity)
                 .restaurantId(restaurantId)
                 .servings(servings)
                 .createdAt(createdAt)

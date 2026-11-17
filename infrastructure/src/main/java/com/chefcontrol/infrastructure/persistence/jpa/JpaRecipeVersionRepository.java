@@ -22,4 +22,15 @@ public interface JpaRecipeVersionRepository extends JpaRepository<RecipeVersionJ
     @EntityGraph(attributePaths = "items")
     List<RecipeVersionJpaEntity> findByMenuItemIdAndValidFromBetweenOrderByValidFromAsc(
             UUID menuItemId, Instant from, Instant to);
+
+    @EntityGraph(attributePaths = "items")
+    Optional<RecipeVersionJpaEntity> findFirstByProductIdAndValidFromLessThanEqualOrderByValidFromDesc(
+            UUID productId, Instant at);
+
+    @EntityGraph(attributePaths = "items")
+    Optional<RecipeVersionJpaEntity> findFirstByProductIdOrderByValidFromDesc(UUID productId);
+
+    @EntityGraph(attributePaths = "items")
+    List<RecipeVersionJpaEntity> findByProductIdAndValidFromBetweenOrderByValidFromAsc(
+            UUID productId, Instant from, Instant to);
 }

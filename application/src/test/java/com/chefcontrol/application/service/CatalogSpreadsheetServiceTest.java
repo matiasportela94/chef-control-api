@@ -117,7 +117,7 @@ class CatalogSpreadsheetServiceTest {
 
     @Test
     void aProposedProductThatAlreadyExistsOrRepeatsIsDropped() {
-        ai.answer = new CatalogSpreadsheetInterpretation(
+        ai.answer = interpretation(
                 List.of(new ProductRow(2, "Cebolla", "kg", null, null, null)),
                 List.of(),
                 List.of(new ProductRow(10, "PAPÁ", "kg", null, null, null),     // = "Papa" del catálogo
@@ -133,7 +133,7 @@ class CatalogSpreadsheetServiceTest {
 
     @Test
     void aRecognizedIngredientIsRenamedOnlyIfTheNameExistsAndTheWarningSaysSo() {
-        ai.answer = new CatalogSpreadsheetInterpretation(
+        ai.answer = interpretation(
                 List.of(new ProductRow(1, "Cebolla", "kg", null, null, null)),
                 List.of(recipe(5, "Papas"), recipe(6, "cebollas"), recipe(7, "PAPA"), recipe(8, "Tomates")),
                 List.of(new ProductRow(5, "Papas", "kg", null, null, null),       // el modelo igual la propuso
@@ -157,7 +157,7 @@ class CatalogSpreadsheetServiceTest {
 
     @Test
     void aProductTakenFromARecipeRowIsAProposalNotAProduct() {
-        ai.answer = new CatalogSpreadsheetInterpretation(
+        ai.answer = interpretation(
                 List.of(new ProductRow(13, "limon", "kg", null, null, null),   // pasó así en la prueba real
                         new ProductRow(14, "Azúcar", "kg", null, null, null),
                         new ProductRow(2, "Harina", "kg", null, null, null)),  // fila de insumos de verdad
@@ -179,9 +179,15 @@ class CatalogSpreadsheetServiceTest {
     }
 
     /** El puerto falso: guarda lo que le llega y devuelve vacío. */
+    /** Sin preparaciones: las de estos casos son de insumos y platos. */
+    private static CatalogSpreadsheetInterpretation interpretation(List<ProductRow> products, List<RecipeRow> recipes,
+            List<ProductRow> proposed, List<AIService.IngredientMatch> matches, List<String> warnings) {
+        return new CatalogSpreadsheetInterpretation(products, List.of(), recipes, proposed, matches, warnings);
+    }
+
     private static class FakeAI implements AIService {
         final List<CatalogSpreadsheetRequest> requests = new ArrayList<>();
-        CatalogSpreadsheetInterpretation answer = new CatalogSpreadsheetInterpretation(List.of(), List.of(), List.of(), List.of(), List.of());
+        CatalogSpreadsheetInterpretation answer = interpretation(List.of(), List.of(), List.of(), List.of(), List.of());
 
         @Override
         public AIInterpretation interpret(InterpretRequest request) {

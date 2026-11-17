@@ -21,11 +21,17 @@ public class RecipeVersionJpaEntity {
     @Column(name = "restaurant_id", nullable = false)
     private UUID restaurantId;
 
-    @Column(name = "menu_item_id", nullable = false)
+    @Column(name = "menu_item_id")
     private UUID menuItemId;
+
+    @Column(name = "product_id")
+    private UUID productId;
 
     @Column(nullable = false)
     private int servings;
+
+    @Column(name = "yield_quantity", precision = 12, scale = 3)
+    private java.math.BigDecimal yieldQuantity;
 
     @Column(name = "valid_from", nullable = false)
     private Instant validFrom;
@@ -42,7 +48,9 @@ public class RecipeVersionJpaEntity {
                 .id(domain.id())
                 .restaurantId(domain.restaurantId())
                 .menuItemId(domain.menuItemId())
+                .productId(domain.productId())
                 .servings(domain.servings())
+                .yieldQuantity(domain.yieldQuantity())
                 .validFrom(domain.validFrom())
                 .changedBy(domain.changedBy())
                 .items(new ArrayList<>())
@@ -60,7 +68,7 @@ public class RecipeVersionJpaEntity {
     }
 
     public RecipeVersion toDomain() {
-        return new RecipeVersion(id, restaurantId, menuItemId, servings, validFrom, changedBy,
+        return new RecipeVersion(id, restaurantId, menuItemId, productId, servings, yieldQuantity, validFrom, changedBy,
                 items.stream()
                         .map(i -> new RecipeVersion.Item(i.getProductId(), i.getQuantity(), i.getUnitId()))
                         .toList());
