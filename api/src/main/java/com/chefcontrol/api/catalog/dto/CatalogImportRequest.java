@@ -6,6 +6,7 @@ import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Las filas tal como vienen del Excel. Sin validaciones por campo a propósito: un problema de una fila vuelve
@@ -13,11 +14,14 @@ import java.util.List;
  */
 public record CatalogImportRequest(
         @Size(max = CatalogImportService.MAX_PRODUCT_ROWS) List<@NotNull ProductImportRow> products,
-        @Size(max = CatalogImportService.MAX_RECIPE_ROWS) List<@NotNull RecipeImportRow> recipes
+        @Size(max = CatalogImportService.MAX_RECIPE_ROWS) List<@NotNull RecipeImportRow> recipes,
+        /** Los platos existentes cuya receta se puede pisar (los {@code recipesToReplace} del dryRun). Sin esto, no se pisa ninguna. */
+        @Size(max = CatalogImportService.MAX_RECIPE_ROWS) List<@NotNull UUID> replaceRecipeMenuItemIds
 ) {
     public CatalogImportRequest {
         products = products == null ? List.of() : products;
         recipes = recipes == null ? List.of() : recipes;
+        replaceRecipeMenuItemIds = replaceRecipeMenuItemIds == null ? List.of() : replaceRecipeMenuItemIds;
     }
 
     /** @param row el número de fila del Excel */

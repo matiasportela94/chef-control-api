@@ -11,6 +11,7 @@ import com.chefcontrol.domain.audit.AuditAction;
 import com.chefcontrol.domain.context.TenantContext;
 import com.chefcontrol.domain.menu.MenuItem;
 import com.chefcontrol.domain.menu.MenuSection;
+import com.chefcontrol.domain.menu.Recipe;
 import com.chefcontrol.domain.product.Product;
 import com.chefcontrol.domain.product.ProductCategory;
 import com.chefcontrol.domain.product.Unit;
@@ -53,6 +54,10 @@ import java.util.UUID;
  * <p>Reglas (Mati, 2026-10-23): un insumo que ya existe no se toca (cambiarle la unidad rompería su stock); un
  * ingrediente tiene que existir o venir en la hoja de insumos, nunca se crea solo (la misma regla que la IA);
  * a un plato que ya existe se le reemplaza la receta pero no el precio ni el paso; sin costos ni stock.
+ *
+ * <p><b>Pisar una receta se pregunta (Mati, 2026-11-17):</b> la de un plato que ya tiene receta se reemplaza solo si
+ * su id viene en {@code replaceRecipesOf}; si no, se saltea sin error. La vista previa lista cuáles cambiarían. Si la
+ * del Excel es igual a la guardada no se toca: ni se pregunta, ni se graba otra versión.
  */
 @Service
 @RequiredArgsConstructor
@@ -85,12 +90,13 @@ public class CatalogImportService {
     /**
      * @param permissions los del usuario: crear una categoría que falta pide {@code CATEGORIES_CREATE}, como a mano.
      *                    Va como error de fila y no como 403, para que la vista previa diga cuál falta.
+     * @param replaceRecipesOf los platos existentes cuya receta se puede pisar. Vacío = no se pisa ninguna.
      */
     @Transactional
     public Report importCatalog(List<ProductRow> products, List<RecipeRow> recipes, boolean dryRun,
-                                Set<Permission> permissions) {
+                                Set<Permission> permissions, Set<UUID> replaceRecipesOf) {
         UUID restaurantId = TenantContext.require();
-        Plan plan = new Plan(restaurantId, permissions.contains(Permission.CATEGORIES_CREATE));
+        Plan plan = new Plan(restaurantId, permissions.contains(Permission.CATEGORIES_CREATE), replaceRecipesOf);
         products.forEach(plan::addProduct);
         plan.addRecipes(recipes);
 
@@ -114,6 +120,7 @@ public class CatalogImportService {
                 sectionIds.put(key, menuSectionService.createSection(name, null, null).getId()));
 
         for (PlannedDish dish : plan.dishes) {
+            if (dish.change() == RecipeChange.SKIP || dish.change() == RecipeChange.UNCHANGED) continue;
             UUID menuItemId = dish.existingId() != null ? dish.existingId()
                     : menuItemService.createMenuItem(new CreateMenuItemCommand(dish.name(), null, dish.price(),
                             dish.sectionKey() == null ? null : sectionIds.get(dish.sectionKey()))).getId();
@@ -153,6 +160,7 @@ public class CatalogImportService {
     private class Plan {
         final UUID restaurantId;
         final boolean mayCreateCategories;
+        final Set<UUID> replaceRecipesOf;
         final List<RowError> errors = new ArrayList<>();
         final Map<String, Unit> units = new HashMap<>();
         final Map<String, UUID> categoryIds = new HashMap<>();
@@ -173,9 +181,10 @@ public class CatalogImportService {
         final List<PlannedDish> dishes = new ArrayList<>();
         int productsExisting;
 
-        Plan(UUID restaurantId, boolean mayCreateCategories) {
+        Plan(UUID restaurantId, boolean mayCreateCategories, Set<UUID> replaceRecipesOf) {
             this.restaurantId = restaurantId;
             this.mayCreateCategories = mayCreateCategories;
+            this.replaceRecipesOf = replaceRecipesOf;
             List<Unit> all = unitRepository.findAll();
             all.forEach(u -> units.putIfAbsent(key(u.getName()), u));
             all.stream().filter(u -> u.getAbbreviation() != null)
@@ -302,10 +311,24 @@ public class CatalogImportService {
                 sectionKey = key(section);
                 if (!sectionIds.containsKey(sectionKey)) newSections.putIfAbsent(sectionKey, section);
             }
-            boolean hasRecipe = existing != null
-                    && recipeRepository.findByMenuItemIdAndRestaurantId(existing.getId(), restaurantId).isPresent();
-            dishes.add(new PlannedDish(name, existing == null ? null : existing.getId(), price, sectionKey,
-                    hasRecipe, items));
+            Recipe saved = existing == null ? null
+                    : recipeRepository.findByMenuItemIdAndRestaurantId(existing.getId(), restaurantId).orElse(null);
+            RecipeChange change = saved == null ? RecipeChange.CREATE
+                    : sameRecipe(saved, items) ? RecipeChange.UNCHANGED
+                    : replaceRecipesOf.contains(existing.getId()) ? RecipeChange.REPLACE : RecipeChange.SKIP;
+            dishes.add(new PlannedDish(existing == null ? name : existing.getName(), first.row(),
+                    existing == null ? null : existing.getId(), price, sectionKey, change, items));
+        }
+
+        /** Lo que el import guardaría (servings 1, mismos insumo/unidad/cantidad, sin importar el orden) ya está. */
+        private boolean sameRecipe(Recipe saved, List<PlannedIngredient> items) {
+            if (saved.getServings() != 1 || saved.getItems().size() != items.size()) return false;
+            Set<List<Object>> savedItems = new HashSet<>();
+            saved.getItems().forEach(i -> savedItems.add(
+                    List.of(i.getProductId(), i.getUnitId(), i.getQuantity().stripTrailingZeros())));
+            // Un insumo nuevo de la hoja no tiene id todavía: no puede estar en la receta guardada.
+            return items.stream().allMatch(i -> productIds.containsKey(i.productKey()) && savedItems.contains(
+                    List.of(productIds.get(i.productKey()), i.unitId(), i.quantity().stripTrailingZeros())));
         }
 
         private PlannedIngredient ingredient(RecipeRow r, Set<String> seenInDish) {
@@ -375,9 +398,18 @@ public class CatalogImportService {
                     newCategories.size(),
                     newSections.size(),
                     (int) dishes.stream().filter(d -> d.existingId() == null).count(),
-                    (int) dishes.stream().filter(d -> !d.hasRecipe()).count(),
-                    (int) dishes.stream().filter(PlannedDish::hasRecipe).count(),
+                    count(RecipeChange.CREATE),
+                    count(RecipeChange.REPLACE),
+                    count(RecipeChange.SKIP),
+                    count(RecipeChange.UNCHANGED),
+                    dishes.stream().filter(d -> d.change() == RecipeChange.REPLACE || d.change() == RecipeChange.SKIP)
+                            .map(d -> new RecipeReplacement(d.existingId(), d.name(), d.row()))
+                            .sorted(Comparator.comparingInt(RecipeReplacement::row)).toList(),
                     sorted);
+        }
+
+        private int count(RecipeChange change) {
+            return (int) dishes.stream().filter(d -> d.change() == change).count();
         }
     }
 
@@ -402,9 +434,16 @@ public class CatalogImportService {
     /** @param field el campo de la fila (name, unit, quantity…); {@code value} es lo que vino, null si faltaba */
     public record RowError(Sheet sheet, int row, String field, ErrorCode errorCode, String value) {}
 
-    /** Con errores, o con {@code dryRun}, {@code saved} es false y los contadores dicen lo que se haría. */
+    /** Un plato que ya tiene receta y la del Excel la cambiaría. {@code row}: su primera fila de receta. */
+    public record RecipeReplacement(UUID menuItemId, String menuItem, int row) {}
+
+    /**
+     * Con errores, o con {@code dryRun}, {@code saved} es false y los contadores dicen lo que se haría.
+     * {@code recipesToReplace} = los reemplazados + los salteados: la pregunta para el usuario.
+     */
     public record Report(boolean saved, int productsCreated, int productsExisting, int categoriesCreated,
                          int sectionsCreated, int menuItemsCreated, int recipesCreated, int recipesReplaced,
+                         int recipesSkipped, int recipesUnchanged, List<RecipeReplacement> recipesToReplace,
                          List<RowError> errors) {
         boolean changedAnything() {
             return productsCreated + categoriesCreated + sectionsCreated + menuItemsCreated
@@ -417,6 +456,10 @@ public class CatalogImportService {
 
     private record PlannedIngredient(String productKey, UUID unitId, BigDecimal quantity) {}
 
-    private record PlannedDish(String name, UUID existingId, BigDecimal price, String sectionKey,
-                               boolean hasRecipe, List<PlannedIngredient> items) {}
+    /** CREATE: plato nuevo o sin receta. REPLACE / SKIP: tiene otra receta y se pisa o no. UNCHANGED: ya es esa. */
+    private enum RecipeChange { CREATE, REPLACE, SKIP, UNCHANGED }
+
+    /** {@code name}: el del catálogo si el plato ya existe, el del Excel si es nuevo. */
+    private record PlannedDish(String name, int row, UUID existingId, BigDecimal price, String sectionKey,
+                               RecipeChange change, List<PlannedIngredient> items) {}
 }
