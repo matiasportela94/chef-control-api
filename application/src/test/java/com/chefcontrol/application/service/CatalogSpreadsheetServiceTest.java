@@ -149,8 +149,8 @@ class CatalogSpreadsheetServiceTest {
         assertEquals(List.of("Papa", "Cebolla", "PAPA", "Tomates"),
                 result.recipes().stream().map(RecipeRow::ingredient).toList());
         assertEquals(List.of(
-                "Usé 'Papa' del catálogo para 'Papas' (fila 5).",
-                "Usé 'Cebolla' de la hoja de insumos para 'cebollas' (fila 6)."), result.warnings());
+                "Usé 'Papa' del catálogo para 'Papas'.",
+                "Usé 'Cebolla' de la hoja de insumos para 'cebollas'."), result.warnings()); // sin "fila": el ref no es la del Excel
         assertEquals(List.of("Tomates"), result.proposedProducts().stream().map(ProductRow::name).toList());
         assertTrue(result.ingredientMatches().isEmpty());
     }

@@ -61,7 +61,7 @@ final class CatalogSpreadsheetPrompt {
             3. Las cantidades de una receta son para UN plato. Si la receta dice que rinde N porciones, dividí cada \
             cantidad por N y avisalo en warnings.
             4. Ignorá títulos, encabezados, totales, subtotales, costos, notas y filas vacías. No avises por títulos \
-            ni encabezados; sí por los totales, costos y notas que ignores, en un solo warning con sus refs.
+            ni encabezados; sí por los totales, costos y notas que ignores, en un solo warning.
             5. Usá las listas del CATÁLOGO para reconocer qué es cada cosa (un insumo, un plato, un paso). Si el \
             ingrediente de una receta es claramente un insumo del CATÁLOGO o de las filas de insumos de la planilla \
             escrito de otra forma (plural o singular, acentos, mayúsculas: "Tomates" y "Tomate"), dejá ingredient \
@@ -74,9 +74,9 @@ final class CatalogSpreadsheetPrompt {
             (g → kg, ml → l, u → u; si no es obvia, la misma de la receta) y sin categoría, salvo que la planilla la \
             diga. Ante la duda entre "es uno del catálogo" y "es otro", proponelo: una persona lo revisa.
             7. Si un dato no se puede interpretar con seguridad, no lo adivines: dejá afuera esa fila y explicá en \
-            warnings cuál (ref) y por qué. Un ingrediente sin cantidad numérica ("c/n", "a gusto", "cantidad \
+            warnings cuál y por qué. Un ingrediente sin cantidad numérica ("c/n", "a gusto", "cantidad \
             necesaria") queda afuera de la receta y de proposedProducts, con su warning: no pongas 0.
-            8. Los warnings van en castellano rioplatense, cortos, para mostrarle al usuario.
+            8. Los warnings van en castellano rioplatense, cortos, para mostrarle al usuario. Nombran el insumo, el             plato o la hoja, nunca números de fila ni refs: el ref no es la fila del Excel que ve el usuario.
             """;
 
     private CatalogSpreadsheetPrompt() {}

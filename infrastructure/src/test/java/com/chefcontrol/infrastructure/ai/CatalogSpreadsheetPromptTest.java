@@ -2,6 +2,7 @@ package com.chefcontrol.infrastructure.ai;
 
 import com.chefcontrol.application.exception.AppException;
 import com.chefcontrol.application.exception.ErrorCode;
+import com.chefcontrol.application.port.AIService.CatalogSpreadsheetRequest;
 import com.chefcontrol.application.port.AIService.IngredientMatch;
 import com.chefcontrol.application.service.CatalogImportService.RecipeRow;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -47,6 +48,17 @@ class CatalogSpreadsheetPromptTest {
         assertEquals("Cebolla", result.proposedProducts().getFirst().name());
         assertEquals(12, result.proposedProducts().getFirst().row());
         assertEquals(List.of(new IngredientMatch(12, "Papas", "Papa")), result.ingredientMatches());
+    }
+
+    /** El ref es un número global del front, no la fila del Excel: citarlo en un aviso manda al usuario a otra fila. */
+    @Test
+    void warningsNeverCiteRowsOrRefs() {
+        String prompt = CatalogSpreadsheetPrompt.systemPrompt(
+                new CatalogSpreadsheetRequest(List.of(), List.of(), List.of(), List.of(), List.of()), "");
+
+        assertTrue(prompt.contains("nunca números de fila ni refs"), "falta la regla de los warnings");
+        assertFalse(prompt.contains("con sus refs"));
+        assertFalse(prompt.contains("cuál (ref)"));
     }
 
     @Test

@@ -120,7 +120,7 @@ public class CatalogSpreadsheetService {
             if (CatalogImportService.key(target).equals(CatalogImportService.key(m.writtenName()))) continue; // solo mayúsculas o acentos: el import ya los iguala
             renamed.put(m.row(), target);
             warnings.add("Usé '" + target + "' " + (inCatalog.contains(CatalogImportService.key(target))
-                    ? "del catálogo" : "de la hoja de insumos") + " para '" + m.writtenName() + "' (fila " + m.row() + ").");
+                    ? "del catálogo" : "de la hoja de insumos") + " para '" + m.writtenName() + "'."); // sin fila: el row es el ref del front, no la fila del Excel
         }
         List<RecipeRow> recipes = r.recipes().stream()
                 .map(x -> renamed.containsKey(x.row()) ? new RecipeRow(x.row(), x.menuItem(), x.price(), x.section(),
