@@ -4,6 +4,7 @@ import com.chefcontrol.application.payments.PaymentProvider;
 import com.chefcontrol.application.payments.PaymentProviderException;
 import com.chefcontrol.domain.payments.SubscriptionStatus;
 import com.fasterxml.jackson.databind.JsonNode;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -41,6 +42,7 @@ import java.util.Map;
  * cobro siguiente y que mandarlo en null lo saque; que {@code start_date} a futuro no cobre al autorizar. Los pagos
  * únicos son Checkout Pro ({@code /checkout/preferences} y {@code /v1/payments/{id}}).
  */
+@Slf4j
 @Component
 public class MercadoPagoProvider implements PaymentProvider {
 
@@ -51,13 +53,25 @@ public class MercadoPagoProvider implements PaymentProvider {
     private final RestClient http;
     private final String accessToken;
     private final String notificationUrl;
+    /**
+     * Con credenciales de prueba, MP exige que el pagador sea un comprador de prueba ("Both payer and collector must
+     * be real or test users"): cargado, va en lugar del email del dueño. Es cosa del modo de prueba de MP, por eso
+     * vive acá y no en el servicio. Nada compara el pagador que devuelve MP con el dueño, así que no rompe nada más.
+     */
+    private final String testPayerEmail;
 
     public MercadoPagoProvider(RestClient.Builder builder,
                                @Value("${app.payments.mercadopago.base-url:https://api.mercadopago.com}") String baseUrl,
                                @Value("${app.payments.mercadopago.access-token:}") String accessToken,
-                               @Value("${app.backend.public-url:}") String backendPublicUrl) {
+                               @Value("${app.backend.public-url:}") String backendPublicUrl,
+                               @Value("${app.payments.test-payer-email:}") String testPayerEmail) {
         this.http = builder.baseUrl(baseUrl).build();
         this.accessToken = accessToken;
+        this.testPayerEmail = testPayerEmail.isBlank() ? null : testPayerEmail.trim();
+        if (this.testPayerEmail != null) {
+            log.warn("MercadoPago test buyer active: every checkout goes out with payer {} instead of the owner's email",
+                    this.testPayerEmail);
+        }
         // Sin URL pública, el aviso del pago único depende de tener activado "Pagos" en el panel de MP.
         this.notificationUrl = backendPublicUrl.isBlank() ? null
                 : backendPublicUrl.replaceAll("/+$", "") + "/webhooks/mercadopago?source_news=webhooks";
@@ -80,7 +94,7 @@ public class MercadoPagoProvider implements PaymentProvider {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("reason", request.reason());
         body.put("external_reference", request.externalReference());
-        body.put("payer_email", request.payerEmail());
+        body.put("payer_email", payer(request.payerEmail()));
         body.put("auto_recurring", autoRecurring);
         body.put("back_url", request.backUrl());
         body.put("status", "pending");
@@ -182,7 +196,7 @@ public class MercadoPagoProvider implements PaymentProvider {
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("items", List.of(item));
-        body.put("payer", Map.of("email", request.payerEmail()));
+        body.put("payer", Map.of("email", payer(request.payerEmail())));
         body.put("external_reference", request.externalReference());
         body.put("back_urls", Map.of("success", request.backUrl(), "pending", request.backUrl(), "failure", request.backUrl()));
         body.put("auto_return", "approved");
@@ -213,6 +227,10 @@ public class MercadoPagoProvider implements PaymentProvider {
         return new ProviderPayment(providerPaymentId, "approved".equals(text(response, "status")),
                 text(response, "external_reference"), amount == null ? null : new BigDecimal(amount),
                 text(response, "currency_id"));
+    }
+
+    private String payer(String ownerEmail) {
+        return testPayerEmail != null ? testPayerEmail : ownerEmail;
     }
 
     /** null = estado que no manejamos (ej. pausada): el servicio no actúa sobre él. */

@@ -10,6 +10,8 @@ import com.chefcontrol.application.service.CatalogSpreadsheetService;
 import com.chefcontrol.domain.plan.Feature;
 import com.chefcontrol.application.service.AIExecuteService;
 import com.chefcontrol.application.service.TextInterpretService;
+import io.swagger.v3.oas.annotations.media.ArraySchema;
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -90,7 +92,10 @@ public class AIController {
      * @param ref   número global que pone el front a cada fila, para volver a la hoja y fila originales
      * @param cells number o texto tal cual, null si la celda está vacía
      */
-    record SpreadsheetRowRequest(int ref, List<Object> cells) {}
+    record SpreadsheetRowRequest(int ref,
+                                 // nullable: el back acepta null (celda vacía) y sin esto el cliente generado no.
+                                 @ArraySchema(schema = @Schema(nullable = true))
+                                 List<Object> cells) {}
 
     /**
      * {@code row} de cada fila = el ref de la fila de origen. Las filas son las de /catalog-import, tal cual.

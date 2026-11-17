@@ -42,7 +42,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(BadCredentialsException.class)
     public ResponseEntity<ErrorResponse> handleBadCredentials(HttpServletRequest request) {
         return ResponseEntity
-                .status(HttpStatus.UNAUTHORIZED)
+                .status(HttpStatus.FORBIDDEN) // no 401: el front manda a /login ante un 401
                 .body(ErrorResponse.of(ErrorCode.INVALID_CREDENTIALS,
                         "Invalid email or password", request.getRequestURI()));
     }
@@ -101,6 +101,7 @@ public class GlobalExceptionHandler {
     private static HttpStatus toHttpStatus(ErrorCode.Category category) {
         return switch (category) {
             case NOT_FOUND     -> HttpStatus.NOT_FOUND;
+            case UNAUTHORIZED  -> HttpStatus.UNAUTHORIZED;
             case FORBIDDEN     -> HttpStatus.FORBIDDEN;
             case CONFLICT      -> HttpStatus.CONFLICT;
             case BAD_REQUEST   -> HttpStatus.BAD_REQUEST;
