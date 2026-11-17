@@ -29,6 +29,7 @@ public class SecurityConfig {
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final CustomUserDetailsService customUserDetailsService;
     private final CorsConfigurationSource corsConfigurationSource;
+    private final AuthenticationRequiredEntryPoint authenticationRequiredEntryPoint;
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -38,7 +39,8 @@ public class SecurityConfig {
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/auth/login", "/auth/register", "/auth/google",
+                        // logout también: borra la cookie aunque la sesión ya no valga.
+                        .requestMatchers("/auth/login", "/auth/register", "/auth/google", "/auth/logout",
                                          "/auth/forgot-password", "/auth/reset-password").permitAll()
                         .requestMatchers("/webhook/**", "/webhooks/**").permitAll()
                         .requestMatchers("/actuator/health").permitAll()
@@ -47,6 +49,8 @@ public class SecurityConfig {
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**", "/v3/api-docs.yaml", "/v3/api-docs", "/swagger-ui.html").permitAll()
                         .anyRequest().authenticated()
                 )
+                // Sin sesión → 401 (Spring respondía 403 sin cuerpo). Con sesión y sin permiso sigue el 403.
+                .exceptionHandling(e -> e.authenticationEntryPoint(authenticationRequiredEntryPoint))
                 .authenticationProvider(authenticationProvider())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .build();

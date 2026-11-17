@@ -27,9 +27,30 @@ class MercadoPagoProviderTest {
     private record Fixture(MercadoPagoProvider provider, MockRestServiceServer server) {}
 
     private static Fixture fixture(String token) {
+        return fixture(token, "");
+    }
+
+    private static Fixture fixture(String token, String testPayerEmail) {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        return new Fixture(new MercadoPagoProvider(builder, BASE, token, "https://api.test/"), server);
+        return new Fixture(new MercadoPagoProvider(builder, BASE, token, "https://api.test/", testPayerEmail), server);
+    }
+
+    @Test
+    void withATestBuyerBothCheckoutsGoOutWithItInsteadOfTheOwner() {
+        var f = fixture("TOKEN", " comprador@testuser.com ");
+        f.server.expect(requestTo(BASE + "/preapproval"))
+                .andExpect(jsonPath("$.payer_email").value("comprador@testuser.com"))
+                .andRespond(withSuccess("{\"id\":\"mp-9\",\"init_point\":\"https://mp/checkout\"}", MediaType.APPLICATION_JSON));
+        f.server.expect(requestTo(BASE + "/checkout/preferences"))
+                .andExpect(jsonPath("$.payer.email").value("comprador@testuser.com"))
+                .andRespond(withSuccess("{\"id\":\"pref-1\",\"init_point\":\"https://mp/pay\"}", MediaType.APPLICATION_JSON));
+
+        f.provider.createSubscription(new NewSubscription(
+                "sub-1", "Chef Control - Plan STARTER", new BigDecimal("100000"), 1, "duenio@real.com", "https://app/plan", null));
+        f.provider.createPayment(new NewPayment("pay-1", "Chef Control - Pasar al plan Pro",
+                new BigDecimal("33871"), "duenio@real.com", "https://app/plan", Instant.parse("2026-08-20T12:30:00Z")));
+        f.server.verify();
     }
 
     @Test
