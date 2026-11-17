@@ -214,8 +214,13 @@ public class SaleService {
                                 ? product.grossQuantityFor(netQuantity)
                                 : netQuantity).setScale(3, RoundingMode.HALF_UP);
 
-                        BigDecimal avgCost = stockMovementRepository
-                                .getWeightedAvgPurchaseCost(ingredient.productId(), restaurantId);
+                        // El costo real de lo consumido: lo que el bruto va a tomar de los lotes FIFO, a lo que
+                        // costó cada uno, y lo que no cubran, a la última compra. Uno solo para el SALE y la merma
+                        // estándar: salen del mismo consumo, y partirlo por lote haría arbitrario cuánto es costo
+                        // del plato y cuánto merma.
+                        BigDecimal unitCost = stockBatchService.fifoUnitCost(restaurantId, ingredient.productId(),
+                                grossQuantity, stockMovementRepository.findLastPurchaseCostPerUnit(
+                                        ingredient.productId(), restaurantId));
 
                         // El stock se descuenta por el bruto, pero partido en dos movimientos: lo que
                         // llega al plato como SALE y la merma de limpieza como WASTE, para que quede
@@ -226,13 +231,13 @@ public class SaleService {
                         BigDecimal yieldWaste = grossQuantity.subtract(netQuantity);
 
                         StockMovement movement = recordConsumption(StockMovement.forSale(
-                                restaurantId, ingredient.productId(), saleQuantity, defaultUnitId, avgCost,
+                                restaurantId, ingredient.productId(), saleQuantity, defaultUnitId, unitCost,
                                 stockMovementRepository.getCurrentStock(ingredient.productId(), restaurantId),
                                 saleItemId, userId), ingredient.productId(), restaurantId);
 
                         if (yieldWaste.compareTo(BigDecimal.ZERO) > 0) {
                             movement = recordConsumption(StockMovement.forStandardYieldWaste(
-                                    restaurantId, ingredient.productId(), yieldWaste, defaultUnitId, avgCost,
+                                    restaurantId, ingredient.productId(), yieldWaste, defaultUnitId, unitCost,
                                     stockMovementRepository.getCurrentStock(ingredient.productId(), restaurantId),
                                     saleItemId, userId), ingredient.productId(), restaurantId);
                         }
@@ -254,9 +259,9 @@ public class SaleService {
         for (ResolvedItem resolved : resolvedItems) {
             recipeRepository.findByMenuItemIdAndRestaurantId(resolved.menuItem().getId(), restaurantId)
                     .ifPresent(recipe -> recipe.getItems().stream()
+                            // Sin ninguna compra no revertida no hay con qué costear lo que los lotes no cubran.
                             .filter(item -> stockMovementRepository
-                                    .getWeightedAvgPurchaseCost(item.getProductId(), restaurantId)
-                                    .compareTo(BigDecimal.ZERO) == 0)
+                                    .findLastPurchaseCostPerUnit(item.getProductId(), restaurantId) == null)
                             .map(item -> item.getProductName())
                             .forEach(missing::add));
         }

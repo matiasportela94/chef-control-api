@@ -70,16 +70,6 @@ public class StockMovementRepositoryAdapter implements StockMovementRepository {
     }
 
     @Override
-    public BigDecimal getWeightedAvgPurchaseCost(UUID productId, UUID restaurantId) {
-        return jpa.getWeightedAvgPurchaseCost(productId, restaurantId);
-    }
-
-    @Override
-    public BigDecimal getWeightedAvgPurchaseCostAsOf(UUID productId, UUID restaurantId, Instant at) {
-        return jpa.getWeightedAvgPurchaseCostAsOf(productId, restaurantId, at);
-    }
-
-    @Override
     public List<Instant> findPurchaseDates(UUID productId, UUID restaurantId, Instant from, Instant to) {
         return jpa.findPurchaseDates(productId, restaurantId, from, to);
     }
@@ -106,6 +96,11 @@ public class StockMovementRepositoryAdapter implements StockMovementRepository {
     @Override
     public BigDecimal findLastPurchaseCostPerUnit(UUID productId, UUID restaurantId) {
         return jpa.findLastPurchaseCostPerUnit(productId, restaurantId);
+    }
+
+    @Override
+    public BigDecimal findLastPurchaseCostPerUnitAsOf(UUID productId, UUID restaurantId, Instant at) {
+        return jpa.findLastPurchaseCostPerUnitAsOf(productId, restaurantId, at);
     }
 
     @Override

@@ -158,7 +158,7 @@ class SalesIvaServiceTest {
                 Recipe.builder().menuItemId(menuItemId).servings(1).items(List.of(RecipeItem.builder()
                         .productId(productId).quantity(BigDecimal.ONE).unitId(unitId).build())).build()));
         when(unitConversionService.convert(any(), eq(unitId), eq(unitId))).thenAnswer(inv -> inv.getArgument(0));
-        when(stockMovementRepository.getWeightedAvgPurchaseCost(productId, restaurantId)).thenReturn(new BigDecimal("3000"));
+        when(stockMovementRepository.findLastPurchaseCostPerUnit(productId, restaurantId)).thenReturn(new BigDecimal("3000"));
 
         FoodCostService.RecipeCostReport ri = foodCostService().calculateRecipeCost(menuItemId);
         assertThat(ri.menuPrice()).isEqualByComparingTo("12100");

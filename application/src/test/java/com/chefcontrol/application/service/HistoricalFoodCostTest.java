@@ -95,8 +95,8 @@ class HistoricalFoodCostTest {
                 .thenReturn(Optional.of(new PriceHistoryEntry(null, restaurantId, menuItemId,
                         new BigDecimal("5000"), marzo, null)));
 
-        // El costo de compra cortado en marzo
-        when(stockMovementRepository.getWeightedAvgPurchaseCostAsOf(productId, restaurantId, marzo))
+        // La última compra hasta marzo
+        when(stockMovementRepository.findLastPurchaseCostPerUnitAsOf(productId, restaurantId, marzo))
                 .thenReturn(new BigDecimal("1000"));
         when(unitConversionService.convert(any(), eq(kg), eq(kg))).thenAnswer(inv -> inv.getArgument(0));
         Unit unit = new Unit();
