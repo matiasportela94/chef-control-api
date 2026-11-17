@@ -21,6 +21,7 @@ import com.chefcontrol.domain.repository.ProductRepository;
 import com.chefcontrol.domain.repository.RecipeRepository;
 import com.chefcontrol.domain.repository.UnitRepository;
 import com.chefcontrol.domain.shared.PageRequest;
+import com.chefcontrol.domain.shared.valueobject.IvaRates;
 import com.chefcontrol.domain.user.Permission;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -106,7 +107,7 @@ public class CatalogImportService {
         Map<String, UUID> productIds = new HashMap<>(plan.productIds);
         plan.newProducts.forEach((key, p) -> productIds.put(key, productService.createProduct(new CreateProductCommand(
                 p.name(), null, p.unitId(), p.categoryKey() == null ? null : categoryIds.get(p.categoryKey()),
-                p.minStock(), null, p.yieldPercentage())).getId()));
+                p.minStock(), null, p.yieldPercentage(), p.ivaPercentage())).getId()));
 
         Map<String, UUID> sectionIds = new HashMap<>(plan.sectionIds);
         plan.newSections.forEach((key, name) ->
@@ -220,6 +221,9 @@ public class CatalogImportService {
                     && (r.yieldPercentage().signum() <= 0 || r.yieldPercentage().compareTo(MAX_YIELD) > 0)) {
                 error(Sheet.PRODUCTS, r.row(), "yieldPercentage", ErrorCode.IMPORT_INVALID_VALUE, r.yieldPercentage());
             }
+            if (r.ivaPercentage() != null && !IvaRates.isValid(r.ivaPercentage())) {
+                error(Sheet.PRODUCTS, r.row(), "ivaPercentage", ErrorCode.IMPORT_INVALID_VALUE, r.ivaPercentage());
+            }
 
             if (key == null) return;
             if (errors.size() > before) {
@@ -239,7 +243,8 @@ public class CatalogImportService {
                 }
                 newCategories.putIfAbsent(categoryKey, category);
             }
-            newProducts.put(key, new PlannedProduct(name, unit.getId(), categoryKey, r.minStock(), r.yieldPercentage()));
+            newProducts.put(key, new PlannedProduct(name, unit.getId(), categoryKey, r.minStock(), r.yieldPercentage(),
+                    r.ivaPercentage()));
             productUnits.put(key, unit.getId());
         }
 
@@ -380,7 +385,13 @@ public class CatalogImportService {
 
     /** @param row el número de fila del Excel, para los mensajes */
     public record ProductRow(int row, String name, String unit, String category,
-                             BigDecimal minStock, BigDecimal yieldPercentage) {}
+                             BigDecimal minStock, BigDecimal yieldPercentage, BigDecimal ivaPercentage) {
+        /** Sin IVA: el de la IA del Excel, que todavía no lo lee. */
+        public ProductRow(int row, String name, String unit, String category,
+                          BigDecimal minStock, BigDecimal yieldPercentage) {
+            this(row, name, unit, category, minStock, yieldPercentage, null);
+        }
+    }
 
     /** Una fila por ingrediente. {@code quantity} es para un plato. */
     public record RecipeRow(int row, String menuItem, BigDecimal price, String section,
@@ -402,7 +413,7 @@ public class CatalogImportService {
     }
 
     private record PlannedProduct(String name, UUID unitId, String categoryKey,
-                                  BigDecimal minStock, BigDecimal yieldPercentage) {}
+                                  BigDecimal minStock, BigDecimal yieldPercentage, BigDecimal ivaPercentage) {}
 
     private record PlannedIngredient(String productKey, UUID unitId, BigDecimal quantity) {}
 

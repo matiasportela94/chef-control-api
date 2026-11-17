@@ -69,7 +69,7 @@ class ProductYieldHistoryTest {
         when(unitRepository.findById(unitId)).thenReturn(Optional.of(unit));
 
         service().updateProduct(productId, new ProductService.UpdateProductCommand(
-                "Papa", null, unitId, null, null, null, newYield));
+                "Papa", null, unitId, null, null, null, newYield, null));
     }
 
     @Test

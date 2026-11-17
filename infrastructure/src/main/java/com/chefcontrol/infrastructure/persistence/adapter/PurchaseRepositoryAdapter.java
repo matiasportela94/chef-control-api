@@ -14,6 +14,7 @@ import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -42,6 +43,12 @@ public class PurchaseRepositoryAdapter implements PurchaseRepository {
         return jpa.findByIdAndRestaurantId(saved.getId(), saved.getRestaurantId())
                 .map(PurchaseJpaEntity::toDomain)
                 .orElse(saved.toDomain());
+    }
+
+    @Override
+    public List<Purchase> findActiveByRestaurantIdAndPurchasedAtBetween(UUID restaurantId, Instant from, Instant to) {
+        return jpa.findActiveByRestaurantIdAndPurchasedAtBetween(restaurantId, from, to).stream()
+                .map(PurchaseJpaEntity::toDomain).toList();
     }
 
     @Override

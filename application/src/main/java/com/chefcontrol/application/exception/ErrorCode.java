@@ -87,6 +87,7 @@ public enum ErrorCode {
     DUPLICATE_PHONE         (Category.CONFLICT),
     DUPLICATE_SLUG          (Category.CONFLICT),
     DUPLICATE_SKU           (Category.CONFLICT),
+    INVALID_IVA_PERCENTAGE  (Category.BAD_REQUEST),     // fuera de 0, 2.5, 5, 10.5, 21, 27 (IvaRates)
     DUPLICATE_CARTA_NAME    (Category.CONFLICT),
     DUPLICATE_MENU_SECTION_NAME (Category.CONFLICT),
     MENU_SECTION_HAS_ITEMS      (Category.CONFLICT),

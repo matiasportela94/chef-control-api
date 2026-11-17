@@ -12,6 +12,8 @@ public record RecipeCostResponse(
         String menuItemName,
         int servings,
         BigDecimal menuPrice,
+        /** {@code menuPrice} sin el IVA de la venta si el restaurante es RI; si no, igual. El porcentaje va sobre este. */
+        BigDecimal netPrice,
         List<IngredientCost> ingredients,
         BigDecimal totalCost,
         BigDecimal costPerServing,
@@ -47,6 +49,7 @@ public record RecipeCostResponse(
                 report.menuItemName(),
                 report.servings(),
                 report.menuPrice(),
+                report.netPrice(),
                 report.ingredients().stream().map(IngredientCost::from).toList(),
                 report.totalCost(),
                 report.costPerServing(),

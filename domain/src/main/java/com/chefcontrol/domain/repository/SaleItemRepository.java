@@ -15,7 +15,11 @@ public interface SaleItemRepository {
 
     SaleItem save(SaleItem saleItem);
 
+    /** Sin las ventas revertidas, igual que la cantidad vendida. */
     BigDecimal sumRevenueByMenuItemAndPeriod(UUID menuItemId, UUID restaurantId, Instant from, Instant to);
+
+    /** Ídem, sin el IVA de la venta (el importe entero en las anteriores al IVA). */
+    BigDecimal sumNetRevenueByMenuItemAndPeriod(UUID menuItemId, UUID restaurantId, Instant from, Instant to);
 
     int sumQuantitySoldByMenuItemAndPeriod(UUID menuItemId, UUID restaurantId, Instant from, Instant to);
 }

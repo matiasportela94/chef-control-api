@@ -2,6 +2,7 @@ package com.chefcontrol.infrastructure.persistence.adapter;
 
 import com.chefcontrol.domain.repository.SaleRepository;
 import com.chefcontrol.domain.sale.Sale;
+import com.chefcontrol.domain.sale.SaleStatus;
 import com.chefcontrol.domain.shared.Page;
 import com.chefcontrol.domain.shared.PageRequest;
 import com.chefcontrol.infrastructure.persistence.PersistenceUtils;
@@ -13,6 +14,7 @@ import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -46,7 +48,18 @@ public class SaleRepositoryAdapter implements SaleRepository {
     }
 
     @Override
+    public BigDecimal sumNetRevenueByRestaurantIdAndSoldAtBetween(UUID restaurantId, Instant from, Instant to) {
+        return jpa.sumNetRevenueByRestaurantIdAndSoldAtBetween(restaurantId, from, to);
+    }
+
+    @Override
+    public List<Sale> findActiveByRestaurantIdAndSoldAtBetween(UUID restaurantId, Instant from, Instant to) {
+        return jpa.findActiveByRestaurantIdAndSoldAtBetween(restaurantId, from, to).stream()
+                .map(SaleJpaEntity::toDomain).toList();
+    }
+
+    @Override
     public long countByRestaurantIdAndSoldAtBetween(UUID restaurantId, Instant from, Instant to) {
-        return jpa.countByRestaurantIdAndSoldAtBetween(restaurantId, from, to);
+        return jpa.countByRestaurantIdAndStatusAndSoldAtBetween(restaurantId, SaleStatus.ACTIVE, from, to);
     }
 }

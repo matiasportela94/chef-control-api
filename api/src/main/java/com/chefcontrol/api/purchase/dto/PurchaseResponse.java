@@ -13,7 +13,11 @@ public record PurchaseResponse(
         BigDecimal total,
         String notes,
         Instant purchasedAt,
-        Instant createdAt
+        Instant createdAt,
+        /** Los tres null en una compra anterior al IVA. */
+        Boolean pricesIncludeIva,
+        BigDecimal netTotal,
+        BigDecimal ivaTotal
 ) {
     public static PurchaseResponse from(Purchase purchase) {
         return new PurchaseResponse(
@@ -23,6 +27,9 @@ public record PurchaseResponse(
                 purchase.getTotal(),
                 purchase.getNotes(),
                 purchase.getPurchasedAt(),
-                purchase.getCreatedAt());
+                purchase.getCreatedAt(),
+                purchase.getPricesIncludeIva(),
+                purchase.getNetTotal(),
+                purchase.getIvaTotal());
     }
 }

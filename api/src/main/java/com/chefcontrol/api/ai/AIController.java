@@ -70,7 +70,8 @@ public class AIController {
     }
 
     private static ProductImportRow toImportRow(ProductRow p) {
-        return new ProductImportRow(p.row(), p.name(), p.unit(), p.category(), p.minStock(), p.yieldPercentage());
+        return new ProductImportRow(p.row(), p.name(), p.unit(), p.category(), p.minStock(), p.yieldPercentage(),
+                p.ivaPercentage());
     }
 
     record InterpretRequest(@NotBlank @Size(max = 500) String message) {}

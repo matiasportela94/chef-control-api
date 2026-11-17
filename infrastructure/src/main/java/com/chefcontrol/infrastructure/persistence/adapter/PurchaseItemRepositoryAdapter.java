@@ -30,6 +30,12 @@ public class PurchaseItemRepositoryAdapter implements PurchaseItemRepository {
     }
 
     @Override
+    public List<PurchaseItem> findByPurchaseIdIn(java.util.Collection<UUID> purchaseIds) {
+        if (purchaseIds.isEmpty()) return List.of();
+        return jpa.findByPurchaseIdIn(purchaseIds).stream().map(PurchaseItemJpaEntity::toDomain).toList();
+    }
+
+    @Override
     public PurchaseItem save(PurchaseItem item) {
         PurchaseItemJpaEntity saved = jpa.save(PurchaseItemJpaEntity.from(item));
         return jpa.findWithRelationshipsById(saved.getId())

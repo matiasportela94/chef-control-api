@@ -36,45 +36,22 @@ public interface JpaStockMovementRepository extends JpaRepository<StockMovementJ
     @Query("UPDATE StockMovementJpaEntity sm SET sm.reversedBy = :reversalId WHERE sm.id = :id")
     void markReversed(@Param("id") UUID id, @Param("reversalId") UUID reversalId);
 
-    @Query(value = """
-            SELECT COALESCE(
-                SUM(quantity * cost_per_unit) / NULLIF(SUM(quantity), 0), 0)
-            FROM stock_movements
-            WHERE product_id = :productId AND restaurant_id = :restaurantId
-              AND type = 'PURCHASE' AND cost_per_unit IS NOT NULL
-            """, nativeQuery = true)
-    BigDecimal getWeightedAvgPurchaseCost(@Param("productId") UUID productId,
-                                          @Param("restaurantId") UUID restaurantId);
-
-    /**
-     * Ídem, pero mirando solo las compras hasta {@code at}. Es lo que hace que el food cost
-     * teórico de un período pasado use los precios de ese momento y no los de hoy: sin el corte,
-     * preguntar "¿cuánto costaba en marzo?" promediaba también las compras de abril en adelante.
-     */
-    @Query(value = """
-            SELECT COALESCE(
-                SUM(quantity * cost_per_unit) / NULLIF(SUM(quantity), 0), 0)
-            FROM stock_movements
-            WHERE product_id = :productId AND restaurant_id = :restaurantId
-              AND type = 'PURCHASE' AND cost_per_unit IS NOT NULL
-              AND created_at <= :at
-            """, nativeQuery = true)
-    BigDecimal getWeightedAvgPurchaseCostAsOf(@Param("productId") UUID productId,
-                                              @Param("restaurantId") UUID restaurantId,
-                                              @Param("at") Instant at);
-
     /**
      * Costo de lo vendido en el período: el SALE de cada receta más la merma estándar de limpieza
      * que ese mismo consumo generó. La merma estándar cuelga del sale_item, así que el filtro por
      * reference_type la separa de la merma registrada a mano (vencidos, robo, daño), que no es
      * costo de lo vendido. Sin el OR, el teórico sube con el rendimiento y el realizado se queda
      * quieto: la brecha entre ambos sería un artefacto nuestro, no un desvío real.
+     *
+     * <p>{@code reversed_by IS NULL}: una venta revertida deja sus movimientos originales en el ledger. Sin el
+     * filtro, corregir una venta (revertir + recrear) contaba su costo dos veces.
      */
     @Query(value = """
             SELECT COALESCE(SUM(quantity * cost_per_unit), 0)
             FROM stock_movements
             WHERE restaurant_id = :restaurantId
               AND (type = 'SALE' OR (type = 'WASTE' AND reference_type = 'sale_item'))
+              AND reversed_by IS NULL
               AND cost_per_unit IS NOT NULL
               AND created_at BETWEEN :from AND :to
             """, nativeQuery = true)
@@ -91,16 +68,41 @@ public interface JpaStockMovementRepository extends JpaRepository<StockMovementJ
     void updatePurchaseCostPerUnit(@Param("purchaseItemId") UUID purchaseItemId,
                                    @Param("cost") java.math.BigDecimal cost);
 
+    /**
+     * El precio de la última compra no revertida del insumo: lo que cuesta reponerlo. Es el costo del food cost
+     * teórico y el de lo que los lotes no cubren (venta, merma, conteo). "Última" por la fecha de la compra, no por
+     * cuándo se cargó: una factura vieja cargada hoy no pisa el precio de la compra de ayer.
+     */
     @Query(value = """
-            SELECT cost_per_unit
-            FROM stock_movements
-            WHERE product_id = :productId AND restaurant_id = :restaurantId
-              AND type = 'PURCHASE' AND cost_per_unit IS NOT NULL AND cost_per_unit > 0
-            ORDER BY created_at DESC
+            SELECT sm.cost_per_unit
+            FROM stock_movements sm
+            JOIN purchase_items pi ON pi.id = sm.reference_id
+            JOIN purchases p ON p.id = pi.purchase_id
+            WHERE sm.product_id = :productId AND sm.restaurant_id = :restaurantId
+              AND sm.type = 'PURCHASE' AND sm.reference_type = 'purchase_item'
+              AND sm.reversed_by IS NULL AND sm.cost_per_unit > 0
+            ORDER BY p.purchased_at DESC, sm.created_at DESC
             LIMIT 1
             """, nativeQuery = true)
     BigDecimal findLastPurchaseCostPerUnit(@Param("productId") UUID productId,
                                            @Param("restaurantId") UUID restaurantId);
+
+    /** Ídem, entre las compras con fecha hasta {@code at}: lo que costaba reponerlo en ese momento. */
+    @Query(value = """
+            SELECT sm.cost_per_unit
+            FROM stock_movements sm
+            JOIN purchase_items pi ON pi.id = sm.reference_id
+            JOIN purchases p ON p.id = pi.purchase_id
+            WHERE sm.product_id = :productId AND sm.restaurant_id = :restaurantId
+              AND sm.type = 'PURCHASE' AND sm.reference_type = 'purchase_item'
+              AND sm.reversed_by IS NULL AND sm.cost_per_unit > 0
+              AND p.purchased_at <= :at
+            ORDER BY p.purchased_at DESC, sm.created_at DESC
+            LIMIT 1
+            """, nativeQuery = true)
+    BigDecimal findLastPurchaseCostPerUnitAsOf(@Param("productId") UUID productId,
+                                               @Param("restaurantId") UUID restaurantId,
+                                               @Param("at") Instant at);
 
     /** Ídem {@link #sumSalesCost}, por plato. Acá el join por reference_type = 'sale_item' ya acota la merma. */
     @Query(value = """
@@ -111,6 +113,7 @@ public interface JpaStockMovementRepository extends JpaRepository<StockMovementJ
             WHERE sm.restaurant_id = :restaurantId
               AND sm.type IN ('SALE', 'WASTE')
               AND sm.cost_per_unit IS NOT NULL
+              AND s.status = 'ACTIVE'
               AND si.menu_item_id = :menuItemId
               AND s.sold_at BETWEEN :from AND :to
             """, nativeQuery = true)
@@ -146,16 +149,19 @@ public interface JpaStockMovementRepository extends JpaRepository<StockMovementJ
     List<Object[]> sumWasteByProductSince(@Param("from") Instant from);
 
     /**
-     * Los momentos en que entró una compra de este producto dentro del período. Cada una mueve el
-     * promedio ponderado, así que son los puntos donde el costo del insumo cambió de verdad.
+     * Las fechas de las compras no revertidas del producto dentro del período. Cada una cambia el precio de la
+     * última compra, así que son los puntos donde el costo del insumo cambió de verdad.
      */
     @Query(value = """
-            SELECT created_at
-            FROM stock_movements
-            WHERE product_id = :productId AND restaurant_id = :restaurantId
-              AND type = 'PURCHASE' AND cost_per_unit IS NOT NULL
-              AND created_at BETWEEN :from AND :to
-            ORDER BY created_at
+            SELECT p.purchased_at
+            FROM stock_movements sm
+            JOIN purchase_items pi ON pi.id = sm.reference_id
+            JOIN purchases p ON p.id = pi.purchase_id
+            WHERE sm.product_id = :productId AND sm.restaurant_id = :restaurantId
+              AND sm.type = 'PURCHASE' AND sm.reference_type = 'purchase_item'
+              AND sm.reversed_by IS NULL AND sm.cost_per_unit > 0
+              AND p.purchased_at BETWEEN :from AND :to
+            ORDER BY p.purchased_at
             """, nativeQuery = true)
     List<Instant> findPurchaseDates(@Param("productId") UUID productId,
                                     @Param("restaurantId") UUID restaurantId,

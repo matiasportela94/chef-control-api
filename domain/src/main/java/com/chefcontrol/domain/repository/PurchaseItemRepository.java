@@ -2,6 +2,7 @@ package com.chefcontrol.domain.repository;
 
 import com.chefcontrol.domain.purchase.PurchaseItem;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -13,4 +14,6 @@ public interface PurchaseItemRepository {
     Optional<PurchaseItem> findById(UUID id);
 
     PurchaseItem save(PurchaseItem item);
+
+    List<PurchaseItem> findByPurchaseIdIn(Collection<UUID> purchaseIds);
 }

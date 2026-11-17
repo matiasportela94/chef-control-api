@@ -27,12 +27,7 @@ public interface StockMovementRepository {
 
     void markReversed(UUID id, UUID reversalId);
 
-    BigDecimal getWeightedAvgPurchaseCost(UUID productId, UUID restaurantId);
-
-    /** Ídem, mirando solo las compras hasta {@code at} — para costear un período pasado. */
-    BigDecimal getWeightedAvgPurchaseCostAsOf(UUID productId, UUID restaurantId, Instant at);
-
-    /** Cuándo entró cada compra del producto en el período: los puntos donde su costo cambió. */
+    /** La fecha de cada compra no revertida del producto en el período: los puntos donde su costo cambió. */
     List<Instant> findPurchaseDates(UUID productId, UUID restaurantId, Instant from, Instant to);
 
     /** Merma estándar vs. registrada por insumo desde {@code from}, en todos los restaurantes. */
@@ -42,7 +37,11 @@ public interface StockMovementRepository {
 
     BigDecimal sumSalesCostByMenuItemAndPeriod(UUID menuItemId, UUID restaurantId, Instant from, Instant to);
 
+    /** El precio de la última compra no revertida, por fecha de compra. Null si no hay ninguna. */
     BigDecimal findLastPurchaseCostPerUnit(UUID productId, UUID restaurantId);
+
+    /** Ídem, entre las compras con fecha hasta {@code at}. */
+    BigDecimal findLastPurchaseCostPerUnitAsOf(UUID productId, UUID restaurantId, Instant at);
 
     void updatePurchaseCostPerUnit(UUID purchaseItemId, BigDecimal newCostPerUnit);
 

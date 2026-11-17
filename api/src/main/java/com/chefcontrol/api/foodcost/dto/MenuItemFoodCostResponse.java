@@ -12,7 +12,10 @@ public record MenuItemFoodCostResponse(
         Instant from,
         Instant to,
         int quantitySold,
+        /** Lo cobrado, con IVA. */
         BigDecimal revenue,
+        /** Sin el IVA de las ventas (en un RI). El porcentaje va sobre este. */
+        BigDecimal netRevenue,
         BigDecimal realizedCost,
         BigDecimal foodCostPercentage
 ) {
@@ -20,7 +23,7 @@ public record MenuItemFoodCostResponse(
         return new MenuItemFoodCostResponse(
                 report.menuItemId(), report.menuItemName(),
                 report.from(), report.to(),
-                report.quantitySold(), report.revenue(),
+                report.quantitySold(), report.revenue(), report.netRevenue(),
                 report.realizedCost(), report.foodCostPercentage());
     }
 }

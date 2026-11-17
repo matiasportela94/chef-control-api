@@ -45,6 +45,7 @@ class SaleServiceReversalTest {
     @Mock CurrentUserProvider currentUserProvider;
     @Mock ProductRepository productRepository;
     @Mock UnitConversionService unitConversionService;
+    @Mock RestaurantRepository restaurantRepository;
 
     private final UUID restaurantId = UUID.randomUUID();
     private final UUID saleId = UUID.randomUUID();
@@ -58,7 +59,7 @@ class SaleServiceReversalTest {
     private SaleService service() {
         return new SaleService(saleRepository, saleItemRepository, menuItemRepository, recipeRepository,
                 stockMovementRepository, stockBatchService, alertEvaluationService, auditService,
-                currentUserProvider, productRepository, unitConversionService);
+                currentUserProvider, productRepository, unitConversionService, restaurantRepository);
     }
 
     @Test

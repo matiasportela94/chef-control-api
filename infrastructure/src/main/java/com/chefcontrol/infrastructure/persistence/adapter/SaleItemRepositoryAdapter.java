@@ -45,6 +45,11 @@ public class SaleItemRepositoryAdapter implements SaleItemRepository {
     }
 
     @Override
+    public BigDecimal sumNetRevenueByMenuItemAndPeriod(UUID menuItemId, UUID restaurantId, Instant from, Instant to) {
+        return jpa.sumNetRevenueByMenuItemAndPeriod(menuItemId, restaurantId, from, to);
+    }
+
+    @Override
     public int sumQuantitySoldByMenuItemAndPeriod(UUID menuItemId, UUID restaurantId, Instant from, Instant to) {
         return jpa.sumQuantitySoldByMenuItemAndPeriod(menuItemId, restaurantId, from, to);
     }

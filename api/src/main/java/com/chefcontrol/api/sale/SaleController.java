@@ -2,6 +2,7 @@ package com.chefcontrol.api.sale;
 
 import com.chefcontrol.api.sale.dto.CreateSaleRequest;
 import com.chefcontrol.api.sale.dto.SaleResponse;
+import com.chefcontrol.api.sale.dto.SalesIvaReportResponse;
 import com.chefcontrol.api.shared.PagedResponse;
 import com.chefcontrol.application.service.SaleService;
 import com.chefcontrol.application.service.SaleService.CreateSaleCommand;
@@ -10,11 +11,13 @@ import com.chefcontrol.domain.sale.Sale;
 import com.chefcontrol.domain.shared.PageRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Instant;
 import java.util.UUID;
 
 @RestController
@@ -32,6 +35,14 @@ public class SaleController {
         return ResponseEntity.ok(PagedResponse.of(
                 saleService.listSales(PageRequest.of(page, size))
                         .map(sale -> SaleResponse.summary(sale, saleService.getItemCount(sale.getId())))));
+    }
+
+    @GetMapping("/iva-report")
+    @PreAuthorize("hasAuthority('PERM_SALES_VIEW')")
+    public ResponseEntity<SalesIvaReportResponse> getSalesIvaReport(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to) {
+        return ResponseEntity.ok(SalesIvaReportResponse.from(saleService.getSalesIvaReport(from, to)));
     }
 
     @GetMapping("/{id}")

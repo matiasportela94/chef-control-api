@@ -17,6 +17,10 @@ public record PurchaseDetailResponse(
         String notes,
         Instant purchasedAt,
         Instant createdAt,
+        /** Los tres null en una compra anterior al IVA. */
+        Boolean pricesIncludeIva,
+        BigDecimal netTotal,
+        BigDecimal ivaTotal,
         List<ItemDetail> items
 ) {
     public static PurchaseDetailResponse from(Purchase purchase, List<PurchaseItem> items) {
@@ -28,6 +32,9 @@ public record PurchaseDetailResponse(
                 purchase.getNotes(),
                 purchase.getPurchasedAt(),
                 purchase.getCreatedAt(),
+                purchase.getPricesIncludeIva(),
+                purchase.getNetTotal(),
+                purchase.getIvaTotal(),
                 items.stream().map(ItemDetail::from).toList());
     }
 
@@ -42,8 +49,14 @@ public record PurchaseDetailResponse(
             UUID unitId,
             String unitName,
             String unitAbbreviation,
+            /** Como se cargó: con o sin IVA según {@code pricesIncludeIva} de la compra. */
             BigDecimal pricePerUnit,
-            BigDecimal subtotal
+            /** Cantidad × precio cargado, sin redondear. */
+            BigDecimal subtotal,
+            /** Los tres null en una línea anterior al IVA. */
+            BigDecimal ivaPercentage,
+            BigDecimal netAmount,
+            BigDecimal ivaAmount
     ) {
         static ItemDetail from(PurchaseItem item) {
             return new ItemDetail(
@@ -58,7 +71,10 @@ public record PurchaseDetailResponse(
                     item.getUnitName(),
                     item.getUnitAbbreviation(),
                     item.getPricePerUnit(),
-                    item.getQuantity().multiply(item.getPricePerUnit()));
+                    item.getQuantity().multiply(item.getPricePerUnit()),
+                    item.getIvaPercentage(),
+                    item.getNetAmount(),
+                    item.getIvaAmount());
         }
     }
 }

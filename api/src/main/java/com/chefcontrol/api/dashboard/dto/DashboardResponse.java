@@ -22,6 +22,8 @@ public record DashboardResponse(Kpis kpis) {
             long       wasteEventsThisMonth,
             BigDecimal wasteTotalArsThisMonth,
             BigDecimal salesCostThisMonth,
+            /** Costo de lo vendido / ingreso sin IVA, en %. Null si no hubo ventas. */
+            BigDecimal foodCostPercentageThisMonth,
             // Mes anterior
             long       purchasesLastMonth,
             BigDecimal purchasesTotalLastMonth,
@@ -29,7 +31,8 @@ public record DashboardResponse(Kpis kpis) {
             BigDecimal salesTotalLastMonth,
             long       wasteEventsLastMonth,
             BigDecimal wasteTotalArsLastMonth,
-            BigDecimal salesCostLastMonth
+            BigDecimal salesCostLastMonth,
+            BigDecimal foodCostPercentageLastMonth
     ) {
         public static Kpis from(KpiSummary kpis) {
             return new Kpis(
@@ -43,13 +46,15 @@ public record DashboardResponse(Kpis kpis) {
                     kpis.wasteEventsThisMonth(),
                     kpis.wasteTotalArsThisMonth(),
                     kpis.salesCostThisMonth(),
+                    kpis.foodCostPercentageThisMonth(),
                     kpis.purchasesLastMonth(),
                     kpis.purchasesTotalLastMonth(),
                     kpis.salesCountLastMonth(),
                     kpis.salesTotalLastMonth(),
                     kpis.wasteEventsLastMonth(),
                     kpis.wasteTotalArsLastMonth(),
-                    kpis.salesCostLastMonth());
+                    kpis.salesCostLastMonth(),
+                    kpis.foodCostPercentageLastMonth());
         }
     }
 }

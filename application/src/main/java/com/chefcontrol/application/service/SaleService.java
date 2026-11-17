@@ -10,12 +10,14 @@ import com.chefcontrol.domain.menu.MenuItem;
 import com.chefcontrol.domain.product.Product;
 import com.chefcontrol.domain.menu.RecipeItem;
 import com.chefcontrol.domain.repository.*;
+import com.chefcontrol.domain.restaurant.Restaurant;
 import com.chefcontrol.domain.sale.Sale;
 import com.chefcontrol.domain.sale.SaleItem;
 import com.chefcontrol.domain.sale.SaleStatus;
 import com.chefcontrol.domain.shared.Page;
 import com.chefcontrol.domain.shared.PageRequest;
 import com.chefcontrol.domain.shared.time.ChefControlTime;
+import com.chefcontrol.domain.shared.valueobject.IvaRateTotal;
 import com.chefcontrol.domain.stock.MovementDirection;
 import com.chefcontrol.domain.stock.MovementSource;
 import com.chefcontrol.domain.stock.MovementType;
@@ -30,6 +32,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.UUID;
 
 @Service
@@ -47,6 +50,7 @@ public class SaleService {
     private final CurrentUserProvider currentUserProvider;
     private final ProductRepository productRepository;
     private final UnitConversionService unitConversionService;
+    private final RestaurantRepository restaurantRepository;
 
     public Page<Sale> listSales(PageRequest pageRequest) {
         return saleRepository.findByRestaurantIdOrderBySoldAtDesc(TenantContext.require(), pageRequest);
@@ -129,39 +133,65 @@ public class SaleService {
 
         validateIngredientCosts(resolvedItems, restaurantId);
 
-        BigDecimal totalAmount = resolvedItems.stream()
-                .map(i -> i.menuItem().getPrice()
-                        .multiply(BigDecimal.valueOf(i.cmd().quantity())))
-                .reduce(BigDecimal.ZERO, BigDecimal::add)
-                .setScale(2, RoundingMode.HALF_UP);
+        List<SaleItem> lines = resolvedItems.stream()
+                .map(r -> SaleItem.builder()
+                        .menuItemId(r.menuItem().getId())
+                        .quantity(r.cmd().quantity())
+                        .unitPrice(r.menuItem().getPrice())
+                        .build())
+                .toList();
 
         Instant soldAt = cmd.soldAt() != null ? cmd.soldAt() : ChefControlTime.nowInstant();
 
         Sale sale = Sale.builder()
                 .restaurantId(restaurantId)
                 .userId(userId)
-                .totalAmount(totalAmount)
                 .source("manual")
                 .notes(cmd.notes())
                 .soldAt(soldAt)
                 .build();
+        // La alícuota se congela acá, con la condición de hoy: la venta no se recalcula si el restaurante cambia.
+        sale.totalize(restaurantRepository.findById(restaurantId).map(Restaurant::salesIvaRate).orElse(BigDecimal.ZERO),
+                lines);
         sale = saleRepository.save(sale);
 
-        for (ResolvedItem resolved : resolvedItems) {
-            SaleItem saleItem = saleItemRepository.save(SaleItem.builder()
-                    .saleId(sale.getId())
-                    .menuItemId(resolved.menuItem().getId())
-                    .quantity(resolved.cmd().quantity())
-                    .unitPrice(resolved.menuItem().getPrice())
-                    .build());
-
-            applyRecipeStockMovements(resolved.menuItem(), resolved.cmd().quantity(),
+        for (int i = 0; i < lines.size(); i++) {
+            SaleItem saleItem = saleItemRepository.save(lines.get(i).toBuilder().saleId(sale.getId()).build());
+            applyRecipeStockMovements(resolvedItems.get(i).menuItem(), resolvedItems.get(i).cmd().quantity(),
                     restaurantId, userId, saleItem.getId());
         }
 
         auditService.log(AuditAction.SALE_RECORDED, "Sale", sale.getId(),
-                Map.of("itemCount", resolvedItems.size(), "total", totalAmount));
+                Map.of("itemCount", resolvedItems.size(), "total", sale.getTotalAmount(),
+                        "netTotal", sale.getNetTotal(), "ivaPercentage", sale.getIvaPercentage()));
         return sale;
+    }
+
+    /**
+     * El IVA de las ventas del período, sin las revertidas: lo que el RI le debe al fisco (débito fiscal). Mismo
+     * criterio que el de compras: {@code netTotal + ivaTotal = total} cuentan solo las ventas con datos de IVA; las
+     * anteriores suman aparte.
+     */
+    public SalesIvaReport getSalesIvaReport(Instant from, Instant to) {
+        UUID restaurantId = TenantContext.require();
+        // ponytail: sin paginar, el período entero en memoria, como el de compras. Si un período llega a miles de
+        // ventas, agrupar por alícuota en SQL y paginar el listado.
+        List<Sale> sales = saleRepository.findActiveByRestaurantIdAndSoldAtBetween(restaurantId, from, to);
+        List<Sale> withIva = sales.stream().filter(Sale::hasIvaData).toList();
+        List<Sale> withoutIva = sales.stream().filter(s -> !s.hasIvaData()).toList();
+
+        Map<BigDecimal, IvaRateTotal> byRate = new TreeMap<>(); // por compareTo: 21 y 21.00 son la misma alícuota
+        withIva.forEach(s -> byRate.merge(s.getIvaPercentage(),
+                new IvaRateTotal(s.getIvaPercentage(), s.getNetTotal(), s.getIvaTotal()), IvaRateTotal::plus));
+
+        BigDecimal netTotal = sum(withIva.stream().map(Sale::getNetTotal));
+        BigDecimal ivaTotal = sum(withIva.stream().map(Sale::getIvaTotal));
+        return new SalesIvaReport(from, to, netTotal, ivaTotal, netTotal.add(ivaTotal), List.copyOf(byRate.values()),
+                sales, withoutIva.size(), sum(withoutIva.stream().map(Sale::getTotalAmount)));
+    }
+
+    private static BigDecimal sum(java.util.stream.Stream<BigDecimal> amounts) {
+        return amounts.reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     private void applyRecipeStockMovements(MenuItem menuItem, int quantity,
@@ -184,8 +214,13 @@ public class SaleService {
                                 ? product.grossQuantityFor(netQuantity)
                                 : netQuantity).setScale(3, RoundingMode.HALF_UP);
 
-                        BigDecimal avgCost = stockMovementRepository
-                                .getWeightedAvgPurchaseCost(ingredient.productId(), restaurantId);
+                        // El costo real de lo consumido: lo que el bruto va a tomar de los lotes FIFO, a lo que
+                        // costó cada uno, y lo que no cubran, a la última compra. Uno solo para el SALE y la merma
+                        // estándar: salen del mismo consumo, y partirlo por lote haría arbitrario cuánto es costo
+                        // del plato y cuánto merma.
+                        BigDecimal unitCost = stockBatchService.fifoUnitCost(restaurantId, ingredient.productId(),
+                                grossQuantity, stockMovementRepository.findLastPurchaseCostPerUnit(
+                                        ingredient.productId(), restaurantId));
 
                         // El stock se descuenta por el bruto, pero partido en dos movimientos: lo que
                         // llega al plato como SALE y la merma de limpieza como WASTE, para que quede
@@ -196,13 +231,13 @@ public class SaleService {
                         BigDecimal yieldWaste = grossQuantity.subtract(netQuantity);
 
                         StockMovement movement = recordConsumption(StockMovement.forSale(
-                                restaurantId, ingredient.productId(), saleQuantity, defaultUnitId, avgCost,
+                                restaurantId, ingredient.productId(), saleQuantity, defaultUnitId, unitCost,
                                 stockMovementRepository.getCurrentStock(ingredient.productId(), restaurantId),
                                 saleItemId, userId), ingredient.productId(), restaurantId);
 
                         if (yieldWaste.compareTo(BigDecimal.ZERO) > 0) {
                             movement = recordConsumption(StockMovement.forStandardYieldWaste(
-                                    restaurantId, ingredient.productId(), yieldWaste, defaultUnitId, avgCost,
+                                    restaurantId, ingredient.productId(), yieldWaste, defaultUnitId, unitCost,
                                     stockMovementRepository.getCurrentStock(ingredient.productId(), restaurantId),
                                     saleItemId, userId), ingredient.productId(), restaurantId);
                         }
@@ -224,9 +259,9 @@ public class SaleService {
         for (ResolvedItem resolved : resolvedItems) {
             recipeRepository.findByMenuItemIdAndRestaurantId(resolved.menuItem().getId(), restaurantId)
                     .ifPresent(recipe -> recipe.getItems().stream()
+                            // Sin ninguna compra no revertida no hay con qué costear lo que los lotes no cubran.
                             .filter(item -> stockMovementRepository
-                                    .getWeightedAvgPurchaseCost(item.getProductId(), restaurantId)
-                                    .compareTo(BigDecimal.ZERO) == 0)
+                                    .findLastPurchaseCostPerUnit(item.getProductId(), restaurantId) == null)
                             .map(item -> item.getProductName())
                             .forEach(missing::add));
         }
@@ -251,4 +286,8 @@ public class SaleService {
     public record SaleItemCommand(UUID menuItemId, int quantity) {}
 
     private record ResolvedItem(MenuItem menuItem, SaleItemCommand cmd) {}
+
+    public record SalesIvaReport(Instant from, Instant to, BigDecimal netTotal, BigDecimal ivaTotal, BigDecimal total,
+                                 List<IvaRateTotal> byRate, List<Sale> sales,
+                                 int salesWithoutIvaData, BigDecimal totalWithoutIvaData) {}
 }

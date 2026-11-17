@@ -17,5 +17,7 @@ public record CreateProductRequest(
         @DecimalMin("0") BigDecimal minStock,
         @DecimalMin("0") BigDecimal maxStock,
         /** Rendimiento: % de lo comprado que queda utilizable. Null = 100 (sin pérdida). */
-        @DecimalMin(value = "0", inclusive = false) @DecimalMax("1000") BigDecimal yieldPercentage
+        @DecimalMin(value = "0", inclusive = false) @DecimalMax("1000") BigDecimal yieldPercentage,
+        /** Alicuota de IVA: 0, 2.5, 5, 10.5, 21 o 27 (si no, INVALID_IVA_PERCENTAGE). Null = no cargada. */
+        BigDecimal ivaPercentage
 ) {}

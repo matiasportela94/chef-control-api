@@ -48,7 +48,8 @@ public class CatalogImportController {
         }
         var report = catalogImportService.importCatalog(
                 request.products().stream().map(p -> new ProductRow(
-                        p.row(), p.name(), p.unit(), p.category(), p.minStock(), p.yieldPercentage())).toList(),
+                        p.row(), p.name(), p.unit(), p.category(), p.minStock(), p.yieldPercentage(),
+                        p.ivaPercentage())).toList(),
                 request.recipes().stream().map(r -> new RecipeRow(
                         r.row(), r.menuItem(), r.price(), r.section(), r.ingredient(), r.quantity(), r.unit())).toList(),
                 dryRun, permissionsOf(authentication));

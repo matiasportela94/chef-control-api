@@ -46,6 +46,7 @@ class HistoricalFoodCostTest {
     @Mock PriceHistoryRepository priceHistoryRepository;
     @Mock RecipeVersionRepository recipeVersionRepository;
     @Mock UnitRepository unitRepository;
+    @Mock RestaurantRepository restaurantRepository;
 
     private final UUID restaurantId = UUID.randomUUID();
     private final UUID menuItemId = UUID.randomUUID();
@@ -59,7 +60,7 @@ class HistoricalFoodCostTest {
     private FoodCostService service() {
         return new FoodCostService(saleRepository, saleItemRepository, stockMovementRepository,
                 menuItemRepository, recipeRepository, productRepository, unitConversionService,
-                priceHistoryRepository, recipeVersionRepository, unitRepository);
+                priceHistoryRepository, recipeVersionRepository, unitRepository, restaurantRepository);
     }
 
     @Test
@@ -94,8 +95,8 @@ class HistoricalFoodCostTest {
                 .thenReturn(Optional.of(new PriceHistoryEntry(null, restaurantId, menuItemId,
                         new BigDecimal("5000"), marzo, null)));
 
-        // El costo de compra cortado en marzo
-        when(stockMovementRepository.getWeightedAvgPurchaseCostAsOf(productId, restaurantId, marzo))
+        // La última compra hasta marzo
+        when(stockMovementRepository.findLastPurchaseCostPerUnitAsOf(productId, restaurantId, marzo))
                 .thenReturn(new BigDecimal("1000"));
         when(unitConversionService.convert(any(), eq(kg), eq(kg))).thenAnswer(inv -> inv.getArgument(0));
         Unit unit = new Unit();

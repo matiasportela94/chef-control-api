@@ -209,6 +209,24 @@ class CatalogImportServiceTest {
     }
 
     @Test
+    void theIvaRateIsValidatedAndOnlySetOnNewProducts() {
+        Report invalid = service.importCatalog(
+                List.of(new ProductRow(2, "Papa", "kg", null, null, null, new BigDecimal("19"))), List.of(), false, ALL);
+
+        assertEquals(List.of(new RowError(Sheet.PRODUCTS, 2, "ivaPercentage", ErrorCode.IMPORT_INVALID_VALUE, "19")),
+                invalid.errors());
+        assertNothingWritten();
+
+        Report report = service.importCatalog(
+                List.of(new ProductRow(2, "Papa", "kg", null, null, null, new BigDecimal("10.5")),
+                        new ProductRow(3, "limon", "kg", null, null, null, new BigDecimal("21"))), List.of(), false, ALL);
+
+        assertTrue(report.saved(), () -> report.errors().toString());
+        assertEquals(0, new BigDecimal("10.5").compareTo(findProduct("Papa").getIvaPercentage()));
+        assertNull(limon.getIvaPercentage()); // el que ya existe no se toca, tampoco el IVA
+    }
+
+    @Test
     void missingCategoriesAndSectionsAreCreatedOnce() {
         Report report = service.importCatalog(
                 List.of(new ProductRow(2, "Papa", "kg", "Tubérculos", null, new BigDecimal("90")),

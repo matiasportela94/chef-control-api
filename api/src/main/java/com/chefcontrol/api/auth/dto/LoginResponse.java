@@ -1,5 +1,7 @@
 package com.chefcontrol.api.auth.dto;
 
+import com.chefcontrol.domain.restaurant.TaxCondition;
+
 import java.util.List;
 import java.util.UUID;
 
@@ -25,5 +27,8 @@ public record LoginResponse(
      * no hay forma de distinguirlos.
      */
     public record RestaurantSummary(UUID id, String name, String role,
-                                    UUID accountId, String accountName) {}
+                                    UUID accountId, String accountName,
+                                    /* Para el default de "precios con IVA" en compras: quien carga compras puede no
+                                       tener permiso para ver /restaurants. Null = no cargada. */
+                                    TaxCondition taxCondition) {}
 }

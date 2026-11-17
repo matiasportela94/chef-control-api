@@ -40,6 +40,15 @@ public class PurchaseItemJpaEntity {
     @Column(name = "price_per_unit", nullable = false, precision = 12, scale = 4)
     private BigDecimal pricePerUnit;
 
+    @Column(name = "iva_percentage", precision = 5, scale = 2)
+    private BigDecimal ivaPercentage;
+
+    @Column(name = "net_amount", precision = 12, scale = 2)
+    private BigDecimal netAmount;
+
+    @Column(name = "iva_amount", precision = 12, scale = 2)
+    private BigDecimal ivaAmount;
+
     @Column(name = "created_at", updatable = false, nullable = false)
     private Instant createdAt;
 
@@ -56,6 +65,9 @@ public class PurchaseItemJpaEntity {
                 .quantity(domain.getQuantity())
                 .unitId(domain.getUnitId())
                 .pricePerUnit(domain.getPricePerUnit())
+                .ivaPercentage(domain.getIvaPercentage())
+                .netAmount(domain.getNetAmount())
+                .ivaAmount(domain.getIvaAmount())
                 .createdAt(domain.getCreatedAt())
                 .build();
     }
@@ -72,6 +84,9 @@ public class PurchaseItemJpaEntity {
                 .unitName(unit != null ? unit.getName() : null)
                 .unitAbbreviation(unit != null ? unit.getAbbreviation() : null)
                 .pricePerUnit(pricePerUnit)
+                .ivaPercentage(ivaPercentage)
+                .netAmount(netAmount)
+                .ivaAmount(ivaAmount)
                 .createdAt(createdAt)
                 .build();
     }

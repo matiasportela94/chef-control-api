@@ -14,6 +14,9 @@ import com.chefcontrol.domain.repository.ProductRepository;
 import com.chefcontrol.domain.repository.PriceHistoryRepository;
 import com.chefcontrol.domain.repository.RecipeVersionRepository;
 import com.chefcontrol.domain.repository.RecipeRepository;
+import com.chefcontrol.domain.repository.RestaurantRepository;
+import com.chefcontrol.domain.restaurant.Restaurant;
+import com.chefcontrol.domain.shared.valueobject.IvaRates;
 import com.chefcontrol.domain.repository.SaleItemRepository;
 import com.chefcontrol.domain.repository.SaleRepository;
 import com.chefcontrol.domain.repository.StockMovementRepository;
@@ -47,24 +50,26 @@ public class FoodCostService {
     private final PriceHistoryRepository priceHistoryRepository;
     private final RecipeVersionRepository recipeVersionRepository;
     private final UnitRepository unitRepository;
+    private final RestaurantRepository restaurantRepository;
 
     public FoodCostReport calculate(Instant from, Instant to) {
         var restaurantId = TenantContext.require();
 
         BigDecimal revenue = saleRepository
                 .sumTotalAmountByRestaurantIdAndSoldAtBetween(restaurantId, from, to);
+        // El food cost va sobre lo que queda: el IVA de la venta de un RI es del fisco, no ingreso.
+        BigDecimal netRevenue = saleRepository
+                .sumNetRevenueByRestaurantIdAndSoldAtBetween(restaurantId, from, to);
 
         BigDecimal theoreticalCost = stockMovementRepository
                 .sumSalesCost(restaurantId, from, to);
 
-        FoodCostMetric metric = new FoodCostMetric(revenue, theoreticalCost);
-        return new FoodCostReport(from, to, revenue, theoreticalCost, metric.percentage());
+        FoodCostMetric metric = new FoodCostMetric(netRevenue, theoreticalCost);
+        return new FoodCostReport(from, to, revenue, netRevenue, theoreticalCost, metric.percentage());
     }
 
     /**
-     * Breaks down a recipe's theoretical cost ingredient by ingredient, using each product's
-     * weighted average purchase cost — the same cost basis the global food cost report uses,
-     * so the numbers reconcile with each other.
+     * El food cost teórico de hoy, ingrediente por ingrediente, con el costo de {@link #theoreticalUnitCost}.
      */
     public RecipeCostReport calculateRecipeCost(UUID menuItemId) {
         UUID restaurantId = TenantContext.require();
@@ -96,8 +101,7 @@ public class FoodCostService {
                     BigDecimal grossInRecipeUnit = product != null
                             ? product.grossQuantityFor(item.getQuantity())
                             : item.getQuantity();
-                    BigDecimal unitCost = stockMovementRepository
-                            .getWeightedAvgPurchaseCost(item.getProductId(), restaurantId);
+                    BigDecimal unitCost = theoreticalUnitCost(item.getProductId(), restaurantId, null);
                     BigDecimal totalCost = grossInDefaultUnit.multiply(unitCost).setScale(4, RoundingMode.HALF_UP);
                     return new RecipeIngredientCost(
                             item.getProductId(), item.getProductName(),
@@ -114,9 +118,10 @@ public class FoodCostService {
         BigDecimal costPerServing = totalCost.divide(BigDecimal.valueOf(recipe.getServings()), 4, RoundingMode.HALF_UP);
 
         BigDecimal menuPrice = menuItem.getPrice() != null ? menuItem.getPrice() : BigDecimal.ZERO;
-        BigDecimal foodCostPercentage = new FoodCostMetric(menuPrice, costPerServing).percentage();
+        BigDecimal netPrice = netPrice(menuPrice, restaurantId);
+        BigDecimal foodCostPercentage = new FoodCostMetric(netPrice, costPerServing).percentage();
 
-        return new RecipeCostReport(menuItem.getId(), menuItem.getName(), recipe.getServings(), menuPrice,
+        return new RecipeCostReport(menuItem.getId(), menuItem.getName(), recipe.getServings(), menuPrice, netPrice,
                 ingredients, totalCost, costPerServing, foodCostPercentage);
     }
 
@@ -127,7 +132,7 @@ public class FoodCostService {
      * cuatro el número sale mal de una forma difícil de notar:
      * <ul>
      *   <li>la <b>composición de la receta</b>, de {@code recipe_versions} (V23);</li>
-     *   <li>el <b>costo de compra</b> de cada insumo, del ledger cortado en esa fecha;</li>
+     *   <li>el <b>costo de compra</b> de cada insumo: la última compra con fecha hasta ahí;</li>
      *   <li>el <b>rendimiento</b> de cada insumo, de {@code product_yield_history} (V22);</li>
      *   <li>el <b>precio de venta</b> del plato, de {@code menu_item_price_history} (V22).</li>
      * </ul>
@@ -157,8 +162,7 @@ public class FoodCostService {
                     BigDecimal yieldAt = priceHistoryRepository.findProductYieldAt(item.productId(), at)
                             .map(PriceHistoryEntry::value)
                             .orElse(product != null ? product.getYieldPercentage() : null);
-                    BigDecimal unitCost = stockMovementRepository
-                            .getWeightedAvgPurchaseCostAsOf(item.productId(), restaurantId, at);
+                    BigDecimal unitCost = theoreticalUnitCost(item.productId(), restaurantId, at);
                     return ingredientCost(product, item.productId(), item.quantity(), item.unitId(),
                             yieldAt, unitCost, restaurantId);
                 })
@@ -167,6 +171,7 @@ public class FoodCostService {
         BigDecimal menuPrice = priceHistoryRepository.findMenuItemPriceAt(menuItemId, at)
                 .map(PriceHistoryEntry::value)
                 .orElse(menuItem.getPrice() != null ? menuItem.getPrice() : BigDecimal.ZERO);
+        BigDecimal netPrice = netPrice(menuPrice, restaurantId);
 
         // Si en esa fecha ningún insumo tenía compras todavía, el costo no es cero: es
         // desconocido. Devolver cero pone un "food cost 0%" en el gráfico, que se lee como que
@@ -175,7 +180,7 @@ public class FoodCostService {
                 .allMatch(i -> i.unitCost() == null || i.unitCost().compareTo(BigDecimal.ZERO) == 0);
         if (noCostData) {
             return new RecipeCostReport(menuItem.getId(), menuItem.getName(), version.servings(),
-                    menuPrice, ingredients, null, null, null);
+                    menuPrice, netPrice, ingredients, null, null, null);
         }
 
         BigDecimal totalCost = ingredients.stream()
@@ -184,9 +189,9 @@ public class FoodCostService {
         BigDecimal costPerServing = version.servings() == 0 ? BigDecimal.ZERO
                 : totalCost.divide(BigDecimal.valueOf(version.servings()), 4, RoundingMode.HALF_UP);
 
-        return new RecipeCostReport(menuItem.getId(), menuItem.getName(), version.servings(), menuPrice,
+        return new RecipeCostReport(menuItem.getId(), menuItem.getName(), version.servings(), menuPrice, netPrice,
                 ingredients, totalCost, costPerServing,
-                new FoodCostMetric(menuPrice, costPerServing).percentage());
+                new FoodCostMetric(netPrice, costPerServing).percentage());
     }
 
     /**
@@ -211,14 +216,13 @@ public class FoodCostService {
      * La evolución del plato en un período: qué precio tenía, cuánto costaba hacerlo y qué food
      * cost daba, en cada momento en que algo de eso cambió.
      *
-     * <p>Los puntos son <b>los momentos en que algo cambió</b>: el precio de venta, la receta, o
-     * el rendimiento de alguno de sus insumos. Los tres mueven el food cost, así que sampleando
-     * solo los cambios de precio el gráfico mentiría por omisión — sacarle un ingrediente al plato
+     * <p>Los puntos son <b>los momentos en que algo cambió</b>: el precio de venta, la receta, el
+     * rendimiento o el precio de compra de alguno de sus insumos. Los cuatro mueven el food cost, así que
+     * sampleando solo los cambios de precio el gráfico mentiría por omisión — sacarle un ingrediente al plato
      * cambia el costo y no aparecería en ningún lado.
      *
-     * <p>No es un muestreo por día ni por semana: entre dos cambios la línea es recta salvo por
-     * las compras nuevas, y recalcular la receta entera una vez por día para dibujar eso no vale
-     * lo que cuesta. Si hace falta esa resolución, se agrega después.
+     * <p>No es un muestreo por día ni por semana: entre dos puntos no cambia nada, así que el gráfico
+     * escalonado es exacto.
      *
      * <p>Los extremos del período siempre entran, para que la línea arranque y termine donde el
      * usuario pidió.
@@ -238,11 +242,16 @@ public class FoodCostService {
                 .map(PriceHistoryEntry::validFrom), from, to);
         addIfInRange(moments, versionsInRange.stream().map(RecipeVersion::validFrom), from, to);
 
-        // Los insumos que participaron en alguna versión del período: si a alguno le cambió el
-        // rendimiento, el costo del plato se movió sin que nadie tocara la receta ni el precio.
-        ingredientIdsOf(menuItemId, versionsInRange, to).forEach(productId ->
-                addIfInRange(moments, priceHistoryRepository.findProductYieldHistory(productId).stream()
-                        .map(PriceHistoryEntry::validFrom), from, to));
+        // Los insumos que participaron en alguna versión del período: si a alguno le cambió el rendimiento o
+        // entró una compra, el costo del plato se movió sin que nadie tocara la receta ni el precio.
+        // ponytail: cada punto recalcula la receta entera; con compras diarias de muchos insumos en un rango
+        // largo son cientos de recálculos. Si pesa, agrupar los puntos por día.
+        ingredientIdsOf(menuItemId, versionsInRange, to).forEach(productId -> {
+            addIfInRange(moments, priceHistoryRepository.findProductYieldHistory(productId).stream()
+                    .map(PriceHistoryEntry::validFrom), from, to);
+            addIfInRange(moments, stockMovementRepository.findPurchaseDates(productId, restaurantId, from, to)
+                    .stream(), from, to);
+        });
 
         return moments.stream().map(when -> pointAt(menuItemId, when)).toList();
     }
@@ -269,12 +278,13 @@ public class FoodCostService {
                 .orElse(null);
         try {
             RecipeCostReport report = calculateRecipeCostAt(menuItemId, when);
-            return new PriceEvolutionPoint(when, report.menuPrice(),
+            return new PriceEvolutionPoint(when, report.menuPrice(), report.netPrice(),
                     report.costPerServing(), report.foodCostPercentage());
         } catch (AppException e) {
             // El plato no tenía receta en ese momento: el precio sigue siendo un dato válido
             // para graficar, el costo no. Devolver null es más honesto que devolver cero.
-            return new PriceEvolutionPoint(when, price, null, null);
+            return new PriceEvolutionPoint(when, price,
+                    price == null ? null : netPrice(price, TenantContext.require()), null, null);
         }
     }
 
@@ -282,7 +292,7 @@ public class FoodCostService {
      * Cómo se movió el costo de un insumo: qué se pagó por unidad y qué rendimiento tenía, en
      * cada momento en que alguna de las dos cosas cambió.
      *
-     * <p>Los puntos son las compras del período (cada una mueve el promedio ponderado) más los
+     * <p>El costo es el precio de la última compra hasta cada punto. Los puntos son las compras del período más los
      * cambios de rendimiento, más los extremos del rango.
      *
      * <p>A diferencia del plato, esta serie <b>no tiene el agujero del backfill del lado del
@@ -304,8 +314,7 @@ public class FoodCostService {
                 .map(PriceHistoryEntry::validFrom), from, to);
 
         return moments.stream().map(when -> {
-            BigDecimal purchaseCost = stockMovementRepository
-                    .getWeightedAvgPurchaseCostAsOf(productId, restaurantId, when);
+            BigDecimal purchaseCost = stockMovementRepository.findLastPurchaseCostPerUnitAsOf(productId, restaurantId, when);
             // Sin fila de rendimiento en esa fecha el insumo todavía no existía. Devolver el
             // rendimiento de hoy sería proyectar el presente sobre un momento en el que no había
             // nada — el punto no tiene valores, y eso es lo que hay que decir.
@@ -356,6 +365,27 @@ public class FoodCostService {
                 grossInRecipeUnit, yieldPercentage, unitCost, totalCost);
     }
 
+    /**
+     * El costo del insumo para el food cost teórico, hoy ({@code at} null) o a una fecha: lo que cuesta reponerlo, el
+     * precio de la última compra no revertida hasta ahí. 0 si no hay ninguna. Es el único lugar que lo decide: si el
+     * teórico pasa a ser "el lote que se va a usar" ({@link StockBatchService#fifoUnitCost} sin consumir), es acá.
+     */
+    private BigDecimal theoreticalUnitCost(UUID productId, UUID restaurantId, Instant at) {
+        BigDecimal cost = at == null
+                ? stockMovementRepository.findLastPurchaseCostPerUnit(productId, restaurantId)
+                : stockMovementRepository.findLastPurchaseCostPerUnitAsOf(productId, restaurantId, at);
+        return cost != null ? cost : BigDecimal.ZERO;
+    }
+
+    /**
+     * El precio de la carta sin el IVA de la venta, si el restaurante es RI. Con la condición y la alícuota de HOY,
+     * también para una fecha pasada: no hay historia de la condición fiscal (limitación aceptada).
+     */
+    private BigDecimal netPrice(BigDecimal menuPrice, UUID restaurantId) {
+        return IvaRates.netOf(menuPrice, restaurantRepository.findById(restaurantId)
+                .map(Restaurant::salesIvaRate).orElse(BigDecimal.ZERO));
+    }
+
     private String unitName(UUID unitId) {
         return unitRepository.findById(unitId).map(u -> u.getName()).orElse(null);
     }
@@ -367,13 +397,14 @@ public class FoodCostService {
                 .orElseThrow(() -> AppException.notFound(ErrorCode.MENU_ITEM_NOT_FOUND, "Menu item not found"));
 
         BigDecimal revenue = saleItemRepository.sumRevenueByMenuItemAndPeriod(menuItemId, restaurantId, from, to);
+        BigDecimal netRevenue = saleItemRepository.sumNetRevenueByMenuItemAndPeriod(menuItemId, restaurantId, from, to);
         BigDecimal realizedCost = stockMovementRepository.sumSalesCostByMenuItemAndPeriod(menuItemId, restaurantId, from, to);
         int quantitySold = saleItemRepository.sumQuantitySoldByMenuItemAndPeriod(menuItemId, restaurantId, from, to);
 
-        BigDecimal foodCostPercentage = new FoodCostMetric(revenue, realizedCost).percentage();
+        BigDecimal foodCostPercentage = new FoodCostMetric(netRevenue, realizedCost).percentage();
 
         return new MenuItemFoodCostReport(menuItem.getId(), menuItem.getName(),
-                from, to, quantitySold, revenue, realizedCost, foodCostPercentage);
+                from, to, quantitySold, revenue, netRevenue, realizedCost, foodCostPercentage);
     }
 
     /**
@@ -393,14 +424,17 @@ public class FoodCostService {
     public record PriceEvolutionPoint(
             Instant at,
             BigDecimal menuPrice,
+            BigDecimal netPrice,
             BigDecimal costPerServing,
             BigDecimal foodCostPercentage
     ) {}
 
+    /** {@code revenue} es lo cobrado; {@code netRevenue}, sin el IVA de las ventas, y sobre él va el porcentaje. */
     public record FoodCostReport(
             Instant from,
             Instant to,
             BigDecimal revenue,
+            BigDecimal netRevenue,
             BigDecimal theoreticalCost,
             BigDecimal foodCostPercentage
     ) {}
@@ -430,6 +464,7 @@ public class FoodCostService {
             Instant to,
             int quantitySold,
             BigDecimal revenue,
+            BigDecimal netRevenue,
             BigDecimal realizedCost,
             BigDecimal foodCostPercentage
     ) {}
@@ -439,6 +474,8 @@ public class FoodCostService {
             String menuItemName,
             int servings,
             BigDecimal menuPrice,
+            /** {@code menuPrice} sin el IVA de la venta si el restaurante es RI; si no, igual. El porcentaje va sobre este. */
+            BigDecimal netPrice,
             List<RecipeIngredientCost> ingredients,
             BigDecimal totalCost,
             BigDecimal costPerServing,

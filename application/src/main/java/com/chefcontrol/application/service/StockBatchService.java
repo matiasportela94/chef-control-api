@@ -94,21 +94,24 @@ public class StockBatchService {
     }
 
     /**
-     * Previews how much a FIFO consumption would cost without touching batch state.
-     * Sums costPerUnit × qty_taken across batches in FIFO order.
+     * Lo que cuesta por unidad consumir {@code quantity} ahora, sin tocar los lotes: lo que tomaría de cada lote en
+     * orden FIFO, a lo que costó ese lote, y lo que los lotes no cubren (stock negativo, o un lote sin costo, como el
+     * sobrante de un conteo sin compras) a {@code fallbackCost}. Null = 0. Se llama justo antes de
+     * {@link #consumeFifo}, en la misma transacción, así que mira los mismos lotes que se van a consumir.
      */
-    public BigDecimal calculateFifoCost(UUID restaurantId, UUID productId, BigDecimal quantity) {
+    public BigDecimal fifoUnitCost(UUID restaurantId, UUID productId, BigDecimal quantity, BigDecimal fallbackCost) {
+        BigDecimal fallback = fallbackCost != null ? fallbackCost : BigDecimal.ZERO;
+        if (quantity.signum() <= 0) return fallback;
         BigDecimal pending = quantity;
         BigDecimal totalCost = BigDecimal.ZERO;
         for (StockBatch batch : stockBatchRepository.findAvailableByProductFifo(productId, restaurantId)) {
-            if (pending.compareTo(BigDecimal.ZERO) <= 0) break;
+            if (pending.signum() <= 0) break;
             BigDecimal taken = pending.min(batch.getQuantityRemaining());
-            if (batch.getCostPerUnit() != null) {
-                totalCost = totalCost.add(taken.multiply(batch.getCostPerUnit()));
-            }
+            totalCost = totalCost.add(taken.multiply(batch.getCostPerUnit() != null ? batch.getCostPerUnit() : fallback));
             pending = pending.subtract(taken);
         }
-        return totalCost.setScale(2, RoundingMode.HALF_UP);
+        totalCost = totalCost.add(pending.max(BigDecimal.ZERO).multiply(fallback));
+        return totalCost.divide(quantity, 4, RoundingMode.HALF_UP); // la precisión de cost_per_unit
     }
 
     private void allocate(UUID stockMovementId, UUID stockBatchId, BigDecimal quantity) {

@@ -65,17 +65,11 @@ public class WasteService {
         UUID defaultUnitId = product.getDefaultUnitId();
         BigDecimal quantity = unitConversionService.convert(cmd.quantity(), requestedUnit.getId(), defaultUnitId);
 
-        // Calculate total cost from FIFO batches; fall back to last purchase price if batches have no price data
-        BigDecimal totalCost = stockBatchService.calculateFifoCost(restaurantId, product.getId(), quantity);
-        if (totalCost.compareTo(BigDecimal.ZERO) == 0) {
-            BigDecimal lastCost = stockMovementRepository.findLastPurchaseCostPerUnit(product.getId(), restaurantId);
-            if (lastCost != null && lastCost.compareTo(BigDecimal.ZERO) > 0) {
-                totalCost = quantity.multiply(lastCost).setScale(2, RoundingMode.HALF_UP);
-            }
-        }
-        BigDecimal costPerUnit = quantity.compareTo(BigDecimal.ZERO) > 0
-                ? totalCost.divide(quantity, 4, RoundingMode.HALF_UP)
-                : BigDecimal.ZERO;
+        // Lo que cuesta lo que se tira: los lotes FIFO que va a consumir y, lo que no cubran, a la última compra
+        // (antes la parte sin lote costaba 0 si algún lote cubría el resto).
+        BigDecimal costPerUnit = stockBatchService.fifoUnitCost(restaurantId, product.getId(), quantity,
+                stockMovementRepository.findLastPurchaseCostPerUnit(product.getId(), restaurantId));
+        BigDecimal totalCost = quantity.multiply(costPerUnit).setScale(2, RoundingMode.HALF_UP);
 
         WasteEvent event = new WasteEvent();
         event.setRestaurantId(restaurantId);

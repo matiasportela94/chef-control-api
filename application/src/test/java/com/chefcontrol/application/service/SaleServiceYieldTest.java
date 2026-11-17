@@ -1,5 +1,7 @@
 package com.chefcontrol.application.service;
 
+import com.chefcontrol.application.exception.AppException;
+import com.chefcontrol.application.exception.ErrorCode;
 import com.chefcontrol.application.port.AuditService;
 import com.chefcontrol.application.port.CurrentUserProvider;
 import com.chefcontrol.domain.context.TenantContext;
@@ -26,6 +28,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -49,6 +52,7 @@ class SaleServiceYieldTest {
     @Mock CurrentUserProvider currentUserProvider;
     @Mock ProductRepository productRepository;
     @Mock UnitConversionService unitConversionService;
+    @Mock RestaurantRepository restaurantRepository;
 
     private final UUID restaurantId = UUID.randomUUID();
     private final UUID menuItemId = UUID.randomUUID();
@@ -62,7 +66,7 @@ class SaleServiceYieldTest {
     private SaleService service() {
         return new SaleService(saleRepository, saleItemRepository, menuItemRepository, recipeRepository,
                 stockMovementRepository, stockBatchService, alertEvaluationService, auditService,
-                currentUserProvider, productRepository, unitConversionService);
+                currentUserProvider, productRepository, unitConversionService, restaurantRepository);
     }
 
     private List<StockMovement> movementsForSaleOf(String yieldPercentage) {
@@ -95,7 +99,9 @@ class SaleServiceYieldTest {
                 .thenReturn(Optional.of(recipe));
 
         when(unitConversionService.convert(any(), eq(unitId), eq(unitId))).thenAnswer(inv -> inv.getArgument(0));
-        when(stockMovementRepository.getWeightedAvgPurchaseCost(productId, restaurantId)).thenReturn(BigDecimal.TEN);
+        when(stockMovementRepository.findLastPurchaseCostPerUnit(productId, restaurantId)).thenReturn(BigDecimal.TEN);
+        when(stockBatchService.fifoUnitCost(eq(restaurantId), eq(productId), any(), eq(BigDecimal.TEN)))
+                .thenReturn(new BigDecimal("12.5"));
         when(stockMovementRepository.getCurrentStock(productId, restaurantId)).thenReturn(new BigDecimal("1000"));
         when(saleRepository.save(any())).thenAnswer(inv -> {
             Sale s = inv.getArgument(0);
@@ -130,6 +136,33 @@ class SaleServiceYieldTest {
         // De esto depende que reverseSale() revierta también la merma: busca por sale_item.
         assertThat(waste.getReferenceType()).isEqualTo("sale_item");
         assertThat(waste.getReferenceId()).isEqualTo(saleItemId);
+
+        // Un solo costo FIFO, el del bruto, para los dos movimientos (con la última compra como respaldo).
+        verify(stockBatchService).fifoUnitCost(eq(restaurantId), eq(productId),
+                argThat(q -> q.compareTo(new BigDecimal("222.222")) == 0), eq(BigDecimal.TEN));
+        assertThat(sale.getCostPerUnit()).isEqualByComparingTo("12.5");
+        assertThat(waste.getCostPerUnit()).isEqualByComparingTo("12.5");
+    }
+
+    @Test
+    void sinNingunaCompraNoRevertida_noSeVende() {
+        MenuItem menuItem = new MenuItem();
+        menuItem.setId(menuItemId);
+        menuItem.setName("Puré");
+        menuItem.setPrice(new BigDecimal("5000"));
+        menuItem.setActive(true);
+        when(menuItemRepository.findByIdAndRestaurantId(menuItemId, restaurantId)).thenReturn(Optional.of(menuItem));
+        when(recipeRepository.findByMenuItemIdAndRestaurantId(menuItemId, restaurantId)).thenReturn(Optional.of(
+                Recipe.builder().menuItemId(menuItemId).servings(1).items(List.of(RecipeItem.builder()
+                        .productId(productId).productName("Papa").quantity(BigDecimal.ONE).unitId(unitId).build()))
+                        .build()));
+        when(stockMovementRepository.findLastPurchaseCostPerUnit(productId, restaurantId)).thenReturn(null);
+
+        assertThatThrownBy(() -> service().recordSale(new SaleService.CreateSaleCommand(null, null,
+                List.of(new SaleService.SaleItemCommand(menuItemId, 1)))))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode()).isEqualTo(ErrorCode.MISSING_PURCHASE_COST);
+        verify(saleRepository, never()).save(any());
     }
 
     @Test
