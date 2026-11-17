@@ -27,6 +27,9 @@ public class StockBatchJpaEntity {
     @Column(name = "purchase_item_id")
     private UUID purchaseItemId;
 
+    @Column(name = "production_id")
+    private UUID productionId;
+
     @Column(name = "quantity_remaining", nullable = false, precision = 12, scale = 3)
     private BigDecimal quantityRemaining;
 
@@ -50,6 +53,7 @@ public class StockBatchJpaEntity {
                 .restaurantId(domain.getRestaurantId())
                 .productId(domain.getProductId())
                 .purchaseItemId(domain.getPurchaseItemId())
+                .productionId(domain.getProductionId())
                 .quantityRemaining(domain.getQuantityRemaining())
                 .expirationDate(domain.getExpirationDate())
                 .costPerUnit(domain.getCostPerUnit())
@@ -63,6 +67,7 @@ public class StockBatchJpaEntity {
                 .restaurantId(restaurantId)
                 .productId(productId)
                 .purchaseItemId(purchaseItemId)
+                .productionId(productionId)
                 .quantityRemaining(quantityRemaining)
                 .expirationDate(expirationDate)
                 .costPerUnit(costPerUnit)

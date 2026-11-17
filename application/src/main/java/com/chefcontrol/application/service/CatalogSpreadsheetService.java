@@ -9,6 +9,7 @@ import com.chefcontrol.application.port.AIService.IngredientMatch;
 import com.chefcontrol.application.port.AIService.SpreadsheetRow;
 import com.chefcontrol.application.port.AIService.SpreadsheetSheet;
 import com.chefcontrol.application.port.AIService.UnitOption;
+import com.chefcontrol.application.service.CatalogImportService.PreparationRow;
 import com.chefcontrol.application.service.CatalogImportService.ProductRow;
 import com.chefcontrol.application.service.CatalogImportService.RecipeRow;
 import com.chefcontrol.domain.context.TenantContext;
@@ -64,7 +65,7 @@ public class CatalogSpreadsheetService {
                 .toList();
         int rows = withData.stream().mapToInt(s -> s.rows().size()).sum();
         if (rows == 0) {
-            return new CatalogSpreadsheetInterpretation(List.of(), List.of(), List.of(), List.of(), List.of());
+            return new CatalogSpreadsheetInterpretation(List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
         }
         if (rows > MAX_ROWS) {
             throw AppException.badRequest(ErrorCode.AI_SPREADSHEET_TOO_LARGE,
@@ -97,6 +98,7 @@ public class CatalogSpreadsheetService {
     private static CatalogSpreadsheetInterpretation applyMatches(CatalogSpreadsheetInterpretation r, List<String> catalog) {
         Set<Integer> recipeRows = new HashSet<>();
         r.recipes().forEach(x -> recipeRows.add(x.row()));
+        r.preparations().forEach(x -> recipeRows.add(x.row()));
         List<ProductRow> products = r.products().stream().filter(p -> !recipeRows.contains(p.row())).toList();
         List<ProductRow> candidates = new ArrayList<>(r.products().stream().filter(p -> recipeRows.contains(p.row())).toList());
         candidates.addAll(r.proposedProducts());
@@ -126,13 +128,20 @@ public class CatalogSpreadsheetService {
                 .map(x -> renamed.containsKey(x.row()) ? new RecipeRow(x.row(), x.menuItem(), x.price(), x.section(),
                         renamed.get(x.row()), x.quantity(), x.unit()) : x)
                 .toList();
+        List<PreparationRow> preparations = r.preparations().stream()
+                .map(x -> renamed.containsKey(x.row()) ? new PreparationRow(x.row(), x.preparation(), x.yieldQuantity(),
+                        x.yieldUnit(), renamed.get(x.row()), x.quantity(), x.unit()) : x)
+                .toList();
 
         Set<String> taken = new HashSet<>(known.keySet());
         taken.addAll(recognized);
+        // Una preparación de la planilla se crea desde su hoja: proponerla además como insumo la duplicaría.
+        preparations.stream().filter(x -> x.preparation() != null)
+                .forEach(x -> taken.add(CatalogImportService.key(x.preparation())));
         List<ProductRow> proposed = candidates.stream()
                 .filter(p -> p.name() != null && taken.add(CatalogImportService.key(p.name())))
                 .toList();
-        return new CatalogSpreadsheetInterpretation(products, recipes, proposed, List.of(), warnings);
+        return new CatalogSpreadsheetInterpretation(products, preparations, recipes, proposed, List.of(), warnings);
     }
 
     private static boolean hasData(SpreadsheetRow row) {

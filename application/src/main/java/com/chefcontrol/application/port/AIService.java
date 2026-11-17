@@ -1,5 +1,6 @@
 package com.chefcontrol.application.port;
 
+import com.chefcontrol.application.service.CatalogImportService.PreparationRow;
 import com.chefcontrol.application.service.CatalogImportService.ProductRow;
 import com.chefcontrol.application.service.CatalogImportService.RecipeRow;
 
@@ -61,12 +62,16 @@ public interface AIService {
      */
     record CatalogSpreadsheetInterpretation(
         List<ProductRow> products,
+        List<PreparationRow> preparations,
         List<RecipeRow> recipes,
         List<ProductRow> proposedProducts,
         List<IngredientMatch> ingredientMatches,
         List<String> warnings
     ) {}
 
-    /** @param row la fila de receta; {@code writtenName} como vino, {@code catalogName} el insumo que el modelo reconoce */
+    /**
+     * @param row la fila de receta (o de preparación); {@code writtenName} como vino, {@code catalogName} el insumo que el
+     *            modelo reconoce
+     */
     record IngredientMatch(int row, String writtenName, String catalogName) {}
 }

@@ -59,6 +59,12 @@ public enum ErrorCode {
     // IA: INTERNAL (500) y no 503 a propósito, como PAYMENT_PROVIDER_UNAVAILABLE: el front manda 502/503 a /maintenance
     AI_INTERPRETATION_FAILED    (Category.INTERNAL),
     AI_SPREADSHEET_TOO_LARGE    (Category.BAD_REQUEST),
+    AI_AUDIO_TOO_LARGE          (Category.BAD_REQUEST),
+    AI_AUDIO_FORMAT_NOT_SUPPORTED (Category.BAD_REQUEST),
+    // 500 y no 503, como AI_INTERPRETATION_FAILED: el front manda 502/503 a /maintenance.
+    AI_TRANSCRIPTION_FAILED     (Category.INTERNAL),
+    /** Sin OPENAI_API_KEY: transcribir no está disponible (nunca se inventa un texto). */
+    AI_TRANSCRIPTION_NOT_CONFIGURED (Category.INTERNAL),
 
     // WhatsApp
     UNREGISTERED_PHONE      (Category.FORBIDDEN),
@@ -72,6 +78,11 @@ public enum ErrorCode {
     MOVEMENT_NOT_FOUND      (Category.NOT_FOUND),
     WASTE_EVENT_NOT_FOUND   (Category.NOT_FOUND),
     RECIPE_NOT_FOUND        (Category.NOT_FOUND),
+    // Preparaciones
+    PREPARATION_CYCLE           (Category.BAD_REQUEST),   // la receta se lleva a sí misma, directo o por otra
+    PRODUCT_NOT_A_PREPARATION   (Category.BAD_REQUEST),   // producir un insumo sin receta de preparación
+    PRODUCTION_NOT_FOUND        (Category.NOT_FOUND),
+    PRODUCTION_ALREADY_REVERSED (Category.CONFLICT),
     MENU_ITEM_NOT_FOUND     (Category.NOT_FOUND),
     MENU_ITEM_INACTIVE      (Category.BAD_REQUEST),
     CARTA_NOT_FOUND         (Category.NOT_FOUND),
@@ -108,6 +119,7 @@ public enum ErrorCode {
     IMPORT_INCOMPATIBLE_UNIT    (Category.BAD_REQUEST),
     IMPORT_DUPLICATE_PRODUCT    (Category.BAD_REQUEST),
     IMPORT_DUPLICATE_INGREDIENT (Category.BAD_REQUEST),
+    IMPORT_PREPARATION_CYCLE    (Category.BAD_REQUEST),      // las preparaciones de la planilla forman un ciclo
     IMPORT_AMBIGUOUS_NAME       (Category.BAD_REQUEST),      // el nombre matchea con dos o más del catálogo
     IMPORT_CATEGORY_CREATE_FORBIDDEN (Category.BAD_REQUEST), // haría falta crear la categoría y no hay CATEGORIES_CREATE
 

@@ -22,7 +22,9 @@ public class RecipeVersionRepositoryAdapter implements RecipeVersionRepository {
     public RecipeVersion save(RecipeVersion version) {
         // Reload-after-save: los ítems son lazy y la entidad que devuelve save() no los trae.
         RecipeVersionJpaEntity saved = jpa.save(RecipeVersionJpaEntity.from(version));
-        return jpa.findFirstByMenuItemIdOrderByValidFromDesc(saved.getMenuItemId())
+        return (saved.getProductId() != null
+                ? jpa.findFirstByProductIdOrderByValidFromDesc(saved.getProductId())
+                : jpa.findFirstByMenuItemIdOrderByValidFromDesc(saved.getMenuItemId()))
                 .map(RecipeVersionJpaEntity::toDomain)
                 .orElseGet(saved::toDomain);
     }
@@ -37,6 +39,24 @@ public class RecipeVersionRepositoryAdapter implements RecipeVersionRepository {
     public Optional<RecipeVersion> findLatestByMenuItemId(UUID menuItemId) {
         return jpa.findFirstByMenuItemIdOrderByValidFromDesc(menuItemId)
                 .map(RecipeVersionJpaEntity::toDomain);
+    }
+
+    @Override
+    public Optional<RecipeVersion> findByProductIdAt(UUID productId, Instant at) {
+        return jpa.findFirstByProductIdAndValidFromLessThanEqualOrderByValidFromDesc(productId, at)
+                .map(RecipeVersionJpaEntity::toDomain);
+    }
+
+    @Override
+    public Optional<RecipeVersion> findLatestByProductId(UUID productId) {
+        return jpa.findFirstByProductIdOrderByValidFromDesc(productId).map(RecipeVersionJpaEntity::toDomain);
+    }
+
+    @Override
+    public List<RecipeVersion> findByProductIdBetween(UUID productId, Instant from, Instant to) {
+        return jpa.findByProductIdAndValidFromBetweenOrderByValidFromAsc(productId, from, to).stream()
+                .map(RecipeVersionJpaEntity::toDomain)
+                .toList();
     }
 
     @Override

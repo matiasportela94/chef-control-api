@@ -34,6 +34,8 @@ import java.util.stream.Collectors;
 import java.util.TreeSet;
 import java.util.Set;
 import java.util.LinkedHashSet;
+import java.util.HashSet;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -107,7 +109,7 @@ public class FoodCostService {
                             item.getProductId(), item.getProductName(),
                             item.getQuantity(), item.getUnitId(), item.getUnitName(),
                             grossInRecipeUnit, product != null ? product.getYieldPercentage() : null,
-                            unitCost, totalCost);
+                            unitCost, totalCost, preparationAt(item.getProductId(), restaurantId, null).isPresent());
                 })
                 .toList();
 
@@ -164,7 +166,7 @@ public class FoodCostService {
                             .orElse(product != null ? product.getYieldPercentage() : null);
                     BigDecimal unitCost = theoreticalUnitCost(item.productId(), restaurantId, at);
                     return ingredientCost(product, item.productId(), item.quantity(), item.unitId(),
-                            yieldAt, unitCost, restaurantId);
+                            yieldAt, unitCost, preparationAt(item.productId(), restaurantId, at).isPresent());
                 })
                 .toList();
 
@@ -246,12 +248,9 @@ public class FoodCostService {
         // entró una compra, el costo del plato se movió sin que nadie tocara la receta ni el precio.
         // ponytail: cada punto recalcula la receta entera; con compras diarias de muchos insumos en un rango
         // largo son cientos de recálculos. Si pesa, agrupar los puntos por día.
-        ingredientIdsOf(menuItemId, versionsInRange, to).forEach(productId -> {
-            addIfInRange(moments, priceHistoryRepository.findProductYieldHistory(productId).stream()
-                    .map(PriceHistoryEntry::validFrom), from, to);
-            addIfInRange(moments, stockMovementRepository.findPurchaseDates(productId, restaurantId, from, to)
-                    .stream(), from, to);
-        });
+        Set<UUID> seen = new HashSet<>();
+        ingredientIdsOf(menuItemId, versionsInRange, to)
+                .forEach(productId -> addIngredientMoments(moments, productId, restaurantId, from, to, seen));
 
         return moments.stream().map(when -> pointAt(menuItemId, when)).toList();
     }
@@ -259,6 +258,26 @@ public class FoodCostService {
     private static void addIfInRange(Set<Instant> moments, Stream<Instant> candidates,
                                      Instant from, Instant to) {
         candidates.filter(when -> !when.isBefore(from) && !when.isAfter(to)).forEach(moments::add);
+    }
+
+    /**
+     * Los momentos en que cambió el costo de un insumo: sus compras y sus cambios de rendimiento. Si es una preparación,
+     * además los cambios de su receta y, recursivo, los de sus ingredientes: la mayonesa base sube cuando sube el aceite.
+     */
+    private void addIngredientMoments(Set<Instant> moments, UUID productId, UUID restaurantId,
+                                      Instant from, Instant to, Set<UUID> seen) {
+        if (!seen.add(productId)) return;
+        addIfInRange(moments, priceHistoryRepository.findProductYieldHistory(productId).stream()
+                .map(PriceHistoryEntry::validFrom), from, to);
+        addIfInRange(moments, stockMovementRepository.findPurchaseDates(productId, restaurantId, from, to)
+                .stream(), from, to);
+        List<RecipeVersion> versions = recipeVersionRepository.findByProductIdBetween(productId, from, to);
+        addIfInRange(moments, versions.stream().map(RecipeVersion::validFrom), from, to);
+        Set<UUID> ingredients = versions.stream().flatMap(v -> v.items().stream())
+                .map(RecipeVersion.Item::productId).collect(Collectors.toCollection(LinkedHashSet::new));
+        recipeVersionRepository.findByProductIdAt(productId, to)
+                .ifPresent(v -> v.items().forEach(i -> ingredients.add(i.productId())));
+        ingredients.forEach(id -> addIngredientMoments(moments, id, restaurantId, from, to, seen));
     }
 
     /** Los productos de todas las versiones del período, más los de la vigente al final. */
@@ -307,14 +326,11 @@ public class FoodCostService {
         Set<Instant> moments = new TreeSet<>();
         moments.add(from);
         moments.add(to);
-        addIfInRange(moments,
-                stockMovementRepository.findPurchaseDates(productId, restaurantId, from, to).stream(),
-                from, to);
-        addIfInRange(moments, priceHistoryRepository.findProductYieldHistory(productId).stream()
-                .map(PriceHistoryEntry::validFrom), from, to);
+        addIngredientMoments(moments, productId, restaurantId, from, to, new HashSet<>());
 
         return moments.stream().map(when -> {
-            BigDecimal purchaseCost = stockMovementRepository.findLastPurchaseCostPerUnitAsOf(productId, restaurantId, when);
+            // De una preparación, lo que costaba hacerla en ese momento; de un insumo comprado, su última compra.
+            BigDecimal purchaseCost = theoreticalUnitCost(productId, restaurantId, when);
             // Sin fila de rendimiento en esa fecha el insumo todavía no existía. Devolver el
             // rendimiento de hoy sería proyectar el presente sobre un momento en el que no había
             // nada — el punto no tiene valores, y eso es lo que hay que decir.
@@ -344,7 +360,7 @@ public class FoodCostService {
      */
     private RecipeIngredientCost ingredientCost(Product product, UUID productId, BigDecimal quantity,
                                                 UUID unitId, BigDecimal yieldPercentage,
-                                                BigDecimal unitCost, UUID restaurantId) {
+                                                BigDecimal unitCost, boolean preparation) {
         UUID defaultUnitId = product != null ? product.getDefaultUnitId() : unitId;
         BigDecimal qtyInDefaultUnit = unitConversionService.convert(quantity, unitId, defaultUnitId);
 
@@ -362,20 +378,85 @@ public class FoodCostService {
                 productId,
                 product != null ? product.getName() : null,
                 quantity, unitId, unitName(unitId),
-                grossInRecipeUnit, yieldPercentage, unitCost, totalCost);
+                grossInRecipeUnit, yieldPercentage, unitCost, totalCost, preparation);
     }
 
     /**
-     * El costo del insumo para el food cost teórico, hoy ({@code at} null) o a una fecha: lo que cuesta reponerlo, el
-     * precio de la última compra no revertida hasta ahí. 0 si no hay ninguna. Es el único lugar que lo decide: si el
-     * teórico pasa a ser "el lote que se va a usar" ({@link StockBatchService#fifoUnitCost} sin consumir), es acá.
+     * El costo del insumo para el food cost teórico, hoy ({@code at} null) o a una fecha: lo que cuesta reponerlo. De un
+     * insumo comprado, el precio de la última compra no revertida hasta ahí; de una preparación, lo que cuesta hacerla
+     * (su receta de esa fecha con el teórico de cada ingrediente, recursivo, dividido por lo que rinde), aunque también se
+     * compre. 0 si no hay con qué. Es el único lugar que lo decide: si el teórico pasa a ser "el lote que se va a usar"
+     * ({@link StockBatchService#fifoUnitCost} sin consumir), es acá.
      */
-    private BigDecimal theoreticalUnitCost(UUID productId, UUID restaurantId, Instant at) {
+    public BigDecimal theoreticalUnitCost(UUID productId, UUID restaurantId, Instant at) {
+        return theoreticalUnitCost(productId, restaurantId, at, new HashSet<>());
+    }
+
+    private BigDecimal theoreticalUnitCost(UUID productId, UUID restaurantId, Instant at, Set<UUID> path) {
+        Optional<PreparationAt> preparation = preparationAt(productId, restaurantId, at);
+        // El ciclo se rechaza al guardar la receta; el path es la guarda por si una combinación vieja lo arma igual.
+        if (preparation.isPresent() && path.add(productId)) {
+            try {
+                return batchLines(preparation.get(), restaurantId, at, path).stream()
+                        .map(RecipeIngredientCost::totalCost).reduce(BigDecimal.ZERO, BigDecimal::add)
+                        .divide(preparation.get().yieldQuantity(), 4, RoundingMode.HALF_UP);
+            } finally {
+                path.remove(productId);
+            }
+        }
         BigDecimal cost = at == null
                 ? stockMovementRepository.findLastPurchaseCostPerUnit(productId, restaurantId)
                 : stockMovementRepository.findLastPurchaseCostPerUnitAsOf(productId, restaurantId, at);
         return cost != null ? cost : BigDecimal.ZERO;
     }
+
+    /** La receta de una preparación hoy ({@code at} null) o la que regía en {@code at}; vacío si no era preparación. */
+    private Optional<PreparationAt> preparationAt(UUID productId, UUID restaurantId, Instant at) {
+        if (at == null) {
+            return recipeRepository.findByProductIdAndRestaurantId(productId, restaurantId)
+                    .map(r -> new PreparationAt(r.getYieldQuantity(), r.getItems().stream()
+                            .map(i -> new RecipeVersion.Item(i.getProductId(), i.getQuantity(), i.getUnitId()))
+                            .toList()));
+        }
+        return recipeVersionRepository.findByProductIdAt(productId, at)
+                .filter(v -> v.yieldQuantity() != null && !v.items().isEmpty())
+                .map(v -> new PreparationAt(v.yieldQuantity(), v.items()));
+    }
+
+    /** El costo de cada ingrediente de una tanda, con el rendimiento y el teórico de esa fecha. */
+    private List<RecipeIngredientCost> batchLines(PreparationAt preparation, UUID restaurantId, Instant at,
+                                                  Set<UUID> path) {
+        return preparation.items().stream().map(item -> {
+            Product product = productRepository.findByIdAndRestaurantId(item.productId(), restaurantId).orElse(null);
+            BigDecimal yieldAt = at == null ? (product != null ? product.getYieldPercentage() : null)
+                    : priceHistoryRepository.findProductYieldAt(item.productId(), at).map(PriceHistoryEntry::value)
+                            .orElse(product != null ? product.getYieldPercentage() : null);
+            return ingredientCost(product, item.productId(), item.quantity(), item.unitId(), yieldAt,
+                    theoreticalUnitCost(item.productId(), restaurantId, at, path),
+                    preparationAt(item.productId(), restaurantId, at).isPresent());
+        }).toList();
+    }
+
+    /**
+     * Lo que cuesta hoy ({@code at} null) o en {@code at} hacer una tanda de la preparación, ingrediente por ingrediente.
+     */
+    public PreparationCostReport calculatePreparationCost(UUID productId, Instant at) {
+        UUID restaurantId = TenantContext.require();
+        Product product = productRepository.findByIdAndRestaurantId(productId, restaurantId)
+                .orElseThrow(() -> AppException.notFound(ErrorCode.PRODUCT_NOT_FOUND, "Product not found"));
+        PreparationAt preparation = preparationAt(productId, restaurantId, at)
+                .orElseThrow(() -> AppException.notFound(ErrorCode.RECIPE_NOT_FOUND,
+                        at == null ? "The product is not a preparation" : "El insumo no era una preparación en esa fecha"));
+        Set<UUID> path = new HashSet<>();
+        path.add(productId);
+        List<RecipeIngredientCost> lines = batchLines(preparation, restaurantId, at, path);
+        BigDecimal batchCost = lines.stream().map(RecipeIngredientCost::totalCost).reduce(BigDecimal.ZERO, BigDecimal::add);
+        return new PreparationCostReport(productId, product.getName(), preparation.yieldQuantity(),
+                product.getDefaultUnitId(), unitName(product.getDefaultUnitId()), lines, batchCost,
+                batchCost.divide(preparation.yieldQuantity(), 4, RoundingMode.HALF_UP));
+    }
+
+    private record PreparationAt(BigDecimal yieldQuantity, List<RecipeVersion.Item> items) {}
 
     /**
      * El precio de la carta sin el IVA de la venta, si el restaurante es RI. Con la condición y la alícuota de HOY,
@@ -454,7 +535,21 @@ public class FoodCostService {
             BigDecimal grossQuantity,
             BigDecimal yieldPercentage,
             BigDecimal unitCost,
-            BigDecimal totalCost
+            BigDecimal totalCost,
+            /** El ingrediente es una preparación: {@code unitCost} es lo que cuesta hacerla. */
+            boolean preparation
+    ) {}
+
+    /** {@code unitCost} = {@code batchCost} / {@code yieldQuantity}, en la unidad por defecto de la preparación. */
+    public record PreparationCostReport(
+            UUID productId,
+            String productName,
+            BigDecimal yieldQuantity,
+            UUID unitId,
+            String unitName,
+            List<RecipeIngredientCost> ingredients,
+            BigDecimal batchCost,
+            BigDecimal unitCost
     ) {}
 
     public record MenuItemFoodCostReport(

@@ -15,7 +15,11 @@ public record RecipeVersion(
         UUID id,
         UUID restaurantId,
         UUID menuItemId,
+        /** Solo de una preparación (el dueño es un plato o un insumo, nunca los dos). */
+        UUID productId,
         int servings,
+        /** Solo de una preparación; null en la versión vacía de un borrado. */
+        BigDecimal yieldQuantity,
         Instant validFrom,
         UUID changedBy,
         List<Item> items
@@ -24,7 +28,12 @@ public record RecipeVersion(
 
     public static RecipeVersion of(UUID restaurantId, UUID menuItemId, int servings,
                                    UUID changedBy, List<Item> items) {
-        return new RecipeVersion(null, restaurantId, menuItemId, servings, Instant.now(), changedBy, items);
+        return new RecipeVersion(null, restaurantId, menuItemId, null, servings, null, Instant.now(), changedBy, items);
+    }
+
+    public static RecipeVersion forPreparation(UUID restaurantId, UUID productId, BigDecimal yieldQuantity,
+                                               UUID changedBy, List<Item> items) {
+        return new RecipeVersion(null, restaurantId, null, productId, 1, yieldQuantity, Instant.now(), changedBy, items);
     }
 
     /**
@@ -34,6 +43,10 @@ public record RecipeVersion(
      */
     public boolean sameContentAs(RecipeVersion other) {
         if (other == null || other.servings != servings || other.items.size() != items.size()) {
+            return false;
+        }
+        if ((yieldQuantity == null) != (other.yieldQuantity == null)
+                || (yieldQuantity != null && yieldQuantity.compareTo(other.yieldQuantity) != 0)) {
             return false;
         }
         return items.stream().allMatch(item -> other.items.stream().anyMatch(o ->

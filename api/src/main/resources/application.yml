@@ -14,8 +14,9 @@ spring:
 
   servlet:
     multipart:
-      max-file-size: 2MB
-      max-request-size: 3MB
+      # El audio de /ai/transcribe (TranscriptionService.MAX_BYTES). Las fotos validan sus 2 MB en su servicio.
+      max-file-size: 4MB
+      max-request-size: 5MB
 
   # Obligatorio con app.mail.provider=smtp (el default): sin usuario/clave la app no arranca. Gmail: puerto 587 + STARTTLS + contraseña de aplicación.
   mail:
@@ -107,6 +108,12 @@ app:
   google:
     api-key: ${GOOGLE_AI_API_KEY:}
     model: ${GOOGLE_AI_MODEL:gemini-2.5-flash}
+
+  # Audio a texto (/ai/transcribe). Sin clave, transcribir responde AI_TRANSCRIPTION_NOT_CONFIGURED.
+  openai:
+    api-key: ${OPENAI_API_KEY:}
+    # Cuando OpenAI deprecie este, se cambia la variable en Railway, sin deploy.
+    transcribe-model: ${OPENAI_TRANSCRIBE_MODEL:gpt-transcribe}
 
 management:
   health:

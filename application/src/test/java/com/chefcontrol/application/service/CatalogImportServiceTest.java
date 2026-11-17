@@ -3,6 +3,7 @@ package com.chefcontrol.application.service;
 import com.chefcontrol.application.exception.ErrorCode;
 import com.chefcontrol.application.port.AuditService;
 import com.chefcontrol.application.port.CurrentUserProvider;
+import com.chefcontrol.application.service.CatalogImportService.PreparationRow;
 import com.chefcontrol.application.service.CatalogImportService.ProductRow;
 import com.chefcontrol.application.service.CatalogImportService.RecipeReplacement;
 import com.chefcontrol.application.service.CatalogImportService.RecipeRow;
@@ -101,7 +102,9 @@ class CatalogImportServiceTest {
         when(menuItemRepository.save(any())).thenAnswer(i -> { MenuItem m = i.getArgument(0); if (m.getId() == null) m.setId(UUID.randomUUID()); menuItems.put(m.getId(), m); return m; });
 
         when(recipeRepository.findByMenuItemIdAndRestaurantId(any(), eq(R))).thenAnswer(i -> Optional.ofNullable(recipes.get(i.<UUID>getArgument(0))));
-        when(recipeRepository.save(any())).thenAnswer(i -> { Recipe r = i.getArgument(0); if (r.getId() == null) r.setId(UUID.randomUUID()); recipes.put(r.getMenuItemId(), r); return r; });
+        // Platos por menuItemId y preparaciones por productId: los dos dueños posibles de una receta.
+        when(recipeRepository.save(any())).thenAnswer(i -> { Recipe r = i.getArgument(0); if (r.getId() == null) r.setId(UUID.randomUUID()); recipes.put(r.isPreparation() ? r.getProductId() : r.getMenuItemId(), r); return r; });
+        when(recipeRepository.findByProductIdAndRestaurantId(any(), eq(R))).thenAnswer(i -> Optional.ofNullable(recipes.get(i.<UUID>getArgument(0))).filter(Recipe::isPreparation));
         when(recipeVersionRepository.save(any())).thenAnswer(i -> i.getArgument(0));
 
         // Catálogo que ya existe: limón (kg), verduras, principales y una milanesa con receta para 2.
@@ -136,7 +139,8 @@ class CatalogImportServiceTest {
                 recipeVersionRepository, currentUserProvider, conversion);
         service = new CatalogImportService(productRepository, categoryRepository, unitRepository, menuItemRepository,
                 menuSectionRepository, recipeRepository, conversion, productService, sectionService, menuItemService,
-                auditService);
+                auditService, new PreparationService(productRepository, recipeRepository, recipeVersionRepository,
+                        unitRepository, conversion, currentUserProvider, auditService));
     }
 
     @AfterEach
@@ -353,6 +357,50 @@ class CatalogImportServiceTest {
         assertEquals(List.of(new RowError(Sheet.RECIPES, 2, "ingredient", ErrorCode.IMPORT_UNKNOWN_INGREDIENT, "pan rallado")),
                 report.errors());
         assertEquals(List.of(), report.recipesToReplace());
+    }
+
+    @Test
+    void aPreparationOfTheSheetIsCreatedAsAProductWithItsRecipeAndADishCanUseIt() {
+        Report report = service.importCatalog(List.of(),
+                List.of(new PreparationRow(2, "Salsa de limón", new BigDecimal("500"), "g", "limón", new BigDecimal("0.2"), "kg")),
+                List.of(new RecipeRow(5, "Ensalada", new BigDecimal("4000"), null, "salsa de limon", new BigDecimal("30"), "g")),
+                false, ALL, Set.of(), Set.of());
+
+        assertTrue(report.saved(), () -> report.errors().toString());
+        assertEquals(1, report.preparationsCreated());
+        assertEquals(1, report.productsCreated());
+        Product salsa = products.values().stream().filter(p -> p.getName().equals("Salsa de limón")).findFirst().orElseThrow();
+        assertEquals(g.getId(), salsa.getDefaultUnitId(), "the new product takes the yield's unit");
+        Recipe prep = recipes.get(salsa.getId());
+        assertEquals(0, new BigDecimal("500").compareTo(prep.getYieldQuantity()));
+        assertEquals(limon.getId(), prep.getItems().getFirst().getProductId());
+        assertEquals(salsa.getId(), recipes.get(findMenuItem("Ensalada").getId()).getItems().getFirst().getProductId());
+        verify(auditService).log(eq(AuditAction.PRODUCT_RECIPE_UPDATED), eq("Product"), eq(salsa.getId()), anyMap());
+    }
+
+    @Test
+    void preparationsThatUseEachOtherAreACycleAndNothingIsSaved() {
+        Report report = service.importCatalog(List.of(),
+                List.of(new PreparationRow(2, "Salsa A", BigDecimal.ONE, "kg", "salsa b", new BigDecimal("0.5"), "kg"),
+                        new PreparationRow(3, "Salsa B", BigDecimal.ONE, "kg", "salsa a", new BigDecimal("0.5"), "kg")),
+                List.of(), false, ALL, Set.of(), Set.of());
+
+        assertFalse(report.saved());
+        assertEquals(List.of(
+                new RowError(Sheet.PREPARATIONS, 2, "ingredient", ErrorCode.IMPORT_PREPARATION_CYCLE, "Salsa A → Salsa B → Salsa A"),
+                new RowError(Sheet.PREPARATIONS, 3, "ingredient", ErrorCode.IMPORT_PREPARATION_CYCLE, "Salsa B → Salsa A → Salsa B")),
+                report.errors());
+        assertNothingWritten();
+    }
+
+    @Test
+    void aPreparationWithoutYieldOrWithAnUnknownIngredientSaysWhichField() {
+        Report report = service.importCatalog(List.of(),
+                List.of(new PreparationRow(2, "Fondo", null, "l", "hueso", new BigDecimal("1"), "kg")),
+                List.of(), true, ALL, Set.of(), Set.of());
+
+        assertEquals(List.of(new RowError(Sheet.PREPARATIONS, 2, "yieldQuantity", ErrorCode.IMPORT_REQUIRED_FIELD, null)),
+                report.errors(), "the ingredient is not reported twice once the preparation is invalid");
     }
 
     @Test

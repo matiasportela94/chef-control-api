@@ -7,6 +7,7 @@ import com.chefcontrol.application.port.AIService.CatalogSpreadsheetRequest;
 import com.chefcontrol.application.port.AIService.IngredientMatch;
 import com.chefcontrol.application.port.AIService.SpreadsheetRow;
 import com.chefcontrol.application.port.AIService.SpreadsheetSheet;
+import com.chefcontrol.application.service.CatalogImportService.PreparationRow;
 import com.chefcontrol.application.service.CatalogImportService.ProductRow;
 import com.chefcontrol.application.service.CatalogImportService.RecipeRow;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -39,12 +40,15 @@ final class CatalogSpreadsheetPrompt {
             SALIDA, con esta forma:
             {"products":[{"row":ref,"name":"...","unit":"kg","category":"...","minStock":10,"yieldPercentage":90}],
              "dishes":[{"menuItem":"...","price":9500,"section":"...","ingredients":[{"row":ref,"ingredient":"...","quantity":0.25,"unit":"kg","catalogName":"..."}]}],
+             "preparations":[{"preparation":"...","yieldQuantity":1.2,"yieldUnit":"kg","ingredients":[{"row":ref,"ingredient":"...","quantity":0.5,"unit":"l","catalogName":"..."}]}],
              "proposedProducts":[{"row":ref,"name":"...","unit":"kg"}],
              "warnings":["..."]}
             - products: los insumos (lo que el restaurante compra). category, minStock y yieldPercentage solo si la \
             planilla los trae.
             - dishes: los platos con su receta. price (precio de venta) y section (paso del menú: entradas, \
             principales…) solo si la planilla los trae.
+            - preparations: las recetas intermedias que el restaurante hace y usa como ingrediente (ver regla 9), \
+            con cuánto rinde la tanda.
             - proposedProducts: insumos que proponés vos porque una receta los usa y no están ni en el CATÁLOGO ni \
             en las filas de insumos de la planilla (ver regla 6).
             - row: el ref de la fila de donde sale el dato. En una receta, el ref de la fila del ingrediente. En \
@@ -76,7 +80,14 @@ final class CatalogSpreadsheetPrompt {
             7. Si un dato no se puede interpretar con seguridad, no lo adivines: dejá afuera esa fila y explicá en \
             warnings cuál y por qué. Un ingrediente sin cantidad numérica ("c/n", "a gusto", "cantidad \
             necesaria") queda afuera de la receta y de proposedProducts, con su warning: no pongas 0.
-            8. Los warnings van en castellano rioplatense, cortos, para mostrarle al usuario. Nombran el insumo, el             plato o la hoja, nunca números de fila ni refs: el ref no es la fila del Excel que ve el usuario.
+            8. Los warnings van en castellano rioplatense, cortos, para mostrarle al usuario. Nombran el insumo, el \
+            plato o la hoja, nunca números de fila ni refs: el ref no es la fila del Excel que ve el usuario.
+            9. Una preparación es una receta que el restaurante hace en tandas y usa como ingrediente de un plato \
+            o de otra preparación (mayonesa base, salsas, masas, fondos, medallones). Si una receta dice cuánto rinde \
+            ("rinde 1,2 kg") o la usa otro plato como ingrediente, va en preparations y no en dishes, con yieldQuantity \
+            y yieldUnit (una unidad de la lista). Si no dice cuánto rinde, ponela igual sin yieldQuantity y avisalo. \
+            Sus cantidades son para esa tanda: no las dividas por porciones. Quien la usa pone su nombre tal cual como \
+            ingredient. Una preparación nunca va a products ni a proposedProducts.
             """;
 
     private CatalogSpreadsheetPrompt() {}
@@ -137,12 +148,17 @@ final class CatalogSpreadsheetPrompt {
                 "menuItem", type("string"), "price", type("number"), "section", type("string"),
                 "ingredients", Map.of("type", "array", "items", ingredient)),
                 List.of("menuItem", "ingredients"));
+        Map<String, Object> preparation = object(Map.of(
+                "preparation", type("string"), "yieldQuantity", type("number"), "yieldUnit", type("string"),
+                "ingredients", Map.of("type", "array", "items", ingredient)),
+                List.of("preparation", "ingredients"));
         return object(Map.of(
                 "products", Map.of("type", "array", "items", product),
                 "dishes", Map.of("type", "array", "items", dish),
+                "preparations", Map.of("type", "array", "items", preparation),
                 "proposedProducts", Map.of("type", "array", "items", product),
                 "warnings", Map.of("type", "array", "items", type("string"))),
-                List.of("products", "dishes", "proposedProducts", "warnings"));
+                List.of("products", "dishes", "preparations", "proposedProducts", "warnings"));
     }
 
     private static Map<String, Object> type(String t) {
@@ -182,10 +198,24 @@ final class CatalogSpreadsheetPrompt {
                 first = false;
             }
         }
+        List<PreparationRow> preparations = new ArrayList<>();
+        for (JsonNode d : root.path("preparations")) {
+            boolean first = true;
+            for (JsonNode i : d.path("ingredients")) {
+                // El rendimiento en la primera fila: el import toma el de la primera fila que lo traiga.
+                preparations.add(new PreparationRow(i.path("row").asInt(0), text(d, "preparation"),
+                        first ? number(d, "yieldQuantity") : null, first ? text(d, "yieldUnit") : null,
+                        text(i, "ingredient"), number(i, "quantity"), text(i, "unit")));
+                if (text(i, "catalogName") != null && text(i, "ingredient") != null) {
+                    matches.add(new IngredientMatch(i.path("row").asInt(0), text(i, "ingredient"), text(i, "catalogName")));
+                }
+                first = false;
+            }
+        }
         List<String> warnings = new ArrayList<>();
         root.path("warnings").forEach(w -> warnings.add(w.asText()));
-        return new CatalogSpreadsheetInterpretation(products, recipes, productRows(root.path("proposedProducts")),
-                matches, warnings);
+        return new CatalogSpreadsheetInterpretation(products, preparations, recipes,
+                productRows(root.path("proposedProducts")), matches, warnings);
     }
 
     private static List<ProductRow> productRows(JsonNode array) {

@@ -1,5 +1,6 @@
 package com.chefcontrol.api.ai;
 
+import com.chefcontrol.api.catalog.dto.CatalogImportRequest.PreparationImportRow;
 import com.chefcontrol.api.catalog.dto.CatalogImportRequest.ProductImportRow;
 import com.chefcontrol.api.catalog.dto.CatalogImportRequest.RecipeImportRow;
 import com.chefcontrol.api.plan.RequiresFeature;
@@ -10,6 +11,7 @@ import com.chefcontrol.application.service.CatalogSpreadsheetService;
 import com.chefcontrol.domain.plan.Feature;
 import com.chefcontrol.application.service.AIExecuteService;
 import com.chefcontrol.application.service.TextInterpretService;
+import com.chefcontrol.application.service.TranscriptionService;
 import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
@@ -17,9 +19,13 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
 
 import java.util.List;
 import java.util.Map;
@@ -33,6 +39,7 @@ public class AIController {
     private final TextInterpretService textInterpretService;
     private final AIExecuteService     aiExecuteService;
     private final CatalogSpreadsheetService catalogSpreadsheetService;
+    private final TranscriptionService transcriptionService;
 
     @PostMapping("/interpret")
     @PreAuthorize("hasAuthority('PERM_AI_USE')")
@@ -65,11 +72,26 @@ public class AIController {
                 .toList());
         return ResponseEntity.ok(new InterpretCatalogResult(
                 r.products().stream().map(AIController::toImportRow).toList(),
+                r.preparations().stream().map(x -> new PreparationImportRow(x.row(), x.preparation(), x.yieldQuantity(),
+                        x.yieldUnit(), x.ingredient(), x.quantity(), x.unit())).toList(),
                 r.recipes().stream().map(x -> new RecipeImportRow(
                         x.row(), x.menuItem(), x.price(), x.section(), x.ingredient(), x.quantity(), x.unit())).toList(),
                 r.proposedProducts().stream().map(AIController::toImportRow).toList(),
                 r.warnings()));
     }
+
+    /**
+     * Audio (webm, mp4/m4a u ogg, detectado por magic bytes) a texto en castellano. Solo transcribe: el texto vuelve al
+     * front, que lo manda a /ai/interpret como si se hubiera escrito. Más de 4 MB → AI_AUDIO_TOO_LARGE.
+     */
+    @PostMapping(value = "/transcribe", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasAuthority('PERM_AI_USE')")
+    public ResponseEntity<TranscriptionResponse> transcribeAudio(@RequestParam("audio") MultipartFile audio)
+            throws IOException {
+        return ResponseEntity.ok(new TranscriptionResponse(transcriptionService.transcribeAudio(audio.getBytes())));
+    }
+
+    record TranscriptionResponse(String text) {}
 
     private static ProductImportRow toImportRow(ProductRow p) {
         return new ProductImportRow(p.row(), p.name(), p.unit(), p.category(), p.minStock(), p.yieldPercentage(),
@@ -102,6 +124,7 @@ public class AIController {
      * {@code proposedProducts}: insumos que arma la IA porque una receta los usa y no existen; {@code row} = la primera
      * fila de receta que los usa. El front los muestra como propuestos y los suma a products para la vista previa.
      */
-    record InterpretCatalogResult(List<ProductImportRow> products, List<RecipeImportRow> recipes,
+    record InterpretCatalogResult(List<ProductImportRow> products, List<PreparationImportRow> preparations,
+                                  List<RecipeImportRow> recipes,
                                   List<ProductImportRow> proposedProducts, List<String> warnings) {}
 }

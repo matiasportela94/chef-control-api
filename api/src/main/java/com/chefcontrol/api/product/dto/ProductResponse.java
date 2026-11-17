@@ -18,17 +18,16 @@ public record ProductResponse(
         BigDecimal ivaPercentage,
         boolean isActive,
         BigDecimal currentStock,
-        LocalDate nextExpirationDate
+        LocalDate nextExpirationDate,
+        /** Tiene receta de preparación (se produce en tandas; ver GET /products/{id}/recipe). */
+        boolean preparation
 ) {
-    public static ProductResponse from(Product product) {
-        return from(product, null, null);
+    public static ProductResponse from(Product product, boolean preparation) {
+        return from(product, null, null, preparation);
     }
 
-    public static ProductResponse from(Product product, BigDecimal currentStock) {
-        return from(product, currentStock, null);
-    }
-
-    public static ProductResponse from(Product product, BigDecimal currentStock, LocalDate nextExpirationDate) {
+    public static ProductResponse from(Product product, BigDecimal currentStock, LocalDate nextExpirationDate,
+                                       boolean preparation) {
         return new ProductResponse(
                 product.getId(),
                 product.getName(),
@@ -41,7 +40,8 @@ public record ProductResponse(
                 product.getIvaPercentage(),
                 product.isActive(),
                 currentStock,
-                nextExpirationDate);
+                nextExpirationDate,
+                preparation);
     }
 
     public record UnitSummary(UUID id, String name, String abbreviation) {

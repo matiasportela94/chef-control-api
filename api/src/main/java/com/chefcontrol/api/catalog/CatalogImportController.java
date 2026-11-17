@@ -6,6 +6,7 @@ import com.chefcontrol.application.exception.AppException;
 import com.chefcontrol.application.exception.ErrorCode;
 import com.chefcontrol.application.service.AccountService;
 import com.chefcontrol.application.service.CatalogImportService;
+import com.chefcontrol.application.service.CatalogImportService.PreparationRow;
 import com.chefcontrol.application.service.CatalogImportService.ProductRow;
 import com.chefcontrol.application.service.CatalogImportService.RecipeRow;
 import com.chefcontrol.domain.plan.Feature;
@@ -46,13 +47,21 @@ public class CatalogImportController {
             requireAuthority(authentication, "PERM_MENU_UPDATE");
             accountService.requireFeature(Feature.RECIPES_AND_FOOD_COST);
         }
+        // La receta de una preparación es un dato del insumo: pide editar insumos, y es parte de las recetas del plan.
+        if (!request.preparations().isEmpty()) {
+            requireAuthority(authentication, "PERM_PRODUCTS_UPDATE");
+            accountService.requireFeature(Feature.RECIPES_AND_FOOD_COST);
+        }
         var report = catalogImportService.importCatalog(
                 request.products().stream().map(p -> new ProductRow(
                         p.row(), p.name(), p.unit(), p.category(), p.minStock(), p.yieldPercentage(),
                         p.ivaPercentage())).toList(),
+                request.preparations().stream().map(r -> new PreparationRow(r.row(), r.preparation(),
+                        r.yieldQuantity(), r.yieldUnit(), r.ingredient(), r.quantity(), r.unit())).toList(),
                 request.recipes().stream().map(r -> new RecipeRow(
                         r.row(), r.menuItem(), r.price(), r.section(), r.ingredient(), r.quantity(), r.unit())).toList(),
-                dryRun, permissionsOf(authentication), Set.copyOf(request.replaceRecipeMenuItemIds()));
+                dryRun, permissionsOf(authentication), Set.copyOf(request.replaceRecipeMenuItemIds()),
+                Set.copyOf(request.replacePreparationProductIds()));
         return ResponseEntity.ok(CatalogImportResult.from(report));
     }
 

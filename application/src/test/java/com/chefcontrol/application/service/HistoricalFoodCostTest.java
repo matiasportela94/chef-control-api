@@ -83,8 +83,8 @@ class HistoricalFoodCostTest {
 
         // La receta que regía en marzo: 0,2 kg (hoy lleva 0,5)
         when(recipeVersionRepository.findByMenuItemIdAt(menuItemId, marzo))
-                .thenReturn(Optional.of(new RecipeVersion(UUID.randomUUID(), restaurantId, menuItemId,
-                        1, marzo, null,
+                .thenReturn(Optional.of(new RecipeVersion(UUID.randomUUID(), restaurantId, menuItemId, null,
+                        1, null, marzo, null,
                         List.of(new RecipeVersion.Item(productId, new BigDecimal("0.2"), kg)))));
 
         // El rendimiento y el precio que regían en marzo

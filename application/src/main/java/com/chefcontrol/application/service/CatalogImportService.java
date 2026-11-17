@@ -7,6 +7,8 @@ import com.chefcontrol.application.service.MenuItemService.CreateMenuItemCommand
 import com.chefcontrol.application.service.MenuItemService.RecipeItemCommand;
 import com.chefcontrol.application.service.MenuItemService.SetRecipeCommand;
 import com.chefcontrol.application.service.ProductService.CreateProductCommand;
+import com.chefcontrol.application.service.PreparationService.PreparationItemCommand;
+import com.chefcontrol.application.service.PreparationService.SetPreparationRecipeCommand;
 import com.chefcontrol.domain.audit.AuditAction;
 import com.chefcontrol.domain.context.TenantContext;
 import com.chefcontrol.domain.menu.MenuItem;
@@ -29,8 +31,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.text.Normalizer;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -38,6 +42,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
+import java.util.stream.Collectors;
 import java.util.Set;
 import java.util.UUID;
 
@@ -65,6 +71,7 @@ public class CatalogImportService {
 
     public static final int MAX_PRODUCT_ROWS = 1000;
     public static final int MAX_RECIPE_ROWS = 3000;
+    public static final int MAX_PREPARATION_ROWS = 1000;
 
     // Los anchos de las columnas: pasarlos haría fallar el INSERT a mitad de la escritura.
     private static final int MAX_NAME = 255;            // products.name, menu_items.name
@@ -86,6 +93,7 @@ public class CatalogImportService {
     private final MenuSectionService menuSectionService;
     private final MenuItemService menuItemService;
     private final AuditService auditService;
+    private final PreparationService preparationService;
 
     /**
      * @param permissions los del usuario: crear una categoría que falta pide {@code CATEGORIES_CREATE}, como a mano.
@@ -95,9 +103,24 @@ public class CatalogImportService {
     @Transactional
     public Report importCatalog(List<ProductRow> products, List<RecipeRow> recipes, boolean dryRun,
                                 Set<Permission> permissions, Set<UUID> replaceRecipesOf) {
+        return importCatalog(products, List.of(), recipes, dryRun, permissions, replaceRecipesOf, Set.of());
+    }
+
+    /**
+     * @param preparations       una fila por ingrediente; las de la misma preparación forman su receta (para la tanda
+     *                           que rinde {@code yieldQuantity})
+     * @param replacePreparationsOf los insumos cuya receta de preparación se puede pisar. Vacío = ninguna.
+     */
+    @Transactional
+    public Report importCatalog(List<ProductRow> products, List<PreparationRow> preparations, List<RecipeRow> recipes,
+                                boolean dryRun, Set<Permission> permissions, Set<UUID> replaceRecipesOf,
+                                Set<UUID> replacePreparationsOf) {
         UUID restaurantId = TenantContext.require();
-        Plan plan = new Plan(restaurantId, permissions.contains(Permission.CATEGORIES_CREATE), replaceRecipesOf);
+        Plan plan = new Plan(restaurantId, permissions.contains(Permission.CATEGORIES_CREATE), replaceRecipesOf,
+                replacePreparationsOf);
         products.forEach(plan::addProduct);
+        // Antes que las recetas: un plato puede llevar una preparación de la hoja.
+        plan.addPreparations(preparations);
         plan.addRecipes(recipes);
 
         boolean save = !dryRun && plan.errors.isEmpty();
@@ -114,6 +137,16 @@ public class CatalogImportService {
         plan.newProducts.forEach((key, p) -> productIds.put(key, productService.createProduct(new CreateProductCommand(
                 p.name(), null, p.unitId(), p.categoryKey() == null ? null : categoryIds.get(p.categoryKey()),
                 p.minStock(), null, p.yieldPercentage(), p.ivaPercentage())).getId()));
+
+        // Las preparaciones después de los insumos (sus ingredientes y ellas mismas ya existen) y antes que los platos.
+        // El orden entre ellas no importa: el control de ciclos ya se hizo sobre la planilla entera.
+        for (PlannedPreparation prep : plan.preparations) {
+            if (prep.change() == RecipeChange.SKIP || prep.change() == RecipeChange.UNCHANGED) continue;
+            preparationService.setPreparationRecipe(productIds.get(prep.key()), new SetPreparationRecipeCommand(
+                    prep.yieldQuantity(), prep.items().stream()
+                    .map(i -> new PreparationItemCommand(productIds.get(i.productKey()), i.quantity(), i.unitId()))
+                    .toList()));
+        }
 
         Map<String, UUID> sectionIds = new HashMap<>(plan.sectionIds);
         plan.newSections.forEach((key, name) ->
@@ -139,6 +172,8 @@ public class CatalogImportService {
             payload.put("menuItemsCreated", counts.menuItemsCreated());
             payload.put("recipesCreated", counts.recipesCreated());
             payload.put("recipesReplaced", counts.recipesReplaced());
+            payload.put("preparationsCreated", counts.preparationsCreated());
+            payload.put("preparationsReplaced", counts.preparationsReplaced());
             auditService.log(AuditAction.CATALOG_IMPORTED, "Catalog", null, payload);
         }
     }
@@ -161,6 +196,9 @@ public class CatalogImportService {
         final UUID restaurantId;
         final boolean mayCreateCategories;
         final Set<UUID> replaceRecipesOf;
+        final Set<UUID> replacePreparationsOf;
+        final Map<String, String> productNames = new HashMap<>();   // clave → cómo está escrito en el catálogo
+        final List<PlannedPreparation> preparations = new ArrayList<>();
         final List<RowError> errors = new ArrayList<>();
         final Map<String, Unit> units = new HashMap<>();
         final Map<String, UUID> categoryIds = new HashMap<>();
@@ -181,10 +219,12 @@ public class CatalogImportService {
         final List<PlannedDish> dishes = new ArrayList<>();
         int productsExisting;
 
-        Plan(UUID restaurantId, boolean mayCreateCategories, Set<UUID> replaceRecipesOf) {
+        Plan(UUID restaurantId, boolean mayCreateCategories, Set<UUID> replaceRecipesOf,
+             Set<UUID> replacePreparationsOf) {
             this.restaurantId = restaurantId;
             this.mayCreateCategories = mayCreateCategories;
             this.replaceRecipesOf = replaceRecipesOf;
+            this.replacePreparationsOf = replacePreparationsOf;
             List<Unit> all = unitRepository.findAll();
             all.forEach(u -> units.putIfAbsent(key(u.getName()), u));
             all.stream().filter(u -> u.getAbbreviation() != null)
@@ -195,6 +235,7 @@ public class CatalogImportService {
             for (Product p : productRepository.findByRestaurantIdAndIsActiveTrue(restaurantId, ALL).content()) {
                 if (productIds.putIfAbsent(key(p.getName()), p.getId()) != null) ambiguousProducts.add(key(p.getName()));
                 productUnits.putIfAbsent(key(p.getName()), p.getDefaultUnitId());
+                productNames.putIfAbsent(key(p.getName()), p.getName());
             }
             for (MenuItem m : menuItemRepository.findByRestaurantIdAndActive(restaurantId, true, ALL).content()) {
                 if (existingDishes.putIfAbsent(key(m.getName()), m) != null) ambiguousDishes.add(key(m.getName()));
@@ -301,7 +342,8 @@ public class CatalogImportService {
                 } else if (sec != null && section == null) {
                     section = sec;
                 }
-                PlannedIngredient item = ingredient(r, ingredients);
+                PlannedIngredient item = ingredient(Sheet.RECIPES, r.row(), r.ingredient(), r.quantity(), r.unit(),
+                        ingredients);
                 if (item != null) items.add(item);
             }
             if (errors.size() > before) return;
@@ -322,7 +364,11 @@ public class CatalogImportService {
 
         /** Lo que el import guardaría (servings 1, mismos insumo/unidad/cantidad, sin importar el orden) ya está. */
         private boolean sameRecipe(Recipe saved, List<PlannedIngredient> items) {
-            if (saved.getServings() != 1 || saved.getItems().size() != items.size()) return false;
+            return saved.getServings() == 1 && sameItems(saved, items);
+        }
+
+        private boolean sameItems(Recipe saved, List<PlannedIngredient> items) {
+            if (saved.getItems().size() != items.size()) return false;
             Set<List<Object>> savedItems = new HashSet<>();
             saved.getItems().forEach(i -> savedItems.add(
                     List.of(i.getProductId(), i.getUnitId(), i.getQuantity().stripTrailingZeros())));
@@ -331,34 +377,167 @@ public class CatalogImportService {
                     List.of(productIds.get(i.productKey()), i.unitId(), i.quantity().stripTrailingZeros())));
         }
 
-        private PlannedIngredient ingredient(RecipeRow r, Set<String> seenInDish) {
+        private PlannedIngredient ingredient(Sheet sheet, int row, String rawIngredient, BigDecimal quantity,
+                                             String rawUnit, Set<String> seenInDish) {
             int before = errors.size();
-            String name = clean(r.ingredient());
+            String name = clean(rawIngredient);
             String key = name == null ? null : key(name);
             UUID productUnit = null;
             if (name == null) {
-                error(Sheet.RECIPES, r.row(), "ingredient", ErrorCode.IMPORT_REQUIRED_FIELD, null);
+                error(sheet, row, "ingredient", ErrorCode.IMPORT_REQUIRED_FIELD, null);
             } else if (!seenInDish.add(key)) {
-                error(Sheet.RECIPES, r.row(), "ingredient", ErrorCode.IMPORT_DUPLICATE_INGREDIENT, name);
+                error(sheet, row, "ingredient", ErrorCode.IMPORT_DUPLICATE_INGREDIENT, name);
             } else if (ambiguousProducts.contains(key)) {
-                error(Sheet.RECIPES, r.row(), "ingredient", ErrorCode.IMPORT_AMBIGUOUS_NAME, name);
+                error(sheet, row, "ingredient", ErrorCode.IMPORT_AMBIGUOUS_NAME, name);
             } else if (productUnits.containsKey(key)) {
                 productUnit = productUnits.get(key);
             } else if (!invalidSheetProducts.contains(key)) {
                 // Nunca se crea solo: un "tomates" de más arruina el food cost en silencio (la misma regla que la IA).
-                error(Sheet.RECIPES, r.row(), "ingredient", ErrorCode.IMPORT_UNKNOWN_INGREDIENT, name);
+                error(sheet, row, "ingredient", ErrorCode.IMPORT_UNKNOWN_INGREDIENT, name);
             }
-            if (r.quantity() == null) {
-                error(Sheet.RECIPES, r.row(), "quantity", ErrorCode.IMPORT_REQUIRED_FIELD, null);
-            } else if (r.quantity().signum() <= 0 || r.quantity().compareTo(MAX_QUANTITY) >= 0) {
-                error(Sheet.RECIPES, r.row(), "quantity", ErrorCode.IMPORT_INVALID_VALUE, r.quantity());
+            if (quantity == null) {
+                error(sheet, row, "quantity", ErrorCode.IMPORT_REQUIRED_FIELD, null);
+            } else if (quantity.signum() <= 0 || quantity.compareTo(MAX_QUANTITY) >= 0) {
+                error(sheet, row, "quantity", ErrorCode.IMPORT_INVALID_VALUE, quantity);
             }
-            Unit unit = unit(Sheet.RECIPES, r.row(), r.unit());
+            Unit unit = unit(sheet, row, rawUnit);
             if (unit != null && productUnit != null && !convertible(unit.getId(), productUnit)) {
-                error(Sheet.RECIPES, r.row(), "unit", ErrorCode.IMPORT_INCOMPATIBLE_UNIT, r.unit());
+                error(sheet, row, "unit", ErrorCode.IMPORT_INCOMPATIBLE_UNIT, rawUnit);
             }
             return errors.size() > before || productUnit == null ? null
-                    : new PlannedIngredient(key, unit.getId(), r.quantity());
+                    : new PlannedIngredient(key, unit.getId(), quantity);
+        }
+
+        /**
+         * Las preparaciones de la planilla. Una que no existe en el catálogo ni en la hoja de insumos se crea como insumo,
+         * con la unidad del rendimiento: se está definiendo ahí mismo, no es un ingrediente adivinado. Sus ingredientes,
+         * igual que los de un plato, tienen que existir (o venir en la planilla, también como otra preparación).
+         */
+        void addPreparations(List<PreparationRow> rows) {
+            Map<String, List<PreparationRow>> byPrep = new LinkedHashMap<>();
+            for (PreparationRow r : rows) {
+                String prep = clean(r.preparation());
+                if (prep == null) {
+                    error(Sheet.PREPARATIONS, r.row(), "preparation", ErrorCode.IMPORT_REQUIRED_FIELD, null);
+                } else {
+                    byPrep.computeIfAbsent(key(prep), k -> new ArrayList<>()).add(r);
+                }
+            }
+
+            // 1. Cada preparación como insumo, con su unidad y su rendimiento: las demás y los platos ya la pueden usar.
+            Map<String, BigDecimal> yields = new LinkedHashMap<>();
+            byPrep.forEach((prepKey, prepRows) -> {
+                int before = errors.size();
+                PreparationRow first = prepRows.getFirst();
+                String name = clean(first.preparation());
+                if (ambiguousProducts.contains(prepKey)) {
+                    error(Sheet.PREPARATIONS, first.row(), "preparation", ErrorCode.IMPORT_AMBIGUOUS_NAME, name);
+                } else if (!productUnits.containsKey(prepKey) && name.length() > MAX_NAME) {
+                    error(Sheet.PREPARATIONS, first.row(), "preparation", ErrorCode.IMPORT_INVALID_VALUE, name);
+                }
+                // El rendimiento y su unidad: los de la primera fila que los traiga, como el precio de un plato.
+                PreparationRow withYield = prepRows.stream().filter(r -> r.yieldQuantity() != null).findFirst().orElse(null);
+                BigDecimal yield = withYield == null ? null : withYield.yieldQuantity();
+                if (yield == null) {
+                    error(Sheet.PREPARATIONS, first.row(), "yieldQuantity", ErrorCode.IMPORT_REQUIRED_FIELD, null);
+                } else if (yield.signum() <= 0 || yield.compareTo(MAX_QUANTITY) >= 0) {
+                    error(Sheet.PREPARATIONS, withYield.row(), "yieldQuantity", ErrorCode.IMPORT_INVALID_VALUE, yield);
+                }
+                PreparationRow unitRow = withYield != null && clean(withYield.yieldUnit()) != null ? withYield
+                        : prepRows.stream().filter(r -> clean(r.yieldUnit()) != null).findFirst().orElse(first);
+                UUID productUnit = productUnits.get(prepKey);
+                Unit yieldUnit = null;
+                if (clean(unitRow.yieldUnit()) == null) {
+                    // Si el insumo ya existe, el rendimiento va en su unidad; si es nuevo, sin unidad no hay insumo.
+                    if (productUnit == null) {
+                        error(Sheet.PREPARATIONS, unitRow.row(), "yieldUnit", ErrorCode.IMPORT_REQUIRED_FIELD, null);
+                    }
+                } else {
+                    yieldUnit = units.get(key(clean(unitRow.yieldUnit())));
+                    if (yieldUnit == null) {
+                        error(Sheet.PREPARATIONS, unitRow.row(), "yieldUnit", ErrorCode.IMPORT_UNKNOWN_UNIT,
+                                unitRow.yieldUnit());
+                    } else if (productUnit != null && !convertible(yieldUnit.getId(), productUnit)) {
+                        error(Sheet.PREPARATIONS, unitRow.row(), "yieldUnit", ErrorCode.IMPORT_INCOMPATIBLE_UNIT,
+                                unitRow.yieldUnit());
+                    }
+                }
+                if (errors.size() > before) {
+                    invalidSheetProducts.add(prepKey);
+                    return;
+                }
+                if (productUnit == null) {
+                    newProducts.put(prepKey, new PlannedProduct(name, yieldUnit.getId(), null, null, null, null));
+                    productUnits.put(prepKey, yieldUnit.getId());
+                    productUnit = yieldUnit.getId();
+                }
+                yields.put(prepKey, yieldUnit == null ? yield
+                        : unitConversionService.convert(yield, yieldUnit.getId(), productUnit).setScale(3, RoundingMode.HALF_UP));
+            });
+
+            // 2. Sus ingredientes.
+            Map<String, List<PlannedIngredient>> recipes = new LinkedHashMap<>();
+            yields.keySet().forEach(prepKey -> {
+                int before = errors.size();
+                Set<String> seen = new HashSet<>();
+                List<PlannedIngredient> items = new ArrayList<>();
+                for (PreparationRow r : byPrep.get(prepKey)) {
+                    if (r.ingredient() != null && key(r.ingredient()).equals(prepKey)) {
+                        error(Sheet.PREPARATIONS, r.row(), "ingredient", ErrorCode.IMPORT_PREPARATION_CYCLE,
+                                clean(r.ingredient()));
+                        continue;
+                    }
+                    PlannedIngredient item = ingredient(Sheet.PREPARATIONS, r.row(), r.ingredient(), r.quantity(),
+                            r.unit(), seen);
+                    if (item != null) items.add(item);
+                }
+                if (errors.size() > before) {
+                    invalidSheetProducts.add(prepKey);
+                } else {
+                    recipes.put(prepKey, items);
+                }
+            });
+
+            // 3. Ningún ciclo, ni dentro de la planilla ni con las preparaciones que ya están en el catálogo.
+            Map<String, Collection<String>> graph = new HashMap<>();
+            recipes.forEach((k, items) -> graph.put(k, items.stream().map(PlannedIngredient::productKey).toList()));
+            for (String prepKey : List.copyOf(recipes.keySet())) {
+                Optional<List<String>> cycle = PreparationCycles.findCycle(prepKey, k -> graph.computeIfAbsent(k,
+                        this::catalogPreparationIngredients));
+                if (cycle.isPresent()) {
+                    error(Sheet.PREPARATIONS, byPrep.get(prepKey).getFirst().row(), "ingredient",
+                            ErrorCode.IMPORT_PREPARATION_CYCLE, cycle.get().stream()
+                                    .map(k -> productNames.getOrDefault(k, newProducts.containsKey(k)
+                                            ? newProducts.get(k).name() : k))
+                                    .collect(Collectors.joining(" → ")));
+                    invalidSheetProducts.add(prepKey);
+                    recipes.remove(prepKey);
+                }
+            }
+
+            // 4. Qué le pasa a cada una: nueva, igual, a pisar o salteada (pisar se pregunta, como con los platos).
+            recipes.forEach((prepKey, items) -> {
+                UUID existingId = productIds.get(prepKey);
+                Recipe saved = existingId == null ? null
+                        : recipeRepository.findByProductIdAndRestaurantId(existingId, restaurantId).orElse(null);
+                BigDecimal yield = yields.get(prepKey);
+                RecipeChange change = saved == null ? RecipeChange.CREATE
+                        : saved.getYieldQuantity().compareTo(yield) == 0 && sameItems(saved, items) ? RecipeChange.UNCHANGED
+                        : replacePreparationsOf.contains(existingId) ? RecipeChange.REPLACE : RecipeChange.SKIP;
+                String name = existingId != null ? productNames.get(prepKey) : newProducts.get(prepKey).name();
+                preparations.add(new PlannedPreparation(prepKey, name, byPrep.get(prepKey).getFirst().row(), existingId,
+                        yield, change, items));
+            });
+        }
+
+        /** Los ingredientes de una preparación del catálogo (por clave), para el control de ciclos. */
+        private Collection<String> catalogPreparationIngredients(String productKey) {
+            UUID id = productIds.get(productKey);
+            if (id == null) return List.of();
+            return recipeRepository.findByProductIdAndRestaurantId(id, restaurantId)
+                    .map(r -> r.getItems().stream().filter(i -> i.getProductName() != null)
+                            .map(i -> key(i.getProductName())).toList())
+                    .orElse(List.of());
         }
 
         private Unit unit(Sheet sheet, int row, String raw) {
@@ -405,7 +584,18 @@ public class CatalogImportService {
                     dishes.stream().filter(d -> d.change() == RecipeChange.REPLACE || d.change() == RecipeChange.SKIP)
                             .map(d -> new RecipeReplacement(d.existingId(), d.name(), d.row()))
                             .sorted(Comparator.comparingInt(RecipeReplacement::row)).toList(),
+                    countPreparations(RecipeChange.CREATE),
+                    countPreparations(RecipeChange.REPLACE),
+                    countPreparations(RecipeChange.SKIP),
+                    countPreparations(RecipeChange.UNCHANGED),
+                    preparations.stream().filter(x -> x.change() == RecipeChange.REPLACE || x.change() == RecipeChange.SKIP)
+                            .map(x -> new PreparationReplacement(x.existingId(), x.name(), x.row()))
+                            .sorted(Comparator.comparingInt(PreparationReplacement::row)).toList(),
                     sorted);
+        }
+
+        private int countPreparations(RecipeChange change) {
+            return (int) preparations.stream().filter(x -> x.change() == change).count();
         }
 
         private int count(RecipeChange change) {
@@ -429,7 +619,17 @@ public class CatalogImportService {
     public record RecipeRow(int row, String menuItem, BigDecimal price, String section,
                             String ingredient, BigDecimal quantity, String unit) {}
 
-    public enum Sheet { PRODUCTS, RECIPES }
+    public enum Sheet { PRODUCTS, RECIPES, PREPARATIONS }
+
+    /**
+     * Una fila por ingrediente de una preparación; {@code quantity} es para la tanda que rinde {@code yieldQuantity}
+     * {@code yieldUnit} (los de la primera fila de la preparación que los traiga).
+     */
+    public record PreparationRow(int row, String preparation, BigDecimal yieldQuantity, String yieldUnit,
+                                 String ingredient, BigDecimal quantity, String unit) {}
+
+    /** Una preparación que ya tiene receta y la de la planilla la cambiaría. {@code row}: su primera fila. */
+    public record PreparationReplacement(UUID productId, String preparation, int row) {}
 
     /** @param field el campo de la fila (name, unit, quantity…); {@code value} es lo que vino, null si faltaba */
     public record RowError(Sheet sheet, int row, String field, ErrorCode errorCode, String value) {}
@@ -444,10 +644,12 @@ public class CatalogImportService {
     public record Report(boolean saved, int productsCreated, int productsExisting, int categoriesCreated,
                          int sectionsCreated, int menuItemsCreated, int recipesCreated, int recipesReplaced,
                          int recipesSkipped, int recipesUnchanged, List<RecipeReplacement> recipesToReplace,
+                         int preparationsCreated, int preparationsReplaced, int preparationsSkipped,
+                         int preparationsUnchanged, List<PreparationReplacement> preparationsToReplace,
                          List<RowError> errors) {
         boolean changedAnything() {
             return productsCreated + categoriesCreated + sectionsCreated + menuItemsCreated
-                    + recipesCreated + recipesReplaced > 0;
+                    + recipesCreated + recipesReplaced + preparationsCreated + preparationsReplaced > 0;
         }
     }
 
@@ -455,6 +657,10 @@ public class CatalogImportService {
                                   BigDecimal minStock, BigDecimal yieldPercentage, BigDecimal ivaPercentage) {}
 
     private record PlannedIngredient(String productKey, UUID unitId, BigDecimal quantity) {}
+
+    /** {@code yieldQuantity} en la unidad del insumo. */
+    private record PlannedPreparation(String key, String name, int row, UUID existingId, BigDecimal yieldQuantity,
+                                      RecipeChange change, List<PlannedIngredient> items) {}
 
     /** CREATE: plato nuevo o sin receta. REPLACE / SKIP: tiene otra receta y se pisa o no. UNCHANGED: ya es esa. */
     private enum RecipeChange { CREATE, REPLACE, SKIP, UNCHANGED }
