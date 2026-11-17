@@ -4,6 +4,7 @@ import com.chefcontrol.application.exception.AppException;
 import com.chefcontrol.application.exception.ErrorCode;
 import com.chefcontrol.application.port.AIService.CatalogSpreadsheetRequest;
 import com.chefcontrol.application.port.AIService.IngredientMatch;
+import com.chefcontrol.application.service.CatalogImportService.PreparationRow;
 import com.chefcontrol.application.service.CatalogImportService.RecipeRow;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -51,6 +52,25 @@ class CatalogSpreadsheetPromptTest {
     }
 
     /** El ref es un número global del front, no la fila del Excel: citarlo en un aviso manda al usuario a otra fila. */
+    @Test
+    void preparationsAreFlattenedWithTheYieldOnTheFirstRowAndTheirMatchesApply() throws Exception {
+        var result = CatalogSpreadsheetPrompt.parse(mapper.readTree("""
+                {"products":[],"dishes":[],"proposedProducts":[],"warnings":[],
+                 "preparations":[{"preparation":"Mayonesa base","yieldQuantity":1.2,"yieldUnit":"kg","ingredients":[
+                   {"row":7,"ingredient":"Aceites","quantity":0.8,"unit":"l","catalogName":"Aceite"},
+                   {"row":8,"ingredient":"Huevo","quantity":4,"unit":"u"}]}]}
+                """));
+
+        assertEquals(List.of(
+                new PreparationRow(7, "Mayonesa base", new BigDecimal("1.2"), "kg", "Aceites", new BigDecimal("0.8"), "l"),
+                new PreparationRow(8, "Mayonesa base", null, null, "Huevo", new BigDecimal("4"), "u")),
+                result.preparations());
+        assertEquals(List.of(new IngredientMatch(7, "Aceites", "Aceite")), result.ingredientMatches());
+        assertTrue(CatalogSpreadsheetPrompt.jsonSchema().toString().contains("preparations"));
+        assertTrue(CatalogSpreadsheetPrompt.systemPrompt(new CatalogSpreadsheetRequest(List.of(), List.of(), List.of(),
+                List.of(), List.of()), "").contains("Una preparación nunca va a products ni a proposedProducts"));
+    }
+
     @Test
     void warningsNeverCiteRowsOrRefs() {
         String prompt = CatalogSpreadsheetPrompt.systemPrompt(

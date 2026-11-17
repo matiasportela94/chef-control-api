@@ -25,6 +25,7 @@ public interface StockBatchRepository {
     Optional<StockBatch> findByPurchaseItemId(UUID purchaseItemId);
 
     void zeroQuantityRemainingByPurchaseItemId(UUID purchaseItemId);
+    void zeroQuantityRemainingByProductionId(UUID productionId);
 
     /**
      * Fecha de vencimiento más próxima por producto, mirando solo lotes con stock remanente.

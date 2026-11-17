@@ -1,5 +1,6 @@
 package com.chefcontrol.api.ai;
 
+import com.chefcontrol.api.catalog.dto.CatalogImportRequest.PreparationImportRow;
 import com.chefcontrol.api.catalog.dto.CatalogImportRequest.ProductImportRow;
 import com.chefcontrol.api.catalog.dto.CatalogImportRequest.RecipeImportRow;
 import com.chefcontrol.api.plan.RequiresFeature;
@@ -71,6 +72,8 @@ public class AIController {
                 .toList());
         return ResponseEntity.ok(new InterpretCatalogResult(
                 r.products().stream().map(AIController::toImportRow).toList(),
+                r.preparations().stream().map(x -> new PreparationImportRow(x.row(), x.preparation(), x.yieldQuantity(),
+                        x.yieldUnit(), x.ingredient(), x.quantity(), x.unit())).toList(),
                 r.recipes().stream().map(x -> new RecipeImportRow(
                         x.row(), x.menuItem(), x.price(), x.section(), x.ingredient(), x.quantity(), x.unit())).toList(),
                 r.proposedProducts().stream().map(AIController::toImportRow).toList(),
@@ -121,6 +124,7 @@ public class AIController {
      * {@code proposedProducts}: insumos que arma la IA porque una receta los usa y no existen; {@code row} = la primera
      * fila de receta que los usa. El front los muestra como propuestos y los suma a products para la vista previa.
      */
-    record InterpretCatalogResult(List<ProductImportRow> products, List<RecipeImportRow> recipes,
+    record InterpretCatalogResult(List<ProductImportRow> products, List<PreparationImportRow> preparations,
+                                  List<RecipeImportRow> recipes,
                                   List<ProductImportRow> proposedProducts, List<String> warnings) {}
 }

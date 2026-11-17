@@ -19,4 +19,9 @@ public interface RecipeVersionRepository {
 
     /** Las versiones que arrancaron dentro del período, para saber cuándo cambió la receta. */
     List<RecipeVersion> findByMenuItemIdBetween(UUID menuItemId, Instant from, Instant to);
+
+    // Las mismas tres, para la receta de una preparación.
+    Optional<RecipeVersion> findByProductIdAt(UUID productId, Instant at);
+    Optional<RecipeVersion> findLatestByProductId(UUID productId);
+    List<RecipeVersion> findByProductIdBetween(UUID productId, Instant from, Instant to);
 }

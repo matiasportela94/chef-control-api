@@ -11,4 +11,12 @@ public interface JpaRecipeRepository extends JpaRepository<RecipeJpaEntity, UUID
 
     @EntityGraph(attributePaths = {"menuItem", "items", "items.product", "items.unit"})
     Optional<RecipeJpaEntity> findByMenuItemIdAndRestaurantId(UUID menuItemId, UUID restaurantId);
+
+    @EntityGraph(attributePaths = {"items", "items.product", "items.unit"})
+    Optional<RecipeJpaEntity> findByProductIdAndRestaurantId(UUID productId, UUID restaurantId);
+
+    @org.springframework.data.jpa.repository.Query(
+            "SELECT r.productId FROM RecipeJpaEntity r WHERE r.restaurantId = :restaurantId AND r.productId IS NOT NULL")
+    java.util.Set<UUID> findPreparationProductIds(
+            @org.springframework.data.repository.query.Param("restaurantId") UUID restaurantId);
 }

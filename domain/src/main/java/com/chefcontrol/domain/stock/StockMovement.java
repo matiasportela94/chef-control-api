@@ -106,6 +106,70 @@ public class StockMovement {
                 .build();
     }
 
+    /**
+     * Un ingrediente consumido al producir una preparación. Cuelga de la producción: revertirla lo devuelve, y no es
+     * costo de lo vendido (su costo pasa al lote de la preparación, que se cuenta cuando se vende).
+     */
+    public static StockMovement forProductionUse(UUID restaurantId, UUID productId,
+                                                 BigDecimal quantity, UUID unitId, BigDecimal costPerUnit,
+                                                 BigDecimal stockBefore, UUID productionId, UUID userId) {
+        return out(restaurantId, productId, MovementType.PRODUCTION, quantity, unitId, costPerUnit, stockBefore,
+                productionId, "production", userId);
+    }
+
+    /** La merma estándar de un ingrediente al producir: como la de la venta, pero colgada de la producción. */
+    public static StockMovement forProductionYieldWaste(UUID restaurantId, UUID productId,
+                                                        BigDecimal quantity, UUID unitId, BigDecimal costPerUnit,
+                                                        BigDecimal stockBefore, UUID productionId, UUID userId) {
+        return out(restaurantId, productId, MovementType.WASTE, quantity, unitId, costPerUnit, stockBefore,
+                productionId, "production", userId);
+    }
+
+    /** Lo producido: entra al stock de la preparación (y su lote) al costo de lo consumido. */
+    public static StockMovement forProductionOutput(UUID restaurantId, UUID productId,
+                                                    BigDecimal quantity, UUID unitId, BigDecimal costPerUnit,
+                                                    BigDecimal stockBefore, UUID productionId, UUID userId) {
+        BigDecimal qty = r3(quantity);
+        BigDecimal before = r3(stockBefore);
+        return StockMovement.builder()
+                .restaurantId(restaurantId)
+                .productId(productId)
+                .type(MovementType.PRODUCTION)
+                .direction(MovementDirection.IN)
+                .quantity(qty)
+                .unitId(unitId)
+                .costPerUnit(costPerUnit)
+                .stockBefore(before)
+                .stockAfter(r3(before.add(qty)))
+                .referenceId(productionId)
+                .referenceType("production")
+                .userId(userId)
+                .source(MovementSource.DASHBOARD)
+                .build();
+    }
+
+    private static StockMovement out(UUID restaurantId, UUID productId, MovementType type, BigDecimal quantity,
+                                     UUID unitId, BigDecimal costPerUnit, BigDecimal stockBefore, UUID referenceId,
+                                     String referenceType, UUID userId) {
+        BigDecimal qty = r3(quantity);
+        BigDecimal before = r3(stockBefore);
+        return StockMovement.builder()
+                .restaurantId(restaurantId)
+                .productId(productId)
+                .type(type)
+                .direction(MovementDirection.OUT)
+                .quantity(qty)
+                .unitId(unitId)
+                .costPerUnit(costPerUnit)
+                .stockBefore(before)
+                .stockAfter(r3(before.subtract(qty)))
+                .referenceId(referenceId)
+                .referenceType(referenceType)
+                .userId(userId)
+                .source(MovementSource.DASHBOARD)
+                .build();
+    }
+
     public static StockMovement forWaste(UUID restaurantId, UUID productId,
                                          BigDecimal quantity, UUID unitId, BigDecimal costPerUnit,
                                          BigDecimal stockBefore, UUID referenceId, UUID userId) {

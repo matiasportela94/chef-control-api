@@ -39,13 +39,13 @@ class CatalogImportControllerTest {
     @InjectMocks CatalogImportController controller;
 
     private static final CatalogImportRequest PRODUCTS_ONLY = new CatalogImportRequest(
-            List.of(new ProductImportRow(2, "Papa", "kg", null, null, null, null)), null, null);
+            List.of(new ProductImportRow(2, "Papa", "kg", null, null, null, null)), null, null, null, null);
     private static final CatalogImportRequest WITH_RECIPES = new CatalogImportRequest(null,
-            List.of(new RecipeImportRow(2, "Ñoquis", null, null, "papa", BigDecimal.ONE, "kg")), null);
+            List.of(new RecipeImportRow(2, "Ñoquis", null, null, "papa", BigDecimal.ONE, "kg")), null, null, null);
 
     @Test
     void productsOnlyNeedNeitherMenuPermissionsNorThePlan() {
-        when(catalogImportService.importCatalog(anyList(), anyList(), eq(true), anySet(), anySet())).thenReturn(emptyReport());
+        when(catalogImportService.importCatalog(anyList(), anyList(), anyList(), eq(true), anySet(), anySet(), anySet())).thenReturn(emptyReport());
 
         controller.importCatalog(PRODUCTS_ONLY, true, auth("PERM_PRODUCTS_CREATE"));
 
@@ -75,7 +75,7 @@ class CatalogImportControllerTest {
 
     @Test
     void recipesWithPermissionsAndPlanAreImported() {
-        when(catalogImportService.importCatalog(anyList(), anyList(), eq(false), anySet(), anySet())).thenReturn(emptyReport());
+        when(catalogImportService.importCatalog(anyList(), anyList(), anyList(), eq(false), anySet(), anySet(), anySet())).thenReturn(emptyReport());
 
         var response = controller.importCatalog(WITH_RECIPES, false,
                 auth("PERM_PRODUCTS_CREATE", "PERM_MENU_CREATE", "PERM_MENU_UPDATE"));
@@ -86,23 +86,23 @@ class CatalogImportControllerTest {
 
     @Test
     void thePermissionsOfTheSessionReachTheService() {
-        when(catalogImportService.importCatalog(anyList(), anyList(), eq(true), anySet(), anySet())).thenReturn(emptyReport());
+        when(catalogImportService.importCatalog(anyList(), anyList(), anyList(), eq(true), anySet(), anySet(), anySet())).thenReturn(emptyReport());
 
         controller.importCatalog(PRODUCTS_ONLY, true, auth("PERM_PRODUCTS_CREATE", "PERM_CATEGORIES_CREATE", "OTHER"));
 
-        verify(catalogImportService).importCatalog(anyList(), anyList(), eq(true),
-                eq(EnumSet.of(Permission.PRODUCTS_CREATE, Permission.CATEGORIES_CREATE)), eq(Set.of()));
+        verify(catalogImportService).importCatalog(anyList(), anyList(), anyList(), eq(true),
+                eq(EnumSet.of(Permission.PRODUCTS_CREATE, Permission.CATEGORIES_CREATE)), eq(Set.of()), eq(Set.of()));
     }
 
     @Test
     void theRecipesToReplaceReachTheService() {
         UUID dish = UUID.randomUUID();
-        when(catalogImportService.importCatalog(anyList(), anyList(), eq(false), anySet(), anySet())).thenReturn(emptyReport());
+        when(catalogImportService.importCatalog(anyList(), anyList(), anyList(), eq(false), anySet(), anySet(), anySet())).thenReturn(emptyReport());
 
-        controller.importCatalog(new CatalogImportRequest(null, WITH_RECIPES.recipes(), List.of(dish, dish)), false,
+        controller.importCatalog(new CatalogImportRequest(null, WITH_RECIPES.recipes(), List.of(dish, dish), null, null), false,
                 auth("PERM_PRODUCTS_CREATE", "PERM_MENU_CREATE", "PERM_MENU_UPDATE"));
 
-        verify(catalogImportService).importCatalog(anyList(), anyList(), eq(false), anySet(), eq(Set.of(dish)));
+        verify(catalogImportService).importCatalog(anyList(), anyList(), anyList(), eq(false), anySet(), eq(Set.of(dish)), anySet());
     }
 
     private static Authentication auth(String... authorities) {
@@ -111,6 +111,6 @@ class CatalogImportControllerTest {
     }
 
     private static Report emptyReport() {
-        return new Report(false, 0, 0, 0, 0, 0, 0, 0, 0, 0, List.of(), List.of());
+        return new Report(false, 0, 0, 0, 0, 0, 0, 0, 0, 0, List.of(), 0, 0, 0, 0, List.of(), List.of());
     }
 }

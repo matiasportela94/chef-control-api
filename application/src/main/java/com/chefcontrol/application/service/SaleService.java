@@ -7,7 +7,6 @@ import com.chefcontrol.application.port.CurrentUserProvider;
 import com.chefcontrol.domain.audit.AuditAction;
 import com.chefcontrol.domain.context.TenantContext;
 import com.chefcontrol.domain.menu.MenuItem;
-import com.chefcontrol.domain.product.Product;
 import com.chefcontrol.domain.menu.RecipeItem;
 import com.chefcontrol.domain.repository.*;
 import com.chefcontrol.domain.restaurant.Restaurant;
@@ -27,9 +26,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -48,9 +47,9 @@ public class SaleService {
     private final AlertEvaluationService alertEvaluationService;
     private final AuditService auditService;
     private final CurrentUserProvider currentUserProvider;
-    private final ProductRepository productRepository;
-    private final UnitConversionService unitConversionService;
     private final RestaurantRepository restaurantRepository;
+    private final StockConsumptionService stockConsumptionService;
+    private final ProductionService productionService;
 
     public Page<Sale> listSales(PageRequest pageRequest) {
         return saleRepository.findByRestaurantIdOrderBySoldAtDesc(TenantContext.require(), pageRequest);
@@ -113,6 +112,10 @@ public class SaleService {
 
                 alertEvaluationService.evaluate(original.getProductId(), restaurantId, reversal.getStockAfter());
             }
+            // Invariante: revertir la venta revierte todo lo que cuelga del sale_item — sus movimientos y, DESPUÉS, las
+            // producciones automáticas que hizo (el consumo de la preparación vuelve a su lote y recién ahí el lote
+            // queda en cero). Al revés, el lote quedaría con lo que la venta devolvió.
+            productionService.reverseAutomaticProductionsOf(item.getId(), userId);
         }
 
         sale.setStatus(SaleStatus.REVERSED);
@@ -158,7 +161,7 @@ public class SaleService {
         for (int i = 0; i < lines.size(); i++) {
             SaleItem saleItem = saleItemRepository.save(lines.get(i).toBuilder().saleId(sale.getId()).build());
             applyRecipeStockMovements(resolvedItems.get(i).menuItem(), resolvedItems.get(i).cmd().quantity(),
-                    restaurantId, userId, saleItem.getId());
+                    restaurantId, userId, saleItem.getId(), soldAt);
         }
 
         auditService.log(AuditAction.SALE_RECORDED, "Sale", sale.getId(),
@@ -194,80 +197,35 @@ public class SaleService {
         return amounts.reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
-    private void applyRecipeStockMovements(MenuItem menuItem, int quantity,
-                                           UUID restaurantId, UUID userId, UUID saleItemId) {
-        recipeRepository.findByMenuItemIdAndRestaurantId(menuItem.getId(), restaurantId)
-                .ifPresent(recipe -> {
-                    for (var ingredient : recipe.calculateIngredientsForQuantity(quantity)) {
-                        Product product = productRepository
-                                .findByIdAndRestaurantId(ingredient.productId(), restaurantId)
-                                .orElse(null);
-                        UUID defaultUnitId = product != null ? product.getDefaultUnitId() : ingredient.unitId();
-
-                        // Se redondea el neto a la precisión con la que se va a guardar ANTES de
-                        // restar, para que SALE + WASTE dé exactamente el bruto y no quede un
-                        // resto de medio gramo colgado en ningún lado.
-                        BigDecimal netQuantity = unitConversionService.convert(
-                                ingredient.quantity(), ingredient.unitId(), defaultUnitId)
-                                .setScale(3, RoundingMode.HALF_UP);
-                        BigDecimal grossQuantity = (product != null
-                                ? product.grossQuantityFor(netQuantity)
-                                : netQuantity).setScale(3, RoundingMode.HALF_UP);
-
-                        // El costo real de lo consumido: lo que el bruto va a tomar de los lotes FIFO, a lo que
-                        // costó cada uno, y lo que no cubran, a la última compra. Uno solo para el SALE y la merma
-                        // estándar: salen del mismo consumo, y partirlo por lote haría arbitrario cuánto es costo
-                        // del plato y cuánto merma.
-                        BigDecimal unitCost = stockBatchService.fifoUnitCost(restaurantId, ingredient.productId(),
-                                grossQuantity, stockMovementRepository.findLastPurchaseCostPerUnit(
-                                        ingredient.productId(), restaurantId));
-
-                        // El stock se descuenta por el bruto, pero partido en dos movimientos: lo que
-                        // llega al plato como SALE y la merma de limpieza como WASTE, para que quede
-                        // medible en vez de escondida dentro del consumo.
-                        // Con rendimiento > 100 (el arroz absorbe agua) el bruto es MENOR que el neto:
-                        // no hay merma, y el SALE va por el bruto.
-                        BigDecimal saleQuantity = netQuantity.min(grossQuantity);
-                        BigDecimal yieldWaste = grossQuantity.subtract(netQuantity);
-
-                        StockMovement movement = recordConsumption(StockMovement.forSale(
-                                restaurantId, ingredient.productId(), saleQuantity, defaultUnitId, unitCost,
-                                stockMovementRepository.getCurrentStock(ingredient.productId(), restaurantId),
-                                saleItemId, userId), ingredient.productId(), restaurantId);
-
-                        if (yieldWaste.compareTo(BigDecimal.ZERO) > 0) {
-                            movement = recordConsumption(StockMovement.forStandardYieldWaste(
-                                    restaurantId, ingredient.productId(), yieldWaste, defaultUnitId, unitCost,
-                                    stockMovementRepository.getCurrentStock(ingredient.productId(), restaurantId),
-                                    saleItemId, userId), ingredient.productId(), restaurantId);
-                        }
-
-                        alertEvaluationService.evaluate(ingredient.productId(), restaurantId, movement.getStockAfter());
-                    }
-                });
+    /**
+     * Descuenta cada ingrediente de la receta por la cantidad vendida. La regla (bruto según el rendimiento, consumo +
+     * merma estándar, costo FIFO, y producir lo que falte de una preparación) vive en {@link StockConsumptionService}.
+     */
+    private void applyRecipeStockMovements(MenuItem menuItem, int quantity, UUID restaurantId, UUID userId,
+                                           UUID saleItemId, Instant soldAt) {
+        recipeRepository.findByMenuItemIdAndRestaurantId(menuItem.getId(), restaurantId).ifPresent(recipe -> {
+            var consumer = StockConsumptionService.Consumer.forSale(restaurantId, userId, saleItemId, soldAt);
+            for (var ingredient : recipe.calculateIngredientsForQuantity(quantity)) {
+                stockConsumptionService.consume(consumer, ingredient.productId(), ingredient.quantity(),
+                        ingredient.unitId(), new HashSet<>());
+            }
+        });
     }
 
-    /** Graba el movimiento y consume los lotes FIFO por su cantidad. Devuelve el movimiento con id. */
-    private StockMovement recordConsumption(StockMovement movement, UUID productId, UUID restaurantId) {
-        StockMovement saved = stockMovementRepository.save(movement);
-        stockBatchService.consumeFifo(restaurantId, productId, saved.getQuantity(), saved.getId());
-        return saved;
-    }
-
+    /**
+     * Sin ninguna compra no revertida de un insumo no hay con qué costear lo que los lotes no cubran. De una
+     * preparación, los que hacen falta son los de su receta (recursivo): la venta la puede tener que producir.
+     */
     private void validateIngredientCosts(List<ResolvedItem> resolvedItems, UUID restaurantId) {
         List<String> missing = new ArrayList<>();
         for (ResolvedItem resolved : resolvedItems) {
             recipeRepository.findByMenuItemIdAndRestaurantId(resolved.menuItem().getId(), restaurantId)
-                    .ifPresent(recipe -> recipe.getItems().stream()
-                            // Sin ninguna compra no revertida no hay con qué costear lo que los lotes no cubran.
-                            .filter(item -> stockMovementRepository
-                                    .findLastPurchaseCostPerUnit(item.getProductId(), restaurantId) == null)
-                            .map(item -> item.getProductName())
-                            .forEach(missing::add));
+                    .ifPresent(recipe -> stockConsumptionService.collectMissingPurchaseCosts(
+                            recipe.getItems(), restaurantId, missing));
         }
         if (!missing.isEmpty()) {
             throw AppException.badRequest(ErrorCode.MISSING_PURCHASE_COST,
-                    "Sin historial de compras para: " + String.join(", ", missing));
+                    "Sin historial de compras para: " + String.join(", ", missing.stream().distinct().toList()));
         }
     }
 

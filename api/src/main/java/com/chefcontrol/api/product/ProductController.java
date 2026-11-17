@@ -6,6 +6,12 @@ import com.chefcontrol.api.product.dto.CreateProductRequest;
 import com.chefcontrol.api.product.dto.ProductResponse;
 import com.chefcontrol.api.foodcost.dto.ProductCostEvolutionResponse;
 import com.chefcontrol.api.product.dto.UpdateProductRequest;
+import com.chefcontrol.api.product.dto.PreparationCostResponse;
+import com.chefcontrol.api.product.dto.PreparationRecipeResponse;
+import com.chefcontrol.api.product.dto.SetPreparationRecipeRequest;
+import com.chefcontrol.application.service.PreparationService;
+import com.chefcontrol.application.service.PreparationService.PreparationItemCommand;
+import com.chefcontrol.application.service.PreparationService.SetPreparationRecipeCommand;
 import com.chefcontrol.api.shared.PagedResponse;
 import com.chefcontrol.application.service.ProductService;
 import com.chefcontrol.application.service.FoodCostService;
@@ -36,6 +42,7 @@ public class ProductController {
     private final StockService stockService;
     private final FoodCostService foodCostService;
     private final StockBatchService stockBatchService;
+    private final PreparationService preparationService;
 
     @GetMapping
     @PreAuthorize("hasAuthority('PERM_PRODUCTS_VIEW')")
@@ -45,16 +52,19 @@ public class ProductController {
         var products  = productService.listProducts(PageRequest.of(page, size));
         var stockMap  = stockService.getAllCurrentStocks();
         var expiryMap = stockBatchService.getNextExpirationDates();
+        var preparations = preparationService.preparationIds();
         return ResponseEntity.ok(PagedResponse.from(
                 products, p -> ProductResponse.from(p,
                         stockMap.getOrDefault(p.getId(), BigDecimal.ZERO),
-                        expiryMap.get(p.getId()))));
+                        expiryMap.get(p.getId()),
+                        preparations.contains(p.getId()))));
     }
 
     @GetMapping("/{id}")
     @PreAuthorize("hasAuthority('PERM_PRODUCTS_VIEW')")
     public ResponseEntity<ProductResponse> getProduct(@PathVariable UUID id) {
-        return ResponseEntity.ok(ProductResponse.from(productService.getProduct(id)));
+        return ResponseEntity.ok(ProductResponse.from(productService.getProduct(id),
+                preparationService.preparationIds().contains(id)));
     }
 
     @PostMapping
@@ -70,7 +80,7 @@ public class ProductController {
                 request.yieldPercentage(),
                 request.ivaPercentage());
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ProductResponse.from(productService.createProduct(command)));
+                .body(ProductResponse.from(productService.createProduct(command), false));
     }
 
     @PutMapping("/{id}")
@@ -87,7 +97,8 @@ public class ProductController {
                 request.maxStock(),
                 request.yieldPercentage(),
                 request.ivaPercentage());
-        return ResponseEntity.ok(ProductResponse.from(productService.updateProduct(id, command)));
+        return ResponseEntity.ok(ProductResponse.from(productService.updateProduct(id, command),
+                preparationService.preparationIds().contains(id)));
     }
 
     @DeleteMapping("/{id}")
@@ -103,6 +114,48 @@ public class ProductController {
         productService.getProduct(id); // validates product belongs to tenant
         BigDecimal stock = stockService.getCurrentStock(id);
         return ResponseEntity.ok(Map.of("productId", id, "currentStock", stock));
+    }
+
+    /** La receta de una preparación: qué lleva una tanda y cuánto rinde. 404 si el insumo no es preparación. */
+    @GetMapping("/{id}/recipe")
+    @RequiresFeature(Feature.RECIPES_AND_FOOD_COST)
+    @PreAuthorize("hasAuthority('PERM_PRODUCTS_VIEW')")
+    public ResponseEntity<PreparationRecipeResponse> getPreparationRecipe(@PathVariable UUID id) {
+        var product = productService.getProduct(id);
+        return preparationService.getPreparationRecipe(id)
+                .map(recipe -> ResponseEntity.ok(PreparationRecipeResponse.from(recipe, product)))
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    /** Alta o edición: el insumo pasa a ser una preparación. Rechaza una receta que se lleve a sí misma. */
+    @PutMapping("/{id}/recipe")
+    @RequiresFeature(Feature.RECIPES_AND_FOOD_COST)
+    @PreAuthorize("hasAuthority('PERM_PRODUCTS_UPDATE')")
+    public ResponseEntity<PreparationRecipeResponse> setPreparationRecipe(
+            @PathVariable UUID id, @Valid @RequestBody SetPreparationRecipeRequest request) {
+        var recipe = preparationService.setPreparationRecipe(id, new SetPreparationRecipeCommand(
+                request.yieldQuantity(), request.items().stream()
+                .map(i -> new PreparationItemCommand(i.productId(), i.quantity(), i.unitId())).toList()));
+        return ResponseEntity.ok(PreparationRecipeResponse.from(recipe, productService.getProduct(id)));
+    }
+
+    /** Deja de ser preparación; el stock y los lotes quedan. */
+    @DeleteMapping("/{id}/recipe")
+    @RequiresFeature(Feature.RECIPES_AND_FOOD_COST)
+    @PreAuthorize("hasAuthority('PERM_PRODUCTS_UPDATE')")
+    public ResponseEntity<Void> deletePreparationRecipe(@PathVariable UUID id) {
+        preparationService.deletePreparationRecipe(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Lo que cuesta hacer una tanda hoy, o con {@code at} la de esa fecha: el teórico de la preparación. */
+    @GetMapping("/{id}/recipe/cost")
+    @RequiresFeature(Feature.RECIPES_AND_FOOD_COST)
+    @PreAuthorize("hasAuthority('PERM_PRODUCTS_VIEW')")
+    public ResponseEntity<PreparationCostResponse> getPreparationCost(
+            @PathVariable UUID id,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant at) {
+        return ResponseEntity.ok(PreparationCostResponse.from(foodCostService.calculatePreparationCost(id, at)));
     }
 
     /** Costo por unidad comprada y por unidad utilizable, en cada momento en que alguno cambió. */

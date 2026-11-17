@@ -23,11 +23,22 @@ public class RecipeRepositoryAdapter implements RecipeRepository {
     }
 
     @Override
+    public Optional<Recipe> findByProductIdAndRestaurantId(UUID productId, UUID restaurantId) {
+        return jpa.findByProductIdAndRestaurantId(productId, restaurantId).map(RecipeJpaEntity::toDomain);
+    }
+
+    @Override
+    public java.util.Set<UUID> findPreparationProductIds(UUID restaurantId) {
+        return jpa.findPreparationProductIds(restaurantId);
+    }
+
+    @Override
     public Recipe save(Recipe recipe) {
         RecipeJpaEntity saved = jpa.save(RecipeJpaEntity.from(recipe));
-        return jpa.findByMenuItemIdAndRestaurantId(saved.getMenuItemId(), saved.getRestaurantId())
-                .map(RecipeJpaEntity::toDomain)
-                .orElse(saved.toDomain());
+        Optional<RecipeJpaEntity> reloaded = saved.getProductId() != null
+                ? jpa.findByProductIdAndRestaurantId(saved.getProductId(), saved.getRestaurantId())
+                : jpa.findByMenuItemIdAndRestaurantId(saved.getMenuItemId(), saved.getRestaurantId());
+        return reloaded.map(RecipeJpaEntity::toDomain).orElse(saved.toDomain());
     }
 
     @Override

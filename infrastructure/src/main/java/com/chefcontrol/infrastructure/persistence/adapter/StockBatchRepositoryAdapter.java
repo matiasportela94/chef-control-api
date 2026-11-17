@@ -54,6 +54,18 @@ public class StockBatchRepositoryAdapter implements StockBatchRepository {
         jpa.zeroQuantityRemainingByPurchaseItemId(purchaseItemId);
     }
 
+    /**
+     * Por entidad y no con un UPDATE nativo: revertir una venta con producción automática repone el lote y enseguida lo
+     * deja en cero en la misma transacción, y el UPDATE nativo dejaría la entidad ya cargada con el valor viejo.
+     */
+    @Override
+    public void zeroQuantityRemainingByProductionId(UUID productionId) {
+        jpa.findByProductionId(productionId).forEach(batch -> {
+            batch.setQuantityRemaining(java.math.BigDecimal.ZERO);
+            jpa.save(batch);
+        });
+    }
+
     @Override
     public Map<UUID, LocalDate> findNextExpirationByProduct(UUID restaurantId) {
         Map<UUID, LocalDate> result = new HashMap<>();
