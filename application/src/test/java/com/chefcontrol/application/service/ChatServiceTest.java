@@ -372,6 +372,37 @@ class ChatServiceTest {
     }
 
     @Test
+    void whatTheModelRecognizedDecidesTheRecipeNotTheTypeItChose() {
+        // Pasó en el e2e: receta "de plato" con el id de una preparación. Por el tipo, salía un plato nuevo duplicado.
+        answer(95, false, op("recipe", item(mayonesa, "1", null, null, null)));
+        when(aiService.interpretRecipeMessage(any())).thenReturn(new CatalogSpreadsheetInterpretation(List.of(),
+                List.of(new PreparationRow(1, "Mayonesa", BigDecimal.ONE, "kg", "Huevo", new BigDecimal("6"), "u")),
+                List.of(), List.of(), List.of(), List.of()));
+
+        var result = service.sendChatMessage("a la mayonesa agregale 6 huevos", ALL);
+
+        var request = ArgumentCaptor.forClass(RecipeMessageRequest.class);
+        verify(aiService).interpretRecipeMessage(request.capture());
+        assertTrue(request.getValue().preparation());
+        assertEquals(List.of(mayonesa.getId()), result.recipe().replacePreparationProductIds());
+        assertTrue(result.recipe().replaceRecipeMenuItemIds().isEmpty());
+    }
+
+    @Test
+    void withoutIdsTheNameFindsTheExistingRecipe() {
+        answer(95, false, op("recipe", new InterpretedItem(null, null, "MILANESA", null, null, null, null, null, null)),
+                op("recipe", new InterpretedItem(null, null, "comino", null, null, null, null, null, null)));
+        when(aiService.interpretRecipeMessage(any())).thenReturn(new CatalogSpreadsheetInterpretation(List.of(),
+                List.of(), List.of(new RecipeRow(1, "Milanesa", null, null, "Tomate", BigDecimal.ONE, "kg")),
+                List.of(), List.of(), List.of()));
+
+        var result = service.sendChatMessage("la milanesa lleva 1 kg de tomate", ALL);
+
+        assertEquals("Milanesa", result.recipe().name());
+        assertEquals(List.of(milanesa.getId()), result.recipe().replaceRecipeMenuItemIds());
+    }
+
+    @Test
     void aRecipeTheModelCannotWriteIsSkippedAndTheRestStillRuns() {
         answer(95, false, op("waste", item(tomate, "1", "kg", null, "DAMAGED")), op("recipe", dish(milanesa, "1")));
         when(aiService.interpretRecipeMessage(any()))

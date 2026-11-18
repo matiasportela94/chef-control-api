@@ -76,10 +76,10 @@ public class ChatRecipeService {
 
         RecipeRequest request = requests.getFirst();
         InterpretedItem item = request.item();
-        boolean preparation = request.preparation();
-        // El id se busca solo en lo que corresponde al tipo: un plato y un insumo pueden llamarse igual.
-        MenuItem dish = preparation || item.menuItemId() == null ? null : catalog.menuItem(item.menuItemId());
-        Product product = !preparation || item.productId() == null ? null : catalog.product(item.productId());
+        Target target = target(request, catalog);
+        boolean preparation = target.preparation();
+        MenuItem dish = target.dish();
+        Product product = target.product();
         String name = dish != null ? dish.getName() : product != null ? product.getName() : capitalized(item.name());
         if (name == null) {
             skipped.add(new Skipped(null, null, ErrorCode.AI_INTERPRETATION_FAILED,
@@ -122,6 +122,33 @@ public class ChatRecipeService {
         return new RecipePreview(name, answer,
                 dish != null ? List.of(dish.getId()) : List.of(),
                 product != null ? List.of(product.getId()) : List.of());
+    }
+
+    private record Target(boolean preparation, MenuItem dish, Product product) {}
+
+    /**
+     * De qué receta se trata. Deciden lo que la IA reconoció del catálogo, no el tipo que eligió: en la prueba del
+     * 2026-11-18, "a la salsa de tomate agregale 2 huevos" volvió como receta de plato con el id de la preparación, y
+     * por el tipo se habría armado un plato nuevo "Salsa de tomate". Sin ids, el nombre; el tipo solo desempata.
+     */
+    private static Target target(RecipeRequest request, ChatCatalog catalog) {
+        InterpretedItem item = request.item();
+        MenuItem dish = item.menuItemId() == null ? null : catalog.menuItem(item.menuItemId());
+        Product product = item.productId() == null ? null : catalog.product(item.productId());
+        if (dish == null && product == null && item.name() != null) {
+            dish = catalog.menuItemNamed(item.name());
+            product = catalog.productNamed(item.name());
+            // Un insumo comprado que se llama como el plato no es la receta: solo una preparación, o si lo pidió así.
+            if (product != null && !request.preparation() && !catalog.preparations().contains(product.getId())) {
+                product = null;
+            }
+        }
+        if (dish != null && product != null) {
+            return request.preparation() ? new Target(true, null, product) : new Target(false, dish, null);
+        }
+        if (dish != null) return new Target(false, dish, null);
+        if (product != null) return new Target(true, null, product);
+        return new Target(request.preparation(), null, null);
     }
 
     /** Un plato va por porción (como lo guarda el import); una preparación, por tanda, con lo que rinde. */

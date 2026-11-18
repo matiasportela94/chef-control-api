@@ -737,6 +737,19 @@ public class ChatService {
             return units.stream().filter(u -> u.getId().equals(id)).findFirst().orElse(null);
         }
 
+        /** Con la comparación del import (sin mayúsculas, acentos ni espacios de más); null si no hay uno solo. */
+        MenuItem menuItemNamed(String name) {
+            List<MenuItem> found = menuItems.stream()
+                    .filter(m -> CatalogImportService.key(m.getName()).equals(CatalogImportService.key(name))).toList();
+            return found.size() == 1 ? found.getFirst() : null;
+        }
+
+        Product productNamed(String name) {
+            List<Product> found = products.stream()
+                    .filter(p -> CatalogImportService.key(p.getName()).equals(CatalogImportService.key(name))).toList();
+            return found.size() == 1 ? found.getFirst() : null;
+        }
+
         List<ChatCatalogProduct> chatProducts() {
             return products.stream().map(p -> new ChatCatalogProduct(p.getId(), p.getName(), unitLabel(p),
                     preparations.contains(p.getId()))).toList();
