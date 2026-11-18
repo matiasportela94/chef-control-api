@@ -230,7 +230,7 @@ class CatalogSpreadsheetServiceTest {
         }
 
         @Override
-        public InvoiceReading interpretInvoiceDocument(InvoiceDocumentRequest request) {
+        public DocumentReading interpretChatDocument(ChatDocumentRequest request) {
             throw new UnsupportedOperationException();
         }
 

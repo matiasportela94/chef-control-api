@@ -53,7 +53,15 @@ class ChatExchangeRepositoryAdapterTest {
                                 "kg", List.of())),
                         new BigDecimal("12100"), new BigDecimal("12100"),
                         List.of(new com.chefcontrol.application.service.ChatInvoiceService.InvoiceWarning("ALREADY_LOADED",
-                                "Ya está.", UUID.randomUUID()))));
+                                "Ya está.", UUID.randomUUID()))),
+                new com.chefcontrol.application.service.ChatSalesReportService.SalesReportPreview("0012",
+                        LocalDate.of(2026, 11, 17), List.of(new com.chefcontrol.application.service.ChatSalesReportService
+                        .SalesReportLine("MILA NAPO", product, "Milanesa napolitana", "ALIAS", 2, new BigDecimal("11000"),
+                        new BigDecimal("22000"), new BigDecimal("12000"), true, List.of())),
+                        new BigDecimal("22000"), new BigDecimal("22000"), new BigDecimal("22000"),
+                        new com.chefcontrol.application.service.ChatSalesReportService.ExistingSales(1, new BigDecimal("45000")),
+                        List.of(new com.chefcontrol.application.service.ChatSalesReportService.SalesReportWarning(
+                                "AFTER_MIDNIGHT", "Lo puse en el 17/11.", null))));
 
         assertEquals(reply, adapter.read(adapter.write(reply)));
     }

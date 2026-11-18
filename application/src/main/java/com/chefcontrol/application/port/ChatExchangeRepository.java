@@ -36,10 +36,11 @@ public interface ChatExchangeRepository {
     /** La respuesta como salió; las acciones por id, para leerlas con su estado de ahora (deshecha o no). */
     record StoredReply(String message, List<UUID> actionIds, List<UUID> undoneActionIds, List<Proposal> proposals,
                        List<Skipped> skipped, RecipePreview recipe,
-                       com.chefcontrol.application.service.ChatInvoiceService.InvoicePreview invoice) {
+                       com.chefcontrol.application.service.ChatInvoiceService.InvoicePreview invoice,
+                       com.chefcontrol.application.service.ChatSalesReportService.SalesReportPreview salesReport) {
         public StoredReply(String message, List<UUID> actionIds, List<UUID> undoneActionIds, List<Proposal> proposals,
                            List<Skipped> skipped, RecipePreview recipe) {
-            this(message, actionIds, undoneActionIds, proposals, skipped, recipe, null);
+            this(message, actionIds, undoneActionIds, proposals, skipped, recipe, null, null);
         }
     }
 }

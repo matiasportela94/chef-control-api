@@ -76,7 +76,7 @@ public class ChatHistoryService {
             chatExchangeRepository.saveChatExchange(new ChatExchange(null, TenantContext.require(),
                     currentUserProvider.currentUserId(), kind, userMessage, result.status(),
                     new StoredReply(result.message(), ids(result.actions()), ids(result.undone()), result.proposals(),
-                            result.skipped(), result.recipe(), result.invoice()),
+                            result.skipped(), result.recipe(), result.invoice(), result.salesReport()),
                     clock.instant()));
         } catch (RuntimeException e) {
             log.error("[Chat] could not remember the exchange: {}", e.getMessage(), e);
@@ -89,7 +89,7 @@ public class ChatHistoryService {
         return c.exchanges().stream().map(e -> new ChatExchangeView(e.id(), e.createdAt(), e.userMessage(),
                 new ChatResult(e.status(), e.reply().message(), live(e.reply().actionIds(), c.actions()),
                         live(e.reply().undoneActionIds(), c.actions()), e.reply().proposals(), e.reply().skipped(),
-                        e.reply().recipe(), e.reply().invoice()))).toList();
+                        e.reply().recipe(), e.reply().invoice(), e.reply().salesReport()))).toList();
     }
 
     static final String CANCELLED = "Listo, no registré nada.";

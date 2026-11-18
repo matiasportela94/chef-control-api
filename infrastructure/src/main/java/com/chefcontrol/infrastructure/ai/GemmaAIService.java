@@ -7,8 +7,8 @@ import com.chefcontrol.application.port.AIService.ChatInterpretation;
 import com.chefcontrol.application.port.AIService.ChatMessageRequest;
 import com.chefcontrol.application.port.AIService.RecipeMessageRequest;
 import com.chefcontrol.application.port.AIService.DocumentPage;
-import com.chefcontrol.application.port.AIService.InvoiceDocumentRequest;
-import com.chefcontrol.application.port.AIService.InvoiceReading;
+import com.chefcontrol.application.port.AIService.ChatDocumentRequest;
+import com.chefcontrol.application.port.AIService.DocumentReading;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -225,19 +225,19 @@ public class GemmaAIService implements AIService {
     }
 
     @Override
-    public InvoiceReading interpretInvoiceDocument(InvoiceDocumentRequest request) {
+    public DocumentReading interpretChatDocument(ChatDocumentRequest request) {
         String vision = visionModel == null || visionModel.isBlank() ? model : visionModel;
         List<Map<String, Object>> parts = new java.util.ArrayList<>();
         for (DocumentPage page : request.pages()) {
             parts.add(Map.of("inline_data", Map.of("mime_type", page.mediaType(),
                     "data", java.util.Base64.getEncoder().encodeToString(page.bytes()))));
         }
-        parts.add(Map.of("text", InvoicePrompt.userText(request)));
+        parts.add(Map.of("text", DocumentPrompt.userText(request)));
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("system_instruction", Map.of("parts", List.of(Map.of("text", InvoicePrompt.systemPrompt(request,
+        body.put("system_instruction", Map.of("parts", List.of(Map.of("text", DocumentPrompt.systemPrompt(request,
                 "Respondé solo con ese JSON, compacto y sin texto alrededor.")))));
         body.put("contents", List.of(Map.of("role", "user", "parts", parts)));
-        body.put("generationConfig", generationConfig(InvoicePrompt.MAX_OUTPUT_TOKENS));
+        body.put("generationConfig", generationConfig(DocumentPrompt.MAX_OUTPUT_TOKENS));
 
         long start = System.currentTimeMillis();
         JsonNode response;
@@ -245,14 +245,14 @@ public class GemmaAIService implements AIService {
             response = ProviderRetry.once("Gemma", BUSY, () -> restClient.post()
                     .uri("/v1beta/models/" + vision + ":generateContent").body(body).retrieve().body(JsonNode.class));
         } catch (RestClientException e) {
-            log.error("[Gemma] interpretInvoiceDocument failed: {}", e.getMessage());
-            throw InvoicePrompt.failed(e.getMessage());
+            log.error("[Gemma] interpretChatDocument failed: {}", e.getMessage());
+            throw DocumentPrompt.failed(e.getMessage());
         }
         JsonNode usage = response.path("usageMetadata");
-        log.info("[Gemma] interpretInvoiceDocument model={} pages={} input_tokens={} output_tokens={} ms={}", vision,
+        log.info("[Gemma] interpretChatDocument model={} pages={} input_tokens={} output_tokens={} ms={}", vision,
                 request.pages().size(), usage.path("promptTokenCount").asInt(), usage.path("candidatesTokenCount").asInt(),
                 System.currentTimeMillis() - start);
-        return InvoicePrompt.parse(CatalogSpreadsheetPrompt.extractJson(answerText(response), objectMapper));
+        return DocumentPrompt.parse(CatalogSpreadsheetPrompt.extractJson(answerText(response), objectMapper));
     }
 
     @Override

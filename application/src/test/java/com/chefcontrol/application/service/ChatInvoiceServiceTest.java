@@ -70,6 +70,7 @@ class ChatInvoiceServiceTest {
     @Mock ChatActionRepository chatActionRepository;
     @Mock ChatExchangeRepository chatExchangeRepository;
     @Mock CurrentUserProvider currentUserProvider;
+    @Mock com.chefcontrol.domain.repository.MenuItemRepository menuItemRepository;
 
     private static final UUID R = UUID.randomUUID();
     private static final UUID USER = UUID.randomUUID();
@@ -85,6 +86,7 @@ class ChatInvoiceServiceTest {
     private final Product harina = product("Harina", kg);
     private final Supplier verduleria = supplier("Verdulería Don José", "30712345671");
     private ChatInvoiceService service;
+    private ChatDocumentService documents;
 
     @BeforeEach
     void setUp() {
@@ -106,10 +108,13 @@ class ChatInvoiceServiceTest {
         when(chatActionRepository.save(any())).thenAnswer(i -> i.getArgument(0));
         Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
         var history = new ChatHistoryService(chatExchangeRepository, chatActionRepository, currentUserProvider, clock);
-        service = new ChatInvoiceService(aiService, productRepository, unitRepository, unitConversionService,
+        service = new ChatInvoiceService(unitConversionService,
                 supplierRepository, supplierService, aliasRepository, purchaseRepository, purchaseService,
                 productService, chatActionRepository, history, currentUserProvider,
                 TransactionOperations.withoutTransaction(), clock);
+        when(menuItemRepository.findByRestaurantIdAndActive(eq(R), eq(true), any())).thenReturn(new Page<>(List.of(), 0, 0, 0));
+        documents = new ChatDocumentService(aiService, productRepository, menuItemRepository, unitRepository, service, null,
+                history);
     }
 
     @AfterEach
@@ -124,7 +129,7 @@ class ChatInvoiceServiceTest {
         reads(reading("A", "30-71234567-1", "Verdulería Don José", new BigDecimal("12100"),
                 line("TOMATE PERITA X KG", "5", "kg", "2000", "10000", "21", "Tomate", "Tomate")));
 
-        var result = service.sendChatDocument(List.of(PDF), null);
+        var result = documents.sendChatDocument(List.of(PDF), null, ALL);
 
         assertEquals(ChatStatus.NEEDS_CONFIRMATION, result.status());
         var preview = result.invoice();
@@ -147,7 +152,7 @@ class ChatInvoiceServiceTest {
         reads(reading("B", "30712345671", "Verdulería Don José", new BigDecimal("40000"),
                 line("HARINA 000 X 25 KG", "2", "bol", "20000", "40000", null, "Tomate", "Harina 000")));
 
-        var line = service.sendChatDocument(List.of(PDF), null).invoice().lines().getFirst();
+        var line = documents.sendChatDocument(List.of(PDF), null, ALL).invoice().lines().getFirst();
 
         assertEquals(harina.getId(), line.productId());                  // el alias gana sobre lo que sugirió la IA
         assertEquals("ALIAS", line.matchedBy());
@@ -163,7 +168,7 @@ class ChatInvoiceServiceTest {
                 line("HARINA BOLSA", "2", "bol", "20000", "40000", null, "Harina", "Harina"),
                 line("TOMATE", "500", "g", "3", "1500", null, "Tomate", "Tomate")));
 
-        var lines = service.sendChatDocument(List.of(PDF), null).invoice().lines();
+        var lines = documents.sendChatDocument(List.of(PDF), null, ALL).invoice().lines();
 
         assertTrue(lines.get(0).warnings().getFirst().startsWith("UNIT_NOT_CONVERTIBLE"), lines.get(0).warnings().toString());
         assertEquals(bolsa.getId(), lines.get(0).unitId());              // queda como está impreso, para que lo cargue
@@ -176,7 +181,7 @@ class ChatInvoiceServiceTest {
         reads(reading("C", null, "Almacén Sin CUIT", new BigDecimal("1000"),
                 line("ACEITE GIRASOL 900 ML", "1", "u", "1000", "1000", null, null, "Aceite de girasol")));
 
-        var preview = service.sendChatDocument(List.of(PDF), null).invoice();
+        var preview = documents.sendChatDocument(List.of(PDF), null, ALL).invoice();
 
         assertTrue(preview.pricesIncludeIva());
         var line = preview.lines().getFirst();
@@ -192,7 +197,7 @@ class ChatInvoiceServiceTest {
         reads(reading("REMITO", null, "VERDULERIA DON JOSE", null,
                 line("TOMATE", "1", "kg", "1000", "1000", null, "Tomate", "Tomate")));
 
-        var supplier = service.sendChatDocument(List.of(PDF), null).invoice().supplier();
+        var supplier = documents.sendChatDocument(List.of(PDF), null, ALL).invoice().supplier();
 
         assertEquals(verduleria.getId(), supplier.supplierId());
         assertFalse(supplier.isNew());
@@ -202,12 +207,12 @@ class ChatInvoiceServiceTest {
     void theWarningsSayWhatToReview() {
         when(purchaseRepository.findActiveBySupplierIdAndInvoiceNumber(R, verduleria.getId(), "0001-00001234"))
                 .thenReturn(Optional.of(Purchase.builder().id(UUID.randomUUID()).purchasedAt(NOW.minusSeconds(86400)).build()));
-        var reading = new InvoiceReading(true, "Verdulería Don José", "30-71234567-9", "B", "0001-00001234",
+        var reading = new InvoiceReading("Verdulería Don José", "30-71234567-9", "B", "0001-00001234",
                 LocalDate.of(2026, 12, 1), new BigDecimal("9999"),
                 List.of(line("TOMATE", "5", "kg", "2000", "9000", null, "Tomate", "Tomate")));
         reads(reading);
 
-        var codes = service.sendChatDocument(List.of(PDF), null).invoice().warnings().stream().map(InvoiceWarning::code).toList();
+        var codes = documents.sendChatDocument(List.of(PDF), null, ALL).invoice().warnings().stream().map(InvoiceWarning::code).toList();
 
         assertTrue(codes.containsAll(List.of("INVALID_CUIT_READ", "TOTAL_MISMATCH", "FUTURE_DATE", "LINES_TO_REVIEW")), codes.toString());
         // El CUIT leído no vale, pero el nombre encontró el proveedor: y esa factura ya estaba cargada.
@@ -216,15 +221,16 @@ class ChatInvoiceServiceTest {
 
     @Test
     void aFileThatIsNotAnInvoiceOrTooManyFilesIsSaid() {
-        reads(new InvoiceReading(false, null, null, null, null, null, null, List.of()));
-        var result = service.sendChatDocument(List.of(PDF), null);
+        when(aiService.interpretChatDocument(any())).thenReturn(
+                new AIService.DocumentReading(AIService.DocumentKind.OTHER, null, null));
+        var result = documents.sendChatDocument(List.of(PDF), null, ALL);
         assertEquals(ChatStatus.NOT_UNDERSTOOD, result.status());
-        assertEquals(ErrorCode.CHAT_DOCUMENT_NOT_AN_INVOICE, result.skipped().getFirst().errorCode());
+        assertEquals(ErrorCode.CHAT_DOCUMENT_NOT_RECOGNIZED, result.skipped().getFirst().errorCode());
 
         assertEquals(ErrorCode.VALIDATION_ERROR, assertThrows(AppException.class,
-                () -> service.sendChatDocument(List.of(PDF, PDF), null)).getErrorCode());
+                () -> documents.sendChatDocument(List.of(PDF, PDF), null, ALL)).getErrorCode());
         assertEquals(ErrorCode.ATTACHMENT_FORMAT_NOT_SUPPORTED, assertThrows(AppException.class,
-                () -> service.sendChatDocument(List.of("<svg/>".getBytes(StandardCharsets.US_ASCII)), null)).getErrorCode());
+                () -> documents.sendChatDocument(List.of("<svg/>".getBytes(StandardCharsets.US_ASCII)), null, ALL)).getErrorCode());
     }
 
     // ── Confirmar ──
@@ -285,11 +291,12 @@ class ChatInvoiceServiceTest {
     // ── fixtures ──
 
     private void reads(InvoiceReading reading) {
-        when(aiService.interpretInvoiceDocument(any())).thenReturn(reading);
+        when(aiService.interpretChatDocument(any())).thenReturn(
+                new AIService.DocumentReading(AIService.DocumentKind.INVOICE, reading, null));
     }
 
     private static InvoiceReading reading(String type, String cuit, String supplier, BigDecimal total, InvoiceLineReading... lines) {
-        return new InvoiceReading(true, supplier, cuit, type, "0001-00001234", LocalDate.of(2026, 11, 15), total, List.of(lines));
+        return new InvoiceReading(supplier, cuit, type, "0001-00001234", LocalDate.of(2026, 11, 15), total, List.of(lines));
     }
 
     private static InvoiceLineReading line(String text, String qty, String unit, String price, String total, String iva,

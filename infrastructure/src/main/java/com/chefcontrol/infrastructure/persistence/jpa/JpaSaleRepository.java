@@ -20,6 +20,9 @@ public interface JpaSaleRepository extends JpaRepository<SaleJpaEntity, UUID> {
 
     Optional<SaleJpaEntity> findByIdAndRestaurantId(UUID id, UUID restaurantId);
 
+    Optional<SaleJpaEntity> findFirstByRestaurantIdAndReportNumberAndStatus(UUID restaurantId, String reportNumber,
+                                                                            com.chefcontrol.domain.sale.SaleStatus status);
+
     @Query("SELECT COALESCE(SUM(s.totalAmount), 0) FROM SaleJpaEntity s WHERE s.restaurantId = :restaurantId AND s.status = 'ACTIVE' AND s.soldAt BETWEEN :from AND :to")
     BigDecimal sumTotalAmountByRestaurantIdAndSoldAtBetween(
             @Param("restaurantId") UUID restaurantId,

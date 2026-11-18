@@ -1065,15 +1065,21 @@ public class ChatService {
      */
     public record ChatResult(ChatStatus status, String message, List<ChatAction> actions, List<ChatAction> undone,
                              List<Proposal> proposals, List<Skipped> skipped, RecipePreview recipe,
-                             ChatInvoiceService.InvoicePreview invoice) {
+                             ChatInvoiceService.InvoicePreview invoice, ChatSalesReportService.SalesReportPreview salesReport) {
+        public ChatResult(ChatStatus status, String message, List<ChatAction> actions, List<ChatAction> undone,
+                          List<Proposal> proposals, List<Skipped> skipped, RecipePreview recipe,
+                          ChatInvoiceService.InvoicePreview invoice) {
+            this(status, message, actions, undone, proposals, skipped, recipe, invoice, null);
+        }
+
         public ChatResult(ChatStatus status, String message, List<ChatAction> actions, List<ChatAction> undone,
                           List<Proposal> proposals, List<Skipped> skipped, RecipePreview recipe) {
-            this(status, message, actions, undone, proposals, skipped, recipe, null);
+            this(status, message, actions, undone, proposals, skipped, recipe, null, null);
         }
 
         public ChatResult(ChatStatus status, String message, List<ChatAction> actions, List<Proposal> proposals,
                           List<Skipped> skipped) {
-            this(status, message, actions, List.of(), proposals, skipped, null, null);
+            this(status, message, actions, List.of(), proposals, skipped, null, null, null);
         }
 
         static ChatResult of(ChatStatus status, String message) {

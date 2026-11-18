@@ -1,10 +1,7 @@
 package com.chefcontrol.application.service;
 
-import com.chefcontrol.application.attachment.AttachmentFormat;
 import com.chefcontrol.application.exception.AppException;
 import com.chefcontrol.application.exception.ErrorCode;
-import com.chefcontrol.application.port.AIService;
-import com.chefcontrol.application.port.AIService.DocumentPage;
 import com.chefcontrol.application.port.AIService.InvoiceLineReading;
 import com.chefcontrol.application.port.AIService.InvoiceReading;
 import com.chefcontrol.application.port.ChatExchangeRepository.Kind;
@@ -22,12 +19,9 @@ import com.chefcontrol.domain.product.Unit;
 import com.chefcontrol.domain.purchase.InvoiceType;
 import com.chefcontrol.domain.purchase.Purchase;
 import com.chefcontrol.domain.purchase.SupplierProductAlias;
-import com.chefcontrol.domain.repository.ProductRepository;
 import com.chefcontrol.domain.repository.PurchaseRepository;
 import com.chefcontrol.domain.repository.SupplierProductAliasRepository;
 import com.chefcontrol.domain.repository.SupplierRepository;
-import com.chefcontrol.domain.repository.UnitRepository;
-import com.chefcontrol.domain.shared.PageRequest;
 import com.chefcontrol.domain.shared.time.ChefControlTime;
 import com.chefcontrol.domain.supplier.Cuit;
 import com.chefcontrol.domain.supplier.Supplier;
@@ -62,15 +56,10 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class ChatInvoiceService {
 
-    static final int MAX_IMAGES = 5;
-    private static final int MAX_CATALOG = 500;
     /** Una diferencia de hasta $1 o 1% es redondeo de la factura, no un error de lectura. */
     private static final BigDecimal TOLERANCE = new BigDecimal("0.01");
     private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("dd/MM");
 
-    private final AIService aiService;
-    private final ProductRepository productRepository;
-    private final UnitRepository unitRepository;
     private final UnitConversionService unitConversionService;
     private final SupplierRepository supplierRepository;
     private final SupplierService supplierService;
@@ -86,56 +75,7 @@ public class ChatInvoiceService {
 
     // ── Vista previa ───────────────────────────────────────────────────────────
 
-    /** @param files las hojas (hasta 5 imágenes) o un PDF; el formato, por magic bytes */
-    public ChatResult sendChatDocument(List<byte[]> files, String message) {
-        List<DocumentPage> pages = pages(files);
-        UUID restaurantId = TenantContext.require();
-        List<Product> products = productRepository
-                .findByRestaurantIdAndIsActiveTrue(restaurantId, PageRequest.of(0, MAX_CATALOG)).content();
-        ChatCatalog catalog = new ChatCatalog(products, List.of(), unitRepository.findAll(), Set.of());
-        ChatResult result;
-        try {
-            InvoiceReading reading = aiService.interpretInvoiceDocument(new AIService.InvoiceDocumentRequest(pages, message,
-                    catalog.chatProducts(), catalog.unitOptions()));
-            result = reading.invoice() ? preview(reading, catalog) : notAnInvoice();
-        } catch (AppException e) {
-            if (e.getErrorCode() != ErrorCode.AI_INTERPRETATION_FAILED) throw e;
-            result = ChatResult.of(ChatStatus.NOT_UNDERSTOOD, ChatService.NOTHING_REGISTERED
-                    + ": no pude leer el archivo. Probá de nuevo o con una foto más nítida.");
-        }
-        chatHistoryService.rememberChatExchange(Kind.MESSAGE, message == null || message.isBlank() ? "(factura)" : message,
-                result);
-        return result;
-    }
-
-    private static List<DocumentPage> pages(List<byte[]> files) {
-        if (files == null || files.isEmpty()) {
-            throw AppException.badRequest(ErrorCode.VALIDATION_ERROR, "Send the photos of the invoice or one PDF");
-        }
-        List<DocumentPage> pages = new ArrayList<>();
-        for (byte[] f : files) {
-            if (f.length == 0 || f.length > PurchaseAttachmentService.MAX_BYTES) {
-                throw AppException.badRequest(ErrorCode.ATTACHMENT_TOO_LARGE, "Each file can be up to 4 MB");
-            }
-            AttachmentFormat format = AttachmentFormat.detect(f).orElseThrow(() -> AppException.badRequest(
-                    ErrorCode.ATTACHMENT_FORMAT_NOT_SUPPORTED, "Only PDF, JPEG, PNG or WEBP"));
-            pages.add(new DocumentPage(f, format.mediaType()));
-        }
-        boolean pdf = pages.stream().anyMatch(p -> "application/pdf".equals(p.mediaType()));
-        if (pdf && pages.size() > 1 || pages.size() > MAX_IMAGES) {
-            throw AppException.badRequest(ErrorCode.VALIDATION_ERROR, "Up to 5 photos or one PDF");
-        }
-        return pages;
-    }
-
-    private ChatResult notAnInvoice() {
-        return new ChatResult(ChatStatus.NOT_UNDERSTOOD, ChatService.NOTHING_REGISTERED
-                + ": no reconozco una factura o un remito en el archivo.", List.of(), List.of(),
-                List.of(new Skipped(null, null, ErrorCode.CHAT_DOCUMENT_NOT_AN_INVOICE,
-                        "No reconozco una factura o un remito en el archivo.")));
-    }
-
-    ChatResult preview(InvoiceReading r, ChatCatalog catalog) {
+    ChatResult previewInvoice(InvoiceReading r, ChatCatalog catalog) {
         UUID restaurantId = TenantContext.require();
         LocalDate today = LocalDate.now(clock.withZone(ChefControlTime.DEFAULT_ZONE));
         List<InvoiceWarning> warnings = new ArrayList<>();

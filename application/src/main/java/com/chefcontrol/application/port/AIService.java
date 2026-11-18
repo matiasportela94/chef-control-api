@@ -37,24 +37,39 @@ public interface AIService {
     CatalogSpreadsheetInterpretation interpretRecipeMessage(RecipeMessageRequest request);
 
     /**
-     * Una factura o un remito (fotos de sus hojas o un PDF) → lo que tiene impreso, tal cual: el modelo no hace cuentas
-     * ni elige el insumo (sugiere uno del catálogo, que el back valida). Con el modelo de imágenes, que se configura
-     * aparte del de texto. Lanza {@code AI_INTERPRETATION_FAILED} si el modelo no responde o no se le entiende.
+     * Un archivo del chat (fotos de sus hojas o un PDF) → qué es (una factura o remito, un cierre de caja u otra cosa) y
+     * lo que tiene impreso, tal cual: el modelo no hace cuentas ni elige el insumo o el plato (sugiere uno del catálogo,
+     * que el back valida). Con el modelo de imágenes, que se configura aparte del de texto. Lanza
+     * {@code AI_INTERPRETATION_FAILED} si el modelo no responde o no se le entiende.
      */
-    InvoiceReading interpretInvoiceDocument(InvoiceDocumentRequest request);
+    DocumentReading interpretChatDocument(ChatDocumentRequest request);
 
     record DocumentPage(byte[] bytes, String mediaType) {}
 
     /** @param message lo que escribió el usuario junto con el archivo; puede ser null */
-    record InvoiceDocumentRequest(List<DocumentPage> pages, String message, List<ChatCatalogProduct> products,
-                                  List<UnitOption> units) {}
+    record ChatDocumentRequest(List<DocumentPage> pages, String message, List<ChatCatalogProduct> products,
+                               List<ChatCatalogMenuItem> menuItems, List<UnitOption> units) {}
+
+    enum DocumentKind { INVOICE, SALES_REPORT, OTHER }
+
+    /** Según {@code kind}, viene {@code invoice} o {@code salesReport}; el otro, null. */
+    record DocumentReading(DocumentKind kind, InvoiceReading invoice, SalesReportReading salesReport) {}
+
+    /** @param invoiceType A, B, C o REMITO, como está impreso; null si no se ve */
+    record InvoiceReading(String supplierName, String supplierCuit, String invoiceType,
+                          String invoiceNumber, LocalDate issuedOn, BigDecimal printedTotal, List<InvoiceLineReading> lines) {}
 
     /**
-     * @param invoice     false si el archivo no es una factura, un ticket de compra o un remito
-     * @param invoiceType A, B, C o REMITO, como está impreso; null si no se ve
+     * Un cierre de caja (ticket Z o reporte del POS), tal como está impreso.
+     *
+     * @param printedTime la hora impresa, si se ve: un cierre de la madrugada suele ser el servicio del día anterior
      */
-    record InvoiceReading(boolean invoice, String supplierName, String supplierCuit, String invoiceType,
-                          String invoiceNumber, LocalDate issuedOn, BigDecimal printedTotal, List<InvoiceLineReading> lines) {}
+    record SalesReportReading(String reportNumber, LocalDate printedDate, java.time.LocalTime printedTime,
+                              BigDecimal printedTotal, List<SalesReportLineReading> lines) {}
+
+    /** @param catalogName el plato del menú que el modelo reconoce; el back verifica que exista */
+    record SalesReportLineReading(String printedText, BigDecimal quantity, BigDecimal unitPrice, BigDecimal lineTotal,
+                                  String catalogName) {}
 
     /**
      * Un renglón tal como está impreso.

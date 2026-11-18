@@ -34,8 +34,8 @@ public class NoOpAIService implements AIService {
     }
 
     @Override
-    public InvoiceReading interpretInvoiceDocument(InvoiceDocumentRequest request) {
-        log.warn("[AI no-op] interpretInvoiceDocument called without an AI provider configured");
+    public DocumentReading interpretChatDocument(ChatDocumentRequest request) {
+        log.warn("[AI no-op] interpretChatDocument called without an AI provider configured");
         throw new AppException(ErrorCode.AI_INTERPRETATION_FAILED, "No AI provider configured");
     }
 
