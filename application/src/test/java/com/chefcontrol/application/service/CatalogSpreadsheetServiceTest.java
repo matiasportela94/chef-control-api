@@ -204,5 +204,10 @@ class CatalogSpreadsheetServiceTest {
         public ChatInterpretation interpretChatMessage(ChatMessageRequest request) {
             throw new UnsupportedOperationException();
         }
+
+        @Override
+        public CatalogSpreadsheetInterpretation interpretRecipeMessage(RecipeMessageRequest request) {
+            throw new UnsupportedOperationException();
+        }
     }
 }

@@ -29,6 +29,14 @@ public interface AIService {
     ChatInterpretation interpretChatMessage(ChatMessageRequest request);
 
     /**
+     * La segunda llamada de un mensaje de receta: la receta completa de un plato o una preparación, con lo que pide el
+     * mensaje aplicado sobre la actual ("sacale la crema" devuelve todos los ingredientes menos la crema). Sale en las
+     * filas de /catalog-import, con {@code row} = la posición del ingrediente (1, 2, 3…), y va a la vista previa del
+     * import: no escribe nada. Lanza {@code AI_INTERPRETATION_FAILED} si el modelo no responde o no se le entiende.
+     */
+    CatalogSpreadsheetInterpretation interpretRecipeMessage(RecipeMessageRequest request);
+
+    /**
      * @param today     la fecha argentina, para "vence el viernes"
      * @param products  los insumos activos del restaurante
      * @param menuItems los platos activos, para las ventas
@@ -43,6 +51,24 @@ public interface AIService {
     record ChatCatalogProduct(UUID id, String name, String unit, boolean preparation) {}
 
     record ChatCatalogMenuItem(UUID id, String name, BigDecimal price) {}
+
+    /**
+     * @param recipeName  el nombre con el que sale la receta: el del catálogo si ya existe, así el import la reconoce
+     * @param preparation receta de tanda de un insumo (con rendimiento); si no, la de un plato (por porción)
+     * @param current     la receta de hoy, null si no tiene
+     * @param products    el catálogo, para reconocer los ingredientes (no lleva ids: el import busca por nombre)
+     */
+    record RecipeMessageRequest(String message, String recipeName, boolean preparation, CurrentRecipe current,
+                                List<ChatCatalogProduct> products, List<UnitOption> units) {}
+
+    /**
+     * @param yieldQuantity solo en una preparación: cuánto rinde la tanda, en {@code yieldUnit}
+     * @param ingredients   en un plato, por porción
+     */
+    record CurrentRecipe(BigDecimal yieldQuantity, String yieldUnit, List<RecipeLine> ingredients) {}
+
+    /** @param unit la abreviatura */
+    record RecipeLine(String ingredient, BigDecimal quantity, String unit) {}
 
     /** @param needsConfirmation lo que dice la IA; ChatService además aplica sus propias reglas */
     record ChatInterpretation(int confidence, boolean needsConfirmation, String responseToUser,

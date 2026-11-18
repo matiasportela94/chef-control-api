@@ -10,6 +10,7 @@ import com.chefcontrol.application.port.AIService.InterpretedItem;
 import com.chefcontrol.application.port.AIService.InterpretedOperation;
 import com.chefcontrol.application.port.AIService.UnitOption;
 import com.chefcontrol.application.port.CurrentUserProvider;
+import com.chefcontrol.application.service.ChatRecipeService.RecipePreview;
 import com.chefcontrol.domain.chat.ChatAction;
 import com.chefcontrol.domain.chat.ChatActionRepository;
 import com.chefcontrol.domain.chat.ChatOperationType;
@@ -73,7 +74,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ChatService {
 
-    /** Todo lo operativo. Las recetas (tanda 4) no van acá: siempre terminan en la vista previa del import. */
+    /** Todo lo operativo. Las recetas no van acá: terminan en la vista previa del import ({@link ChatRecipeService}). */
     static final Set<ChatOperationType> SUPPORTED = EnumSet.allOf(ChatOperationType.class);
 
     static final int MIN_CONFIDENCE = 80;
@@ -83,6 +84,7 @@ public class ChatService {
     private static final Locale ES_AR = Locale.forLanguageTag("es-AR");
 
     private final AIService aiService;
+    private final ChatRecipeService chatRecipeService;
     private final ProductRepository productRepository;
     private final MenuItemRepository menuItemRepository;
     private final UnitRepository unitRepository;
@@ -112,15 +114,14 @@ public class ChatService {
                 .findByRestaurantIdAndActive(restaurantId, true, PageRequest.of(0, MAX_CATALOG)).content();
         List<Unit> units = unitRepository.findAll();
         Set<UUID> preparations = recipeRepository.findPreparationProductIds(restaurantId);
+        ChatCatalog catalog = new ChatCatalog(products, menuItems, units, preparations);
 
         ChatInterpretation interpretation;
         try {
             interpretation = aiService.interpretChatMessage(new AIService.ChatMessageRequest(message,
-                    LocalDate.now(clock.withZone(ChefControlTime.DEFAULT_ZONE)),
-                    products.stream().map(p -> new ChatCatalogProduct(p.getId(), p.getName(), unitLabel(p),
-                            preparations.contains(p.getId()))).toList(),
+                    LocalDate.now(clock.withZone(ChefControlTime.DEFAULT_ZONE)), catalog.chatProducts(),
                     menuItems.stream().map(m -> new ChatCatalogMenuItem(m.getId(), m.getName(), m.getPrice())).toList(),
-                    units.stream().map(u -> new UnitOption(u.getName(), u.getAbbreviation())).toList()));
+                    catalog.unitOptions()));
         } catch (AppException e) {
             if (e.getErrorCode() != ErrorCode.AI_INTERPRETATION_FAILED) throw e;
             return ChatResult.of(ChatStatus.NOT_UNDERSTOOD, "No pude interpretar el mensaje. Probá de nuevo.");
@@ -129,8 +130,14 @@ public class ChatService {
         Resolution resolution = new Resolution(products, menuItems, units, preparations);
         List<Skipped> skipped = new ArrayList<>();
         List<Operation> operations = new ArrayList<>();
+        List<ChatRecipeService.RecipeRequest> recipes = new ArrayList<>();
         boolean highPrice = false;
         for (InterpretedOperation op : interpretation.operations()) {
+            if (isRecipe(op.type())) {
+                boolean preparation = "preparation_recipe".equalsIgnoreCase(op.type().trim());
+                op.items().forEach(i -> recipes.add(new ChatRecipeService.RecipeRequest(preparation, i)));
+                continue;
+            }
             ChatOperationType type = typeOf(op.type());
             if (type == null || !SUPPORTED.contains(type)) {
                 skipped.add(notSupported(type));
@@ -150,7 +157,10 @@ public class ChatService {
             if (!items.isEmpty()) operations.add(new Operation(type, items));
         }
 
-        if (operations.isEmpty()) return nothingToRegister(interpretation, skipped);
+        // La receta antes que lo operativo: sus motivos de "no" tienen que estar en skipped cuando se arma el texto.
+        RecipePreview recipe = chatRecipeService.previewChatRecipe(message, recipes, catalog, permissions, skipped);
+
+        if (operations.isEmpty()) return withRecipe(nothingToRegister(interpretation, skipped), recipe);
 
         boolean doubtful = interpretation.needsConfirmation() || interpretation.confidence() < MIN_CONFIDENCE;
         if (doubtful || highPrice) {
@@ -158,9 +168,24 @@ public class ChatService {
                     ? interpretation.responseToUser()
                     : highPrice ? "¿El precio es por unidad o el total de la compra?"
                     : "No estoy seguro de haber entendido. ¿Lo registro así?";
-            return new ChatResult(ChatStatus.NEEDS_CONFIRMATION, question, List.of(), operations, skipped);
+            return withRecipe(new ChatResult(ChatStatus.NEEDS_CONFIRMATION, question, List.of(), operations, skipped),
+                    recipe);
         }
-        return register(operations, skipped);
+        return withRecipe(register(operations, skipped), recipe);
+    }
+
+    /**
+     * Un mensaje mixto resuelve cada parte: el status es el de lo operativo y la receta viene aparte. RECIPE_PREVIEW
+     * queda para cuando la receta es lo único para hacer (no se registró nada ni hay nada que confirmar).
+     */
+    private static ChatResult withRecipe(ChatResult r, RecipePreview recipe) {
+        if (recipe == null) return r;
+        String preview = "Armé la receta de «" + recipe.name() + "»: revisala y confirmala.";
+        if (r.actions().isEmpty() && r.proposal().isEmpty()) {
+            String message = r.skipped().isEmpty() ? preview : preview + " No registré: " + skipMessages(r.skipped());
+            return new ChatResult(ChatStatus.RECIPE_PREVIEW, message, List.of(), List.of(), r.skipped(), recipe);
+        }
+        return new ChatResult(r.status(), r.message() + " " + preview, r.actions(), r.proposal(), r.skipped(), recipe);
     }
 
     // ── Confirmar ──────────────────────────────────────────────────────────────
@@ -486,6 +511,10 @@ public class ChatService {
                 && item.pricePerUnit() != null && item.pricePerUnit().compareTo(HIGH_UNIT_PRICE) > 0;
     }
 
+    private static boolean isRecipe(String type) {
+        return type != null && Set.of("recipe", "preparation_recipe").contains(type.trim().toLowerCase(Locale.ROOT));
+    }
+
     private static ChatOperationType typeOf(String type) {
         if (type == null) return null;
         return switch (type.trim().toLowerCase(Locale.ROOT)) {
@@ -515,7 +544,7 @@ public class ChatService {
         return n != null && n.signum() > 0;
     }
 
-    private static String unitLabel(Product p) {
+    static String unitLabel(Product p) {
         return p.getDefaultUnitAbbreviation() != null ? p.getDefaultUnitAbbreviation() : p.getDefaultUnitName();
     }
 
@@ -558,7 +587,7 @@ public class ChatService {
 
     private static Skipped notSupported(ChatOperationType type) {
         String message = type == null
-                ? "Por ahora no respondo consultas: solo registro compras, mermas, ventas, ajustes de stock y producciones."
+                ? "Por ahora no respondo consultas: registro compras, mermas, ventas, ajustes de stock y producciones, y armo recetas."
                 : "Todavía no registro " + plural(type) + " por acá: usá el formulario.";
         return new Skipped(type, null, ErrorCode.CHAT_OPERATION_NOT_SUPPORTED, message);
     }
@@ -652,10 +681,41 @@ public class ChatService {
     /** @param name como lo dijo el usuario, o el nombre del catálogo si ya se lo reconoció */
     public record Skipped(ChatOperationType type, String name, ErrorCode errorCode, String message) {}
 
+    /** @param recipe la receta para la vista previa del import; null si el mensaje no trae receta */
     public record ChatResult(ChatStatus status, String message, List<ChatAction> actions,
-                             List<Operation> proposal, List<Skipped> skipped) {
+                             List<Operation> proposal, List<Skipped> skipped, RecipePreview recipe) {
+        public ChatResult(ChatStatus status, String message, List<ChatAction> actions, List<Operation> proposal,
+                          List<Skipped> skipped) {
+            this(status, message, actions, proposal, skipped, null);
+        }
+
         static ChatResult of(ChatStatus status, String message) {
             return new ChatResult(status, message, List.of(), List.of(), List.of());
+        }
+    }
+
+    /** Lo que hay en el local cuando llega el mensaje: lo que la IA nombra se busca acá, nunca se crea. */
+    record ChatCatalog(List<Product> products, List<MenuItem> menuItems, List<Unit> units, Set<UUID> preparations) {
+        // ponytail: búsqueda lineal; son a lo sumo 500 y se busca un par de veces por mensaje.
+        Product product(UUID id) {
+            return products.stream().filter(p -> p.getId().equals(id)).findFirst().orElse(null);
+        }
+
+        MenuItem menuItem(UUID id) {
+            return menuItems.stream().filter(m -> m.getId().equals(id)).findFirst().orElse(null);
+        }
+
+        Unit unit(UUID id) {
+            return units.stream().filter(u -> u.getId().equals(id)).findFirst().orElse(null);
+        }
+
+        List<ChatCatalogProduct> chatProducts() {
+            return products.stream().map(p -> new ChatCatalogProduct(p.getId(), p.getName(), unitLabel(p),
+                    preparations.contains(p.getId()))).toList();
+        }
+
+        List<UnitOption> unitOptions() {
+            return units.stream().map(u -> new UnitOption(u.getName(), u.getAbbreviation())).toList();
         }
     }
 }

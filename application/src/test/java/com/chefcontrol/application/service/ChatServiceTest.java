@@ -3,7 +3,12 @@ package com.chefcontrol.application.service;
 import com.chefcontrol.application.exception.AppException;
 import com.chefcontrol.application.exception.ErrorCode;
 import com.chefcontrol.application.port.AIService;
+import com.chefcontrol.application.port.AIService.CatalogSpreadsheetInterpretation;
 import com.chefcontrol.application.port.AIService.ChatInterpretation;
+import com.chefcontrol.application.port.AIService.IngredientMatch;
+import com.chefcontrol.application.port.AIService.RecipeMessageRequest;
+import com.chefcontrol.application.service.CatalogImportService.PreparationRow;
+import com.chefcontrol.application.service.CatalogImportService.RecipeRow;
 import com.chefcontrol.application.port.AIService.InterpretedItem;
 import com.chefcontrol.application.port.AIService.InterpretedOperation;
 import com.chefcontrol.application.port.CurrentUserProvider;
@@ -15,6 +20,8 @@ import com.chefcontrol.domain.chat.ChatActionRepository;
 import com.chefcontrol.domain.chat.ChatOperationType;
 import com.chefcontrol.domain.context.TenantContext;
 import com.chefcontrol.domain.menu.MenuItem;
+import com.chefcontrol.domain.menu.Recipe;
+import com.chefcontrol.domain.menu.RecipeItem;
 import com.chefcontrol.domain.product.Product;
 import com.chefcontrol.domain.product.Unit;
 import com.chefcontrol.domain.purchase.Purchase;
@@ -131,7 +138,8 @@ class ChatServiceTest {
         StockCount count = new StockCount();
         count.setId(UUID.randomUUID());
         when(stockCountService.createStockCount(any())).thenReturn(new StockCountService.StockCountResult(count, List.of()));
-        service = new ChatService(aiService, productRepository, menuItemRepository, unitRepository,
+        service = new ChatService(aiService, new ChatRecipeService(aiService, recipeRepository, accountService),
+                productRepository, menuItemRepository, unitRepository,
                 unitConversionService, purchaseService, wasteService, saleService, stockCountService,
                 productionService, recipeRepository, accountService, stockService,
                 stockMovementRepository, chatActionRepository, currentUserProvider,
@@ -241,6 +249,139 @@ class ChatServiceTest {
 
         assertEquals(ChatStatus.NOT_SUPPORTED, result.status());
         assertEquals(1, result.skipped().size());
+    }
+
+    // ── Recetas ──
+
+    @Test
+    void editingTheRecipeOfADishGoesToThePreviewPerPortionAndMarkedToReplace() {
+        // La receta de hoy es para 2 porciones: el modelo la recibe por porción, como la guarda el import.
+        answer(95, false, op("recipe", dish(milanesa, "1")));
+        when(recipeRepository.findByMenuItemIdAndRestaurantId(milanesa.getId(), R)).thenReturn(Optional.of(
+                Recipe.builder().menuItemId(milanesa.getId()).restaurantId(R).servings(2).items(List.of(
+                        RecipeItem.builder().productId(tomate.getId()).quantity(new BigDecimal("400")).unitId(g.getId())
+                                .build())).build()));
+        when(aiService.interpretRecipeMessage(any())).thenReturn(new CatalogSpreadsheetInterpretation(List.of(),
+                List.of(), List.of(new RecipeRow(1, "Milanesa", null, null, "tomates", new BigDecimal("300"), "g")),
+                List.of(), List.of(new IngredientMatch(1, "tomates", "Tomate")), List.of()));
+
+        var result = service.sendChatMessage("subí el tomate de la milanesa a 300 g", ALL);
+
+        var request = ArgumentCaptor.forClass(RecipeMessageRequest.class);
+        verify(aiService).interpretRecipeMessage(request.capture());
+        assertEquals("Milanesa", request.getValue().recipeName());
+        assertFalse(request.getValue().preparation());
+        var line = request.getValue().current().ingredients().getFirst();
+        assertEquals("Tomate", line.ingredient());
+        assertEquals(0, new BigDecimal("200").compareTo(line.quantity()));
+        assertEquals("g", line.unit());
+
+        assertEquals(ChatStatus.RECIPE_PREVIEW, result.status());
+        assertTrue(result.message().contains("«Milanesa»"), result.message());
+        assertEquals(List.of(milanesa.getId()), result.recipe().replaceRecipeMenuItemIds());
+        // El back aplica lo que reconoció el modelo: la fila va con el nombre del catálogo.
+        assertEquals("Tomate", result.recipe().catalogImport().recipes().getFirst().ingredient());
+        verify(purchaseService, never()).createPurchase(any());
+    }
+
+    @Test
+    void aMixedMessageRegistersTheOperationsAndBringsTheRecipe() {
+        answer(95, false, op("purchase", item(comino, "1", "kg", "3000", null)),
+                op("recipe", new InterpretedItem(null, null, "napolitana", null, null, null, null, null, null)));
+        when(aiService.interpretRecipeMessage(any())).thenReturn(new CatalogSpreadsheetInterpretation(List.of(),
+                List.of(), List.of(new RecipeRow(1, "Napolitana", null, null, "Tomate", new BigDecimal("0.1"), "kg")),
+                List.of(), List.of(), List.of()));
+
+        var result = service.sendChatMessage("compré 1 kg de comino a 3000 y la napolitana lleva 100 g de tomate", ALL);
+
+        assertEquals(ChatStatus.REGISTERED, result.status());
+        assertEquals(1, result.actions().size());
+        assertEquals("Napolitana", result.recipe().name());
+        assertTrue(result.recipe().replaceRecipeMenuItemIds().isEmpty());
+        assertTrue(result.message().contains("Armé la receta de «Napolitana»"), result.message());
+        var request = ArgumentCaptor.forClass(RecipeMessageRequest.class);
+        verify(aiService).interpretRecipeMessage(request.capture());
+        assertNull(request.getValue().current());
+    }
+
+    @Test
+    void aRecipeNeedsTheSamePermissionsAsTheImport() {
+        answer(95, false, op("recipe", dish(milanesa, "1")));
+        Set<Permission> noMenuUpdate = EnumSet.allOf(Permission.class);
+        noMenuUpdate.remove(Permission.MENU_UPDATE);
+
+        var result = service.sendChatMessage("la milanesa lleva 200 g de tomate", noMenuUpdate);
+
+        assertEquals(ChatStatus.NOT_REGISTERED, result.status());
+        assertEquals(ErrorCode.CHAT_PERMISSION_MISSING, result.skipped().getFirst().errorCode());
+        assertNull(result.skipped().getFirst().type());
+        assertNull(result.recipe());
+        verify(aiService, never()).interpretRecipeMessage(any());
+    }
+
+    @Test
+    void aRecipeNeedsThePlanWithRecipes() {
+        answer(95, false, op("recipe", dish(milanesa, "1")));
+        doThrow(AppException.forbidden(ErrorCode.PLAN_FEATURE_REQUIRED, "no"))
+                .when(accountService).requireFeature(Feature.RECIPES_AND_FOOD_COST);
+
+        var result = service.sendChatMessage("la milanesa lleva 200 g de tomate", ALL);
+
+        assertEquals(ErrorCode.PLAN_FEATURE_REQUIRED, result.skipped().getFirst().errorCode());
+        verify(aiService, never()).interpretRecipeMessage(any());
+    }
+
+    @Test
+    void oneRecipePerMessage() {
+        answer(95, false, op("recipe", dish(milanesa, "1"),
+                new InterpretedItem(null, null, "flan", null, null, null, null, null, null)));
+        when(aiService.interpretRecipeMessage(any())).thenReturn(new CatalogSpreadsheetInterpretation(List.of(),
+                List.of(), List.of(new RecipeRow(1, "Milanesa", null, null, "Tomate", BigDecimal.ONE, "kg")),
+                List.of(), List.of(), List.of()));
+
+        var result = service.sendChatMessage("la milanesa lleva 1 kg de tomate y el flan 2 huevos", ALL);
+
+        assertEquals(ChatStatus.RECIPE_PREVIEW, result.status());
+        assertEquals("Milanesa", result.recipe().name());
+        assertEquals(ErrorCode.CHAT_OPERATION_NOT_SUPPORTED, result.skipped().getFirst().errorCode());
+        assertTrue(result.message().contains("Una receta por mensaje"), result.message());
+        verify(aiService, times(1)).interpretRecipeMessage(any());
+    }
+
+    @Test
+    void anExistingPreparationKeepsItsYieldWhenTheModelDoesNotRepeatIt() {
+        answer(95, false, op("preparation_recipe", item(mayonesa, "1", null, null, null)));
+        when(recipeRepository.findByProductIdAndRestaurantId(mayonesa.getId(), R)).thenReturn(Optional.of(
+                Recipe.builder().productId(mayonesa.getId()).restaurantId(R).yieldQuantity(new BigDecimal("1.5"))
+                        .items(List.of(RecipeItem.builder().productId(tomate.getId()).quantity(new BigDecimal("2"))
+                                .unitId(kg.getId()).build())).build()));
+        when(aiService.interpretRecipeMessage(any())).thenReturn(new CatalogSpreadsheetInterpretation(List.of(),
+                List.of(new PreparationRow(1, "Mayonesa", null, null, "Tomate", new BigDecimal("3"), "kg")),
+                List.of(), List.of(), List.of(), List.of()));
+
+        var result = service.sendChatMessage("a la mayonesa ponele 3 kg de tomate", ALL);
+
+        var request = ArgumentCaptor.forClass(RecipeMessageRequest.class);
+        verify(aiService).interpretRecipeMessage(request.capture());
+        assertTrue(request.getValue().preparation());
+        assertEquals(0, new BigDecimal("2").compareTo(request.getValue().current().ingredients().getFirst().quantity()));
+        var row = result.recipe().catalogImport().preparations().getFirst();
+        assertEquals(0, new BigDecimal("1.5").compareTo(row.yieldQuantity()));
+        assertEquals("kg", row.yieldUnit());
+        assertEquals(List.of(mayonesa.getId()), result.recipe().replacePreparationProductIds());
+    }
+
+    @Test
+    void aRecipeTheModelCannotWriteIsSkippedAndTheRestStillRuns() {
+        answer(95, false, op("waste", item(tomate, "1", "kg", null, "DAMAGED")), op("recipe", dish(milanesa, "1")));
+        when(aiService.interpretRecipeMessage(any()))
+                .thenThrow(new AppException(ErrorCode.AI_INTERPRETATION_FAILED, "down"));
+
+        var result = service.sendChatMessage("se rompió 1 kg de tomate y la milanesa lleva queso", ALL);
+
+        assertEquals(ChatStatus.REGISTERED, result.status());
+        assertNull(result.recipe());
+        assertEquals(ErrorCode.AI_INTERPRETATION_FAILED, result.skipped().getFirst().errorCode());
     }
 
     // ── Producción ──

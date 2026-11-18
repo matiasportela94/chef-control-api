@@ -38,7 +38,8 @@ final class ChatPrompt {
                            {"type":"waste","items":[{"productId":"<id>","name":"tomate","quantity":2,"unit":"kg","reason":"EXPIRED"}]},
                            {"type":"sale","items":[{"menuItemId":"<id>","name":"milanesa","quantity":5}]},
                            {"type":"stock_adjustment","items":[{"productId":"<id>","name":"harina","quantity":8,"unit":"kg"}]},
-                           {"type":"production","items":[{"productId":"<id>","name":"mayonesa","quantity":5,"unit":"kg","expirationDate":"2026-12-01"}]}]}
+                           {"type":"production","items":[{"productId":"<id>","name":"mayonesa","quantity":5,"unit":"kg","expirationDate":"2026-12-01"}]},
+                           {"type":"recipe","items":[{"menuItemId":"<id>","name":"milanesa napolitana"}]}]}
 
             TIPOS DE OPERACIÓN (type):
             - purchase: compra de insumos ("compramos 10 kg de harina a $2000").
@@ -46,6 +47,10 @@ final class ChatPrompt {
             - sale: venta de platos ("vendimos 5 milanesas").
             - stock_adjustment: cuánto hay ahora de un insumo, contado ("quedan 8 kg de harina").
             - production: una preparación hecha en el restaurante ("hice 5 kg de mayonesa").
+            - recipe: crear o cambiar la receta de un plato ("la napolitana lleva 200 g de jamón", "sacale la crema \
+            al flan").
+            - preparation_recipe: crear o cambiar la receta de una preparación hecha en tandas ("la mayonesa base rinde \
+            1 kg y lleva 6 huevos y 1 l de aceite").
             - query: una pregunta o consulta ("¿cuánta harina hay?"), sin items.
             Un mensaje puede pedir varias cosas: una operación por tipo, con todos sus items. Si no pide nada de esto, \
             operations va vacío.
@@ -73,10 +78,14 @@ final class ChatPrompt {
             harina" → 8 y kg; "no queda más aceite" → 0. Lo que se usó o se gastó no es un ajuste.
             8. En una producción, productId es una preparación: un insumo marcado "preparación" en el catálogo. \
             quantity y unit, lo que salió de la tanda, como lo dijo el usuario ("hice 5 kilos de mayonesa" → 5 y kg).
-            9. confidence: de 0 a 100, cuán seguro estás de haber entendido todo. needsConfirmation = true si \
+            9. En una receta, un solo ítem: el plato (menuItemId, de PLATOS) o la preparación (productId, de \
+            CATÁLOGO DE INSUMOS) cuya receta se crea o cambia, y name; si es nueva, el id en null y name como nombre de \
+            plato ("Milanesa napolitana"). Sin cantidades: los ingredientes los lee otro paso. Un insumo del catálogo \
+            que pasa a tener receta de tanda es preparation_recipe.
+            10. confidence: de 0 a 100, cuán seguro estás de haber entendido todo. needsConfirmation = true si \
             confidence < 80, si algo es ambiguo, o si en una compra la cantidad es mayor a 1 y el precio por unidad \
             supera $100.000 (puede ser el total).
-            10. responseToUser, en castellano rioplatense y corto: si needsConfirmation, la pregunta concreta (si el \
+            11. responseToUser, en castellano rioplatense y corto: si needsConfirmation, la pregunta concreta (si el \
             precio es por unidad o el total, cuál de dos insumos); si no entendiste, qué falta. Si no, una frase \
             corta: el detalle de lo registrado lo arma el sistema.
             """;
@@ -114,7 +123,8 @@ final class ChatPrompt {
                 "required", List.of("name"));
         Map<String, Object> operation = Map.of("type", "object", "properties", Map.of(
                 "type", Map.of("type", "string",
-                        "enum", List.of("purchase", "waste", "sale", "stock_adjustment", "production", "query")),
+                        "enum", List.of("purchase", "waste", "sale", "stock_adjustment", "production", "recipe",
+                                "preparation_recipe", "query")),
                 "items", Map.of("type", "array", "items", item)),
                 "required", List.of("type", "items"));
         return Map.of("type", "object", "properties", Map.of(

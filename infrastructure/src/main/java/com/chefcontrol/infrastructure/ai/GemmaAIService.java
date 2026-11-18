@@ -5,6 +5,7 @@ import com.chefcontrol.application.port.AIService.CatalogSpreadsheetInterpretati
 import com.chefcontrol.application.port.AIService.CatalogSpreadsheetRequest;
 import com.chefcontrol.application.port.AIService.ChatInterpretation;
 import com.chefcontrol.application.port.AIService.ChatMessageRequest;
+import com.chefcontrol.application.port.AIService.RecipeMessageRequest;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -217,6 +218,33 @@ public class GemmaAIService implements AIService {
                 usage.path("thoughtsTokenCount").asInt(), usage.path("cachedContentTokenCount").asInt(),
                 System.currentTimeMillis() - start);
         return ChatPrompt.parse(CatalogSpreadsheetPrompt.extractJson(answerText(response), objectMapper));
+    }
+
+    @Override
+    public CatalogSpreadsheetInterpretation interpretRecipeMessage(RecipeMessageRequest request) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("system_instruction", Map.of("parts", List.of(Map.of("text", RecipeChatPrompt.systemPrompt(request,
+                "Respondé solo con ese JSON, compacto y sin texto alrededor.")))));
+        body.put("contents", List.of(Map.of("role", "user",
+                "parts", List.of(Map.of("text", RecipeChatPrompt.userMessage(request))))));
+        body.put("generationConfig", generationConfig(RecipeChatPrompt.MAX_OUTPUT_TOKENS));
+
+        long start = System.currentTimeMillis();
+        JsonNode response;
+        try {
+            response = restClient.post().uri("/v1beta/models/" + model + ":generateContent")
+                    .body(body).retrieve().body(JsonNode.class);
+        } catch (RestClientException e) {
+            log.error("[Gemma] interpretRecipeMessage failed: {}", e.getMessage());
+            throw RecipeChatPrompt.failed(e.getMessage());
+        }
+        JsonNode usage = response.path("usageMetadata");
+        log.info("[Gemma] interpretRecipeMessage model={} products={} input_tokens={} output_tokens={} "
+                        + "thoughts_tokens={} cached_tokens={} ms={}", model, request.products().size(),
+                usage.path("promptTokenCount").asInt(), usage.path("candidatesTokenCount").asInt(),
+                usage.path("thoughtsTokenCount").asInt(), usage.path("cachedContentTokenCount").asInt(),
+                System.currentTimeMillis() - start);
+        return RecipeChatPrompt.parse(CatalogSpreadsheetPrompt.extractJson(answerText(response), objectMapper), request);
     }
 
     /** JSON, sin azar y, en 2.5 Flash, sin razonamiento: gasta tokens de salida y traducir no lo necesita. */

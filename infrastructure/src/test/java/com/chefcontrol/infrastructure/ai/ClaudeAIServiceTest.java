@@ -6,6 +6,9 @@ import com.chefcontrol.application.port.AIService.CatalogSpreadsheetRequest;
 import com.chefcontrol.application.port.AIService.ChatCatalogMenuItem;
 import com.chefcontrol.application.port.AIService.ChatCatalogProduct;
 import com.chefcontrol.application.port.AIService.ChatMessageRequest;
+import com.chefcontrol.application.port.AIService.CurrentRecipe;
+import com.chefcontrol.application.port.AIService.RecipeLine;
+import com.chefcontrol.application.port.AIService.RecipeMessageRequest;
 import com.chefcontrol.application.port.AIService.SpreadsheetRow;
 import com.chefcontrol.application.port.AIService.SpreadsheetSheet;
 import com.chefcontrol.application.port.AIService.UnitOption;
@@ -144,5 +147,43 @@ class ClaudeAIServiceTest {
 
         var e = assertThrows(AppException.class, () -> f.service.interpretChatMessage(CHAT));
         assertEquals(ErrorCode.AI_INTERPRETATION_FAILED, e.getErrorCode());
+    }
+
+    // ── Receta por chat ──
+
+    @Test
+    void theRecipeCallSendsTheCurrentRecipeAndNumbersTheIngredients() {
+        var request = new RecipeMessageRequest("sacale el comino y ponele 2 huevos", "Mayonesa base", true,
+                new CurrentRecipe(new BigDecimal("1.5"), "kg", List.of(
+                        new RecipeLine("Comino", new BigDecimal("0.01"), "kg"),
+                        new RecipeLine("Aceite", new BigDecimal("1"), "l"))),
+                List.of(new ChatCatalogProduct(COMINO, "Comino", "kg", false)), List.of(new UnitOption("Kilogramo", "kg")));
+        var f = fixture();
+        f.server.expect(requestTo("https://api.anthropic.com/v1/messages"))
+                .andExpect(jsonPath("$.system[0].cache_control.type").value("ephemeral"))
+                .andExpect(jsonPath("$.system[0].text").value(org.hamcrest.Matchers.containsString("Comino | kg")))
+                .andExpect(jsonPath("$.tool_choice.name").value("write_recipe"))
+                .andExpect(jsonPath("$.messages[0].content").value("RECETA DE: Mayonesa base (preparación)\n"
+                        + "RECETA ACTUAL:\nComino | 0.01 | kg\nAceite | 1 | l\nRINDE: 1.5 kg\n"
+                        + "MENSAJE: sacale el comino y ponele 2 huevos"))
+                .andRespond(withSuccess("""
+                        {"stop_reason":"tool_use","usage":{"input_tokens":30,"output_tokens":60},
+                         "content":[{"type":"tool_use","name":"write_recipe","input":{"yieldQuantity":1.5,"yieldUnit":"kg",
+                           "ingredients":[{"ingredient":"Aceite","quantity":1,"unit":"l"},
+                                          {"ingredient":"huevos","quantity":2,"unit":"u"}],
+                           "proposedProducts":[{"name":"huevos","unit":"u"}],"warnings":[]}}]}
+                        """, MediaType.APPLICATION_JSON));
+
+        var result = f.service.interpretRecipeMessage(request);
+
+        assertEquals(2, result.preparations().size());
+        var first = result.preparations().getFirst();
+        assertEquals(1, first.row());
+        assertEquals("Mayonesa base", first.preparation());   // el nombre lo pone el back, no el modelo
+        assertEquals(0, new BigDecimal("1.5").compareTo(first.yieldQuantity()));
+        assertNull(result.preparations().get(1).yieldQuantity());   // el rendimiento, solo en la primera fila
+        assertTrue(result.recipes().isEmpty());
+        assertEquals(2, result.proposedProducts().getFirst().row());   // la fila del primer ingrediente que lo usa
+        f.server.verify();
     }
 }

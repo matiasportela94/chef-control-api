@@ -95,7 +95,7 @@ public class CatalogSpreadsheetService {
      * filas de insumos, ya se propuso o es un nombre que se acaba de reconocer se descarta: proponerlo crearía justo
      * el duplicado que la propuesta quiere evitar.
      */
-    private static CatalogSpreadsheetInterpretation applyMatches(CatalogSpreadsheetInterpretation r, List<String> catalog) {
+    static CatalogSpreadsheetInterpretation applyMatches(CatalogSpreadsheetInterpretation r, List<String> catalog) {
         Set<Integer> recipeRows = new HashSet<>();
         r.recipes().forEach(x -> recipeRows.add(x.row()));
         r.preparations().forEach(x -> recipeRows.add(x.row()));

@@ -227,13 +227,13 @@ final class CatalogSpreadsheetPrompt {
         return rows;
     }
 
-    private static String text(JsonNode node, String field) {
+    static String text(JsonNode node, String field) {
         JsonNode v = node.get(field);
         return v == null || v.isNull() || v.asText().isBlank() ? null : v.asText().trim();
     }
 
     /** Un número que vino como texto se intenta leer; si no se puede, queda vacío y el import lo marca en su fila. */
-    private static BigDecimal number(JsonNode node, String field) {
+    static BigDecimal number(JsonNode node, String field) {
         JsonNode v = node.get(field);
         if (v == null || v.isNull()) return null;
         if (v.isNumber()) return v.decimalValue();

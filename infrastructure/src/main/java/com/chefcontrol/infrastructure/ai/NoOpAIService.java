@@ -32,4 +32,10 @@ public class NoOpAIService implements AIService {
         log.warn("[AI no-op] interpretChatMessage called without an AI provider configured");
         throw new AppException(ErrorCode.AI_INTERPRETATION_FAILED, "No AI provider configured");
     }
+
+    @Override
+    public CatalogSpreadsheetInterpretation interpretRecipeMessage(RecipeMessageRequest request) {
+        log.warn("[AI no-op] interpretRecipeMessage called without an AI provider configured");
+        throw new AppException(ErrorCode.AI_INTERPRETATION_FAILED, "No AI provider configured");
+    }
 }
