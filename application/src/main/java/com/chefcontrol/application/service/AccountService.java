@@ -120,7 +120,7 @@ public class AccountService {
 
     private Account currentAccount() {
         UUID accountId = restaurantRepository.findByIdAndIsActiveTrue(TenantContext.require())
-                .orElseThrow(() -> new IllegalStateException("Restaurant not found"))
+                .orElseThrow(AppException::sessionRestaurantGone)
                 .getAccountId();
         return accountRepository.findById(accountId)
                 .orElseThrow(() -> new IllegalStateException("Account not found"));

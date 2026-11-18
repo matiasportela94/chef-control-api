@@ -44,17 +44,22 @@ public class WasteEventRepositoryAdapter implements WasteEventRepository {
     }
 
     @Override
+    public java.util.Set<UUID> findUndoneIds(java.util.Collection<UUID> ids) {
+        return ids.isEmpty() ? java.util.Set.of() : java.util.Set.copyOf(jpa.findUndoneIds(ids));
+    }
+
+    @Override
     public long countByRestaurantIdAndCreatedAtGreaterThanEqual(UUID restaurantId, Instant since) {
-        return jpa.countByRestaurantIdAndCreatedAtGreaterThanEqual(restaurantId, since);
+        return jpa.countNotUndoneSince(restaurantId, since);
     }
 
     @Override
     public long countByRestaurantIdAndCreatedAtBetween(UUID restaurantId, Instant from, Instant to) {
-        return jpa.countByRestaurantIdAndCreatedAtBetween(restaurantId, from, to);
+        return jpa.countNotUndoneBetween(restaurantId, from, to);
     }
 
     @Override
     public BigDecimal sumCostByRestaurantIdAndCreatedAtBetween(UUID restaurantId, Instant from, Instant to) {
-        return jpa.sumCostByRestaurantIdAndCreatedAtBetween(restaurantId, from, to);
+        return jpa.sumCostNotUndoneBetween(restaurantId, from, to);
     }
 }

@@ -60,7 +60,7 @@ public class UserManagementService {
         }
 
         var restaurant = restaurantRepository.findByIdAndIsActiveTrue(restaurantId)
-                .orElseThrow(() -> new IllegalStateException("Restaurant not found"));
+                .orElseThrow(AppException::sessionRestaurantGone);
         Role role = resolveAssignableRole(cmd.roleId(), restaurant.getAccountId());
 
         User user = new User();
@@ -99,7 +99,7 @@ public class UserManagementService {
                 .orElseThrow(() -> AppException.notFound(ErrorCode.USER_NOT_FOUND, "User not found in this restaurant"));
 
         var restaurant = restaurantRepository.findByIdAndIsActiveTrue(restaurantId)
-                .orElseThrow(() -> new IllegalStateException("Restaurant not found"));
+                .orElseThrow(AppException::sessionRestaurantGone);
         Role role = resolveAssignableRole(cmd.roleId(), restaurant.getAccountId());
 
         User user = userRepository.findById(userId)

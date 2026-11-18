@@ -255,7 +255,7 @@ public class RestaurantRegistrationService {
 
     private UUID currentAccountId() {
         return restaurantRepository.findByIdAndIsActiveTrue(TenantContext.require())
-                .orElseThrow(() -> new IllegalStateException("Restaurant not found"))
+                .orElseThrow(AppException::sessionRestaurantGone)
                 .getAccountId();
     }
 

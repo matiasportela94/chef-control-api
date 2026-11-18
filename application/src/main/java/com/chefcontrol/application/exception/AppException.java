@@ -31,4 +31,12 @@ public class AppException extends RuntimeException {
     public static AppException unprocessable(ErrorCode errorCode, String message) {
         return new AppException(errorCode, message);
     }
+
+    /**
+     * El local de la sesión ya no existe o está deshabilitado (lo borraron con la sesión abierta): esa sesión no
+     * sirve más. 401 para que el front la limpie y mande a /login, en vez de un 500.
+     */
+    public static AppException sessionRestaurantGone() {
+        return new AppException(ErrorCode.AUTHENTICATION_REQUIRED, "The session's restaurant no longer exists");
+    }
 }

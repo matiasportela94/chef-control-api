@@ -54,4 +54,12 @@ public interface JpaStockBatchRepository extends JpaRepository<StockBatchJpaEnti
             ORDER BY b.expirationDate ASC
             """)
     List<StockBatchJpaEntity> findExpiringSoon(@Param("maxDate") LocalDate maxDate);
+
+    @Query("""
+            SELECT b FROM StockBatchJpaEntity b
+            WHERE b.restaurantId = :restaurantId AND b.quantityRemaining > 0 AND b.expirationDate <= :maxDate
+            ORDER BY b.expirationDate ASC
+            """)
+    List<StockBatchJpaEntity> findExpiringByRestaurant(@Param("restaurantId") UUID restaurantId,
+                                                       @Param("maxDate") LocalDate maxDate);
 }
