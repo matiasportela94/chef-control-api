@@ -1,0 +1,50 @@
+package com.chefcontrol.infrastructure.persistence.adapter;
+
+import com.chefcontrol.application.exception.ErrorCode;
+import com.chefcontrol.application.port.AIService.CatalogSpreadsheetInterpretation;
+import com.chefcontrol.application.port.ChatExchangeRepository.StoredReply;
+import com.chefcontrol.application.service.CatalogImportService.ProductRow;
+import com.chefcontrol.application.service.CatalogImportService.RecipeRow;
+import com.chefcontrol.application.service.ChatRecipeService.RecipePreview;
+import com.chefcontrol.application.service.ChatService.Operation;
+import com.chefcontrol.application.service.ChatService.OperationItem;
+import com.chefcontrol.application.service.ChatService.Proposal;
+import com.chefcontrol.application.service.ChatService.Skipped;
+import com.chefcontrol.domain.chat.ChatOperationType;
+import com.chefcontrol.domain.waste.WasteReason;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.Test;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.List;
+import java.util.UUID;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+/**
+ * La respuesta guardada vuelve igual: de eso dependen el historial, los botones después de recargar y contestar una
+ * pregunta por texto (se compara con las alternativas guardadas). Records con más de un constructor, enums y fechas.
+ */
+class ChatExchangeRepositoryAdapterTest {
+
+    private final ChatExchangeRepositoryAdapter adapter =
+            new ChatExchangeRepositoryAdapter(null, new ObjectMapper().findAndRegisterModules());
+
+    @Test
+    void theStoredReplyRoundTrips() {
+        UUID product = UUID.randomUUID();
+        var item = new OperationItem(product, null, "Comino", new BigDecimal("5"), "kg", new BigDecimal("30000.5"),
+                LocalDate.of(2026, 12, 1), WasteReason.DAMAGED);
+        var reply = new StoredReply("¿Por kg o total?", List.of(UUID.randomUUID()), List.of(),
+                List.of(new Proposal("Por kg · $ 750.000", List.of(new Operation(ChatOperationType.PURCHASE, List.of(item),
+                        UUID.randomUUID())))),
+                List.of(new Skipped(null, "caviar", ErrorCode.CHAT_PRODUCT_NOT_IN_CATALOG, "«caviar» no está.")),
+                new RecipePreview("Napolitana", new CatalogSpreadsheetInterpretation(List.of(),
+                        List.of(), List.of(new RecipeRow(1, "Napolitana", null, null, "Jamón", new BigDecimal("0.1"), "kg")),
+                        List.of(new ProductRow(1, "Jamón", "kg", null, null, null)), List.of(), List.of("aviso")),
+                        List.of(), List.of()));
+
+        assertEquals(reply, adapter.read(adapter.write(reply)));
+    }
+}

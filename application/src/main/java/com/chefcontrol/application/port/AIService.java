@@ -42,7 +42,22 @@ public interface AIService {
      * @param menuItems los platos activos, para las ventas
      */
     record ChatMessageRequest(String message, LocalDate today, List<ChatCatalogProduct> products,
-                              List<ChatCatalogMenuItem> menuItems, List<UnitOption> units) {}
+                              List<ChatCatalogMenuItem> menuItems, List<UnitOption> units, List<ChatHistoryTurn> history) {
+        public ChatMessageRequest(String message, LocalDate today, List<ChatCatalogProduct> products,
+                                  List<ChatCatalogMenuItem> menuItems, List<UnitOption> units) {
+            this(message, today, products, menuItems, units, List.of());
+        }
+    }
+
+    /**
+     * Un intercambio anterior de la conversación de hoy, para que el modelo entienda "eran 5", "sí" o "el total".
+     *
+     * @param userMessage null si fue un "Confirmar"
+     * @param actions     lo que se registró, numerado: el modelo nombra la acción que corrige por su número
+     */
+    record ChatHistoryTurn(String userMessage, String reply, List<HistoryAction> actions) {}
+
+    record HistoryAction(int number, String summary, boolean undone) {}
 
     /**
      * @param unit        la abreviatura de su unidad por defecto
@@ -77,12 +92,18 @@ public interface AIService {
     /**
      * @param type purchase, waste, sale, stock_adjustment, production, recipe, preparation_recipe o query: viene aunque
      *             no tenga ejecución
-     * @param text el pedazo del mensaje que pide esta operación. Una receta recibe solo el suyo: con el mensaje entero,
-     *             la compra de un mensaje mixto se colaba como ingrediente
+     * @param text     el pedazo del mensaje que pide esta operación. Una receta recibe solo el suyo: con el mensaje
+     *                 entero, la compra de un mensaje mixto se colaba como ingrediente
+     * @param corrects el número de la acción de la conversación que esta operación corrige ("no, eran 5 kg"); null si
+     *                 no corrige nada
      */
-    record InterpretedOperation(String type, List<InterpretedItem> items, String text) {
+    record InterpretedOperation(String type, List<InterpretedItem> items, String text, Integer corrects) {
         public InterpretedOperation(String type, List<InterpretedItem> items) {
-            this(type, items, null);
+            this(type, items, null, null);
+        }
+
+        public InterpretedOperation(String type, List<InterpretedItem> items, String text) {
+            this(type, items, text, null);
         }
     }
 

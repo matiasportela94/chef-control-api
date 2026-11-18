@@ -1,9 +1,11 @@
 package com.chefcontrol.api.ai;
 
 import com.chefcontrol.api.ai.dto.ChatActionResponse;
+import com.chefcontrol.api.ai.dto.ChatExchangeResponse;
 import com.chefcontrol.api.ai.dto.ChatOperation;
 import com.chefcontrol.api.ai.dto.ChatResponse;
 import com.chefcontrol.api.plan.RequiresFeature;
+import com.chefcontrol.application.service.ChatHistoryService;
 import com.chefcontrol.application.service.ChatService;
 import com.chefcontrol.domain.plan.Feature;
 import jakarta.validation.Valid;
@@ -33,6 +35,7 @@ import static com.chefcontrol.api.shared.Authorities.permissionsOf;
 public class AIChatController {
 
     private final ChatService chatService;
+    private final ChatHistoryService chatHistoryService;
 
     /** Interpreta y resuelve: registra en el acto (con deshacer), pide confirmación o dice por qué no. */
     @PostMapping
@@ -43,7 +46,35 @@ public class AIChatController {
                 chatService.sendChatMessage(request.message().trim(), permissionsOf(authentication))));
     }
 
-    /** Registra la propuesta de un NEEDS_CONFIRMATION, tal cual o editada. Se revalida todo. */
+    /**
+     * La conversación de hoy (desde la medianoche argentina o el último "Nueva conversación"): lo mismo que recuerda la
+     * IA, con las acciones como están ahora.
+     */
+    @GetMapping("/messages")
+    @PreAuthorize("hasAuthority('PERM_AI_USE')")
+    public ResponseEntity<List<ChatExchangeResponse>> listChatMessages() {
+        return ResponseEntity.ok(chatHistoryService.listChatMessages().stream().map(ChatExchangeResponse::from).toList());
+    }
+
+    /**
+     * "Cancelar" la pregunta pendiente (la última respuesta, si es un NEEDS_CONFIRMATION): queda en la conversación, así
+     * un "sí" después no registra lo cancelado. Sin nada pendiente, no guarda nada.
+     */
+    @PostMapping("/cancel")
+    @PreAuthorize("hasAuthority('PERM_AI_USE')")
+    public ResponseEntity<ChatResponse> cancelChatProposal() {
+        return ResponseEntity.ok(ChatResponse.from(chatHistoryService.cancelChatProposal()));
+    }
+
+    /** "Nueva conversación": la memoria arranca de cero. No borra nada (los mensajes se guardan 30 días). */
+    @PostMapping("/conversations")
+    @PreAuthorize("hasAuthority('PERM_AI_USE')")
+    public ResponseEntity<Void> startChatConversation() {
+        chatHistoryService.startChatConversation();
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Registra una alternativa de un NEEDS_CONFIRMATION, tal cual o editada. Se revalida todo. */
     @PostMapping("/confirm")
     @PreAuthorize("hasAuthority('PERM_AI_USE')")
     public ResponseEntity<ChatResponse> confirmChatOperations(@Valid @RequestBody ConfirmChatOperationsRequest request,

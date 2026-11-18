@@ -1,0 +1,168 @@
+package com.chefcontrol.application.service;
+
+import com.chefcontrol.application.port.AIService.ChatHistoryTurn;
+import com.chefcontrol.application.port.AIService.HistoryAction;
+import com.chefcontrol.application.port.ChatExchangeRepository;
+import com.chefcontrol.application.port.ChatExchangeRepository.ChatExchange;
+import com.chefcontrol.application.port.ChatExchangeRepository.Kind;
+import com.chefcontrol.application.port.ChatExchangeRepository.StoredReply;
+import com.chefcontrol.application.port.CurrentUserProvider;
+import com.chefcontrol.application.service.ChatService.ChatResult;
+import com.chefcontrol.domain.chat.ChatAction;
+import com.chefcontrol.domain.chat.ChatActionRepository;
+import com.chefcontrol.domain.context.TenantContext;
+import com.chefcontrol.domain.shared.time.ChefControlTime;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.UUID;
+import java.util.stream.Stream;
+
+/**
+ * La memoria del chat (F19, tanda 5). La conversación la guarda el back, por usuario y local, así la pantalla, el
+ * prompt y WhatsApp ven lo mismo. Es la de hoy: desde la medianoche argentina o desde la última "Nueva conversación"
+ * (una fila marcador, que no borra nada). Las filas se guardan 30 días para revisar cómo interpreta el modelo.
+ */
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class ChatHistoryService {
+
+    /** Lo que va al prompt: los últimos 5 intercambios (unos 10 mensajes). */
+    static final int REMEMBERED_EXCHANGES = 5;
+
+    private final ChatExchangeRepository chatExchangeRepository;
+    private final ChatActionRepository chatActionRepository;
+    private final CurrentUserProvider currentUserProvider;
+    private final Clock clock;
+
+    /** La conversación de hoy del usuario en el local activo, con sus acciones como están ahora. */
+    Conversation currentConversation() {
+        UUID restaurantId = TenantContext.require();
+        Instant midnight = LocalDate.now(clock.withZone(ChefControlTime.DEFAULT_ZONE))
+                .atStartOfDay(ChefControlTime.DEFAULT_ZONE).toInstant();
+        List<ChatExchange> today = chatExchangeRepository.findChatExchangesSince(
+                currentUserProvider.currentUserId(), restaurantId, midnight);
+        int start = 0;
+        for (int i = 0; i < today.size(); i++) {
+            if (today.get(i).kind() == Kind.NEW_CONVERSATION) start = i + 1;
+        }
+        List<ChatExchange> exchanges = today.subList(start, today.size());
+        List<UUID> ids = exchanges.stream().filter(e -> e.reply() != null)
+                .flatMap(e -> Stream.concat(e.reply().actionIds().stream(), e.reply().undoneActionIds().stream()))
+                .distinct().toList();
+        Map<UUID, ChatAction> actions = new HashMap<>();
+        chatActionRepository.findAllByIdInAndRestaurantId(ids, restaurantId).forEach(a -> actions.put(a.getId(), a));
+        return new Conversation(exchanges, actions);
+    }
+
+    /**
+     * Guarda el intercambio. Si falla, lo registrado ya está registrado: se loguea y la respuesta sale igual.
+     *
+     * @param userMessage null en una confirmación
+     */
+    void rememberChatExchange(Kind kind, String userMessage, ChatResult result) {
+        try {
+            chatExchangeRepository.saveChatExchange(new ChatExchange(null, TenantContext.require(),
+                    currentUserProvider.currentUserId(), kind, userMessage, result.status(),
+                    new StoredReply(result.message(), ids(result.actions()), ids(result.undone()), result.proposals(),
+                            result.skipped(), result.recipe()),
+                    clock.instant()));
+        } catch (RuntimeException e) {
+            log.error("[Chat] could not remember the exchange: {}", e.getMessage(), e);
+        }
+    }
+
+    /** Lo que se ve en el chat: la conversación de hoy, con cada acción como está ahora (deshecha o no). */
+    public List<ChatExchangeView> listChatMessages() {
+        Conversation c = currentConversation();
+        return c.exchanges().stream().map(e -> new ChatExchangeView(e.id(), e.createdAt(), e.userMessage(),
+                new ChatResult(e.status(), e.reply().message(), live(e.reply().actionIds(), c.actions()),
+                        live(e.reply().undoneActionIds(), c.actions()), e.reply().proposals(), e.reply().skipped(),
+                        e.reply().recipe()))).toList();
+    }
+
+    static final String CANCELLED = "Listo, no registré nada.";
+
+    /**
+     * "Cancelar" la pregunta pendiente: queda en la conversación, así un "sí" después no registra lo cancelado. Sin
+     * nada pendiente no guarda nada.
+     */
+    public ChatResult cancelChatProposal() {
+        if (currentConversation().pendingProposals().isEmpty()) {
+            return ChatResult.of(ChatService.ChatStatus.NOT_REGISTERED, "No había nada para cancelar.");
+        }
+        ChatResult result = ChatResult.of(ChatService.ChatStatus.NOT_REGISTERED, CANCELLED);
+        rememberChatExchange(Kind.CANCELLATION, null, result);
+        return result;
+    }
+
+    /** "Nueva conversación": la memoria arranca de cero; lo anterior queda guardado. */
+    public void startChatConversation() {
+        chatExchangeRepository.saveChatExchange(new ChatExchange(null, TenantContext.require(),
+                currentUserProvider.currentUserId(), Kind.NEW_CONVERSATION, null, null, null, clock.instant()));
+    }
+
+    /** @return cuántos intercambios borró: los de más de {@code retentionDays} días */
+    public int purgeChatHistory(int retentionDays) {
+        return chatExchangeRepository.deleteChatExchangesBefore(clock.instant().minus(Duration.ofDays(retentionDays)));
+    }
+
+    private static List<UUID> ids(List<ChatAction> actions) {
+        return actions.stream().map(ChatAction::getId).toList();
+    }
+
+    private static List<ChatAction> live(List<UUID> ids, Map<UUID, ChatAction> actions) {
+        return ids.stream().map(actions::get).filter(Objects::nonNull).toList();
+    }
+
+    /** @param userMessage null si es el resultado de un "Confirmar" o un "Cancelar" */
+    public record ChatExchangeView(UUID id, Instant createdAt, String userMessage, ChatResult response) {}
+
+    /** Los intercambios de hoy (sin marcadores), del más viejo al más nuevo, y sus acciones como están ahora. */
+    record Conversation(List<ChatExchange> exchanges, Map<UUID, ChatAction> actions) {
+
+        /**
+         * Las alternativas de la pregunta pendiente: el último intercambio es un NEEDS_CONFIRMATION y no hay nada
+         * después. Cualquier otro intercambio (un mensaje que no la contesta, un "Cancelar") la deja atrás.
+         */
+        List<ChatService.Proposal> pendingProposals() {
+            ChatExchange last = exchanges.isEmpty() ? null : exchanges.getLast();
+            return last == null || last.status() != ChatService.ChatStatus.NEEDS_CONFIRMATION || last.reply() == null
+                    ? List.of() : last.reply().proposals();
+        }
+
+        /**
+         * Lo que va al prompt: los últimos intercambios, con las acciones numeradas en orden (1, 2, 3…). Números cortos y
+         * no ids: el modelo copia mal un UUID. Solo se puede corregir una acción que se le mostró.
+         */
+        PromptHistory promptHistory() {
+            List<ChatHistoryTurn> turns = new ArrayList<>();
+            Map<Integer, UUID> numbers = new HashMap<>();
+            int n = 0;
+            for (ChatExchange e : exchanges.subList(Math.max(0, exchanges.size() - REMEMBERED_EXCHANGES), exchanges.size())) {
+                List<HistoryAction> listed = new ArrayList<>();
+                for (UUID id : e.reply().actionIds()) {
+                    ChatAction a = actions.get(id);
+                    if (a == null) continue;
+                    numbers.put(++n, id);
+                    listed.add(new HistoryAction(n, a.getSummary(), a.isUndone()));
+                }
+                turns.add(new ChatHistoryTurn(e.userMessage(), e.reply().message(), listed));
+            }
+            return new PromptHistory(turns, numbers);
+        }
+    }
+
+    record PromptHistory(List<ChatHistoryTurn> turns, Map<Integer, UUID> actionNumbers) {}
+}

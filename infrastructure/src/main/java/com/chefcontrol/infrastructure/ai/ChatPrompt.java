@@ -3,7 +3,9 @@ package com.chefcontrol.infrastructure.ai;
 import com.chefcontrol.application.exception.AppException;
 import com.chefcontrol.application.exception.ErrorCode;
 import com.chefcontrol.application.port.AIService.ChatInterpretation;
+import com.chefcontrol.application.port.AIService.ChatHistoryTurn;
 import com.chefcontrol.application.port.AIService.ChatMessageRequest;
+import com.chefcontrol.application.port.AIService.HistoryAction;
 import com.chefcontrol.application.port.AIService.InterpretedItem;
 import com.chefcontrol.application.port.AIService.InterpretedOperation;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -30,7 +32,8 @@ final class ChatPrompt {
             devolvés las operaciones de stock que pide. No registrás nada: el sistema valida lo que devuelvas y lo \
             registra.
 
-            ENTRADA: "HOY: <fecha>" y después el mensaje.
+            ENTRADA: si hay, la CONVERSACIÓN DE HOY (lo anterior, con lo registrado numerado: "[acción 2] …"); \
+            después "HOY: <fecha>" y el mensaje nuevo.
 
             SALIDA, con esta forma:
             {"confidence":95,"needsConfirmation":false,"responseToUser":"...",
@@ -93,6 +96,12 @@ final class ChatPrompt {
             pregunta. Fuera de eso no preguntes ni objetes: devolvé la operación como la pidió el usuario aunque te \
             parezca rara ("hice 3 kilos de harina" es una production de la harina). El sistema valida y le explica al \
             usuario lo que no se puede.
+            12. CONVERSACIÓN: es para entender a qué se refiere el mensaje nuevo ("eran 5", "sí", "el total", "el \
+            de recién"). Devolvé solo lo que pide el mensaje nuevo: nunca repitas una operación ya registrada. Si \
+            corrige algo registrado ("no, eran 5 kg", "me equivoqué, era tomate"), devolvé la operación corregida \
+            completa, con todos sus datos (los que no cambian, como estaban), y en corrects el número de esa acción. Si \
+            contesta una pregunta tuya ("sí", "es el total", "por kilo"), devolvé la operación de la pregunta como \
+            queda con la respuesta, sin corrects.
             11. responseToUser, en castellano rioplatense, corto y sin muletillas (nada de "che", "dale", "genial"): \
             si needsConfirmation, la pregunta concreta (cuál de dos insumos). \
             Si no, una frase corta y sin preguntas: el detalle de lo registrado o rechazado lo arma el sistema. Si el \
@@ -118,7 +127,20 @@ final class ChatPrompt {
     }
 
     static String userMessage(ChatMessageRequest r) {
-        return "HOY: " + r.today() + "\n" + r.message();
+        StringBuilder sb = new StringBuilder();
+        if (!r.history().isEmpty()) {
+            sb.append("CONVERSACIÓN DE HOY:\n");
+            for (ChatHistoryTurn t : r.history()) {
+                if (t.userMessage() != null) sb.append("Usuario: ").append(t.userMessage()).append('\n');
+                sb.append("Respondí: ").append(t.reply()).append('\n');
+                for (HistoryAction a : t.actions()) {
+                    sb.append("  [acción ").append(a.number()).append("] ").append(a.summary())
+                            .append(a.undone() ? " (deshecha)" : "").append('\n');
+                }
+            }
+            sb.append('\n');
+        }
+        return sb.append("HOY: ").append(r.today()).append('\n').append(r.message()).toString();
     }
 
     /** Para Claude: la forma de la salida como input_schema de la herramienta. */
@@ -136,7 +158,8 @@ final class ChatPrompt {
                 "type", Map.of("type", "string",
                         "enum", List.of("purchase", "waste", "sale", "stock_adjustment", "production", "recipe",
                                 "preparation_recipe", "query")),
-                "items", Map.of("type", "array", "items", item), "text", type("string")),
+                "items", Map.of("type", "array", "items", item), "text", type("string"),
+                "corrects", type("integer")),
                 "required", List.of("type", "items"));
         return Map.of("type", "object", "properties", Map.of(
                 "confidence", Map.of("type", "integer", "minimum", 0, "maximum", 100),
@@ -159,7 +182,9 @@ final class ChatPrompt {
                         number(i, "quantity"), text(i, "unit"), number(i, "price"), text(i, "priceBasis"), text(i, "priceUnit"),
                         date(text(i, "expirationDate")), text(i, "reason")));
             }
-            operations.add(new InterpretedOperation(text(op, "type"), items, text(op, "text")));
+            JsonNode corrects = op.get("corrects");
+            operations.add(new InterpretedOperation(text(op, "type"), items, text(op, "text"),
+                    corrects == null || corrects.isNull() || corrects.asInt(0) <= 0 ? null : corrects.asInt()));
         }
         return new ChatInterpretation(root.path("confidence").asInt(0),
                 root.path("needsConfirmation").asBoolean(true), text(root, "responseToUser"), operations);

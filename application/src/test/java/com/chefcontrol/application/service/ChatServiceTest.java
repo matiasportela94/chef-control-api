@@ -5,6 +5,11 @@ import com.chefcontrol.application.exception.ErrorCode;
 import com.chefcontrol.application.port.AIService;
 import com.chefcontrol.application.port.AIService.CatalogSpreadsheetInterpretation;
 import com.chefcontrol.application.port.AIService.ChatInterpretation;
+import com.chefcontrol.application.port.AIService.HistoryAction;
+import com.chefcontrol.application.port.ChatExchangeRepository;
+import com.chefcontrol.application.port.ChatExchangeRepository.ChatExchange;
+import com.chefcontrol.application.port.ChatExchangeRepository.Kind;
+import com.chefcontrol.application.port.ChatExchangeRepository.StoredReply;
 import com.chefcontrol.application.port.AIService.IngredientMatch;
 import com.chefcontrol.application.port.AIService.RecipeMessageRequest;
 import com.chefcontrol.application.service.CatalogImportService.PreparationRow;
@@ -88,6 +93,7 @@ class ChatServiceTest {
     @Mock StockMovementRepository stockMovementRepository;
     @Mock ChatActionRepository chatActionRepository;
     @Mock CurrentUserProvider currentUserProvider;
+    @Mock ChatExchangeRepository chatExchangeRepository;
 
     private static final UUID R = UUID.randomUUID();
     private static final UUID USER = UUID.randomUUID();
@@ -103,6 +109,7 @@ class ChatServiceTest {
     private final MenuItem milanesa = MenuItem.builder().id(UUID.randomUUID()).restaurantId(R).name("Milanesa")
             .price(new BigDecimal("12000")).active(true).build();
     private ChatService service;
+    private ChatHistoryService history;
 
     @BeforeEach
     void setUp() {
@@ -140,7 +147,9 @@ class ChatServiceTest {
         StockCount count = new StockCount();
         count.setId(UUID.randomUUID());
         when(stockCountService.createStockCount(any())).thenReturn(new StockCountService.StockCountResult(count, List.of()));
-        service = new ChatService(aiService, new ChatRecipeService(aiService, recipeRepository, accountService),
+        history = new ChatHistoryService(chatExchangeRepository, chatActionRepository, currentUserProvider,
+                Clock.fixed(NOW, ZoneOffset.UTC));
+        service = new ChatService(aiService, new ChatRecipeService(aiService, recipeRepository, accountService), history,
                 productRepository, menuItemRepository, unitRepository,
                 unitConversionService, purchaseService, wasteService, saleService, stockCountService,
                 productionService, recipeRepository, accountService, stockService,
@@ -199,8 +208,219 @@ class ChatServiceTest {
         assertEquals(ChatStatus.NEEDS_CONFIRMATION, result.status());
         assertEquals("«Comino»: ¿$ 150.000 es por kg o el total de los 5 kg? Por kg serían $ 750.000; "
                 + "si es el total, $ 30.000 por kg.", result.message());
-        assertEquals(0, new BigDecimal("150000").compareTo(result.proposal().getFirst().items().getFirst().pricePerUnit()));
+        // Un botón por lectura: confirmar contesta la pregunta. Primero la del modelo.
+        assertEquals(List.of("Por kg · $ 750.000", "Total · $ 30.000 por kg"),
+                result.proposals().stream().map(ChatService.Proposal::label).toList());
+        assertEquals(0, new BigDecimal("150000").compareTo(priceOf(result.proposals().get(0))));
+        assertEquals(0, new BigDecimal("30000").compareTo(priceOf(result.proposals().get(1))));
         verify(purchaseService, never()).createPurchase(any());
+    }
+
+    private static BigDecimal priceOf(ChatService.Proposal p) {
+        return p.operations().getFirst().items().getFirst().pricePerUnit();
+    }
+
+    // ── Memoria (tanda 5) ──
+
+    @Test
+    void thePromptGetsTodaysConversationWithItsActionsNumberedAndTheExchangeIsRemembered() {
+        ChatAction bought = stored(ChatOperationType.PURCHASE, USER, NOW.minusSeconds(60));
+        conversation(exchange("viejo", List.of()), newConversation(),
+                exchange("compré 3 kg de comino a 3000", List.of(bought.getId())));
+        answer(95, false);
+
+        var result = service.sendChatMessage("gracias", ALL);
+
+        var request = ArgumentCaptor.forClass(AIService.ChatMessageRequest.class);
+        verify(aiService).interpretChatMessage(request.capture());
+        var turns = request.getValue().history();
+        assertEquals(1, turns.size());   // "Nueva conversación" cortó lo anterior
+        assertEquals("compré 3 kg de comino a 3000", turns.getFirst().userMessage());
+        assertEquals(List.of(new HistoryAction(1, "x", false)), turns.getFirst().actions());
+        verify(chatExchangeRepository).saveChatExchange(argThat(x -> x.kind() == Kind.MESSAGE
+                && "gracias".equals(x.userMessage()) && x.status() == result.status() && x.userId().equals(USER)));
+    }
+
+    @Test
+    void aCorrectionUndoesTheActionAndRegistersTheNewOne() {
+        ChatAction bought = stored(ChatOperationType.PURCHASE, USER, NOW.minusSeconds(60));
+        conversation(exchange("compré 3 kg de comino a 3000", List.of(bought.getId())));
+        answer(95, false, new InterpretedOperation("purchase", List.of(item(comino, "5", "kg", "3000", null)),
+                "no, eran 5 kg", 1));
+
+        var result = service.sendChatMessage("no, eran 5 kg", ALL);
+
+        assertEquals(ChatStatus.REGISTERED, result.status());
+        verify(purchaseService).reversePurchase(bought.getEntityId());
+        verify(purchaseService).createPurchase(any());
+        assertEquals(List.of(bought.getId()), result.undone().stream().map(ChatAction::getId).toList());
+        assertTrue(result.message().startsWith("Corregí: deshice «x». Listo: Compra: 5 kg Comino"), result.message());
+    }
+
+    @Test
+    void aCorrectionThatCannotUndoRegistersNothing() {
+        ChatAction someoneElses = stored(ChatOperationType.PURCHASE, UUID.randomUUID(), NOW.minusSeconds(60));
+        conversation(exchange("compré 3 kg de comino a 3000", List.of(someoneElses.getId())));
+        answer(95, false, new InterpretedOperation("purchase", List.of(item(comino, "5", "kg", "3000", null)),
+                "no, eran 5 kg", 1));
+        Set<Permission> noDelete = EnumSet.allOf(Permission.class);
+        noDelete.remove(Permission.PURCHASES_DELETE);
+
+        var result = service.sendChatMessage("no, eran 5 kg", noDelete);
+
+        assertEquals(ChatStatus.NOT_REGISTERED, result.status());
+        assertEquals(ErrorCode.CHAT_UNDO_NOT_ALLOWED, result.skipped().getFirst().errorCode());
+        assertTrue(result.message().contains("No corregí nada"), result.message());
+        verify(purchaseService, never()).reversePurchase(any());
+        verify(purchaseService, never()).createPurchase(any());
+    }
+
+    @Test
+    void onlyAnActionShownToTheModelCanBeCorrected() {
+        answer(95, false, new InterpretedOperation("purchase", List.of(item(comino, "5", "kg", "3000", null)),
+                "no, eran 5 kg", 7));
+
+        var result = service.sendChatMessage("no, eran 5 kg", ALL);
+
+        assertEquals(ErrorCode.CHAT_ACTION_NOT_FOUND, result.skipped().getFirst().errorCode());
+        verify(purchaseService, never()).createPurchase(any());
+    }
+
+    @Test
+    void answeringThePriceQuestionByTextRegistersThatReadingWithoutAskingAgain() {
+        answer(95, false, op("purchase", item(comino, "5", "kg", "150000", null)));
+        assertEquals(ChatStatus.NEEDS_CONFIRMATION, service.sendChatMessage("5 kg de comino a 150 mil", ALL).status());
+        var asked = ArgumentCaptor.forClass(ChatExchange.class);
+        verify(chatExchangeRepository).saveChatExchange(asked.capture());
+        conversation(asked.getValue());
+        // "Es por kilo": el mismo número, por unidad. Sin la memoria, la regla de los $100.000 volvería a preguntar.
+        answer(95, false, new InterpretedOperation("purchase", List.of(item(comino, "5", "kg", "150000", null)),
+                "es por kilo"));
+
+        var result = service.sendChatMessage("es por kilo", ALL);
+
+        assertEquals(ChatStatus.REGISTERED, result.status(), result.message());
+        var cmd = ArgumentCaptor.forClass(PurchaseService.CreatePurchaseCommand.class);
+        verify(purchaseService).createPurchase(cmd.capture());
+        assertEquals(0, new BigDecimal("150000").compareTo(cmd.getValue().items().getFirst().pricePerUnit()));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"no", "No.", "cancelá", "cancelalo", "cancelar", "dejá", "dejalo", "olvidalo", "olvidate",
+            "nada", "mejor no", "dejalo así", "no, gracias"})
+    void aNoToThePendingQuestionCancelsItWithoutCallingTheModel(String said) {
+        // Una por cada palabra de CANCEL_WORDS.
+        conversation(pending());
+
+        var result = service.sendChatMessage(said, ALL);
+
+        assertEquals(ChatStatus.NOT_REGISTERED, result.status());
+        assertEquals("Listo, no registré nada.", result.message());
+        verify(aiService, never()).interpretChatMessage(any());
+        verify(purchaseService, never()).createPurchase(any());
+    }
+
+    @Test
+    void everyCancelWordHasItsCase() {
+        assertEquals(12, ChatService.CANCEL_WORDS.size(), "una palabra nueva necesita su caso en el test de arriba");
+    }
+
+    @Test
+    void aNoWithMoreIsNotACancellation() {
+        conversation(pending());
+        answer(95, false);
+
+        service.sendChatMessage("no, eran 5 kg", ALL);
+
+        verify(aiService).interpretChatMessage(any());
+    }
+
+    @Test
+    void afterCancellingAYesRegistersNothing() {
+        conversation(pending());
+        assertEquals("Listo, no registré nada.", history.cancelChatProposal().message());
+        var cancelled = ArgumentCaptor.forClass(ChatExchange.class);
+        verify(chatExchangeRepository).saveChatExchange(cancelled.capture());
+        assertEquals(Kind.CANCELLATION, cancelled.getValue().kind());
+        conversation(pending(), cancelled.getValue());
+        answer(95, false, op("purchase", item(comino, "5", "kg", "150000", null)));
+
+        var result = service.sendChatMessage("sí", ALL);
+
+        assertEquals(ChatStatus.NEEDS_CONFIRMATION, result.status());   // ya no contesta nada: vuelve a preguntar
+        verify(purchaseService, never()).createPurchase(any());
+    }
+
+    @Test
+    void cancellingWithNothingPendingSavesNothing() {
+        assertEquals("No había nada para cancelar.", history.cancelChatProposal().message());
+        verify(chatExchangeRepository, never()).saveChatExchange(any());
+    }
+
+    /** "5 kg de comino a 150 mil" preguntado: dos alternativas, por kg y total. */
+    private ChatExchange pending() {
+        var item = new OperationItem(comino.getId(), null, "Comino", new BigDecimal("5"), "kg", new BigDecimal("150000"),
+                null, null);
+        return new ChatExchange(UUID.randomUUID(), R, USER, Kind.MESSAGE, "compré 5 kg de comino a 150 mil",
+                ChatStatus.NEEDS_CONFIRMATION, new StoredReply("¿Por kg o el total?", List.of(), List.of(),
+                List.of(new ChatService.Proposal("Por kg · $ 750.000", List.of(new Operation(ChatOperationType.PURCHASE,
+                        List.of(item))))), List.of(), null), NOW.minusSeconds(20));
+    }
+
+    @Test
+    void theHistoryShowsEachActionAsItIsNow() {
+        ChatAction bought = stored(ChatOperationType.PURCHASE, USER, NOW.minusSeconds(60));
+        bought.markUndone(NOW);
+        conversation(exchange("compré 3 kg de comino a 3000", List.of(bought.getId())));
+
+        var shown = history.listChatMessages();
+
+        assertEquals(1, shown.size());
+        assertEquals("compré 3 kg de comino a 3000", shown.getFirst().userMessage());
+        assertNotNull(shown.getFirst().response().actions().getFirst().getUndoneAt());
+    }
+
+    @Test
+    void aNewConversationIsAMarkerThatDeletesNothing() {
+        history.startChatConversation();
+
+        verify(chatExchangeRepository).saveChatExchange(argThat(x -> x.kind() == Kind.NEW_CONVERSATION
+                && x.userMessage() == null && x.reply() == null));
+        verify(chatExchangeRepository, never()).deleteChatExchangesBefore(any());
+    }
+
+    @Test
+    void thePurgeDeletesWhatIsOlderThanTheRetention() {
+        history.purgeChatHistory(30);
+
+        verify(chatExchangeRepository).deleteChatExchangesBefore(NOW.minus(Duration.ofDays(30)));
+    }
+
+    @Test
+    void aConfirmationIsRememberedToo() {
+        service.confirmChatOperations(List.of(new Operation(ChatOperationType.WASTE, List.of(new OperationItem(
+                tomate.getId(), null, "Tomate", BigDecimal.ONE, "kg", null, null, WasteReason.DAMAGED)))), ALL);
+
+        verify(chatExchangeRepository).saveChatExchange(argThat(x -> x.kind() == Kind.CONFIRMATION
+                && x.userMessage() == null && x.status() == ChatStatus.REGISTERED));
+    }
+
+    private void conversation(ChatExchange... exchanges) {
+        when(chatExchangeRepository.findChatExchangesSince(eq(USER), eq(R), any())).thenReturn(List.of(exchanges));
+        when(chatActionRepository.findAllByIdInAndRestaurantId(any(), eq(R))).thenAnswer(i -> {
+            java.util.Collection<UUID> ids = i.getArgument(0);
+            return ids.stream().map(id -> chatActionRepository.findByIdAndRestaurantId(id, R).orElse(null))
+                    .filter(java.util.Objects::nonNull).toList();
+        });
+    }
+
+    private static ChatExchange exchange(String said, List<UUID> actionIds) {
+        return new ChatExchange(UUID.randomUUID(), R, USER, Kind.MESSAGE, said, ChatStatus.REGISTERED,
+                new StoredReply("Listo.", actionIds, List.of(), List.of(), List.of(), null), NOW.minusSeconds(30));
+    }
+
+    private static ChatExchange newConversation() {
+        return new ChatExchange(UUID.randomUUID(), R, USER, Kind.NEW_CONVERSATION, null, null, null, NOW.minusSeconds(40));
     }
 
     @Test

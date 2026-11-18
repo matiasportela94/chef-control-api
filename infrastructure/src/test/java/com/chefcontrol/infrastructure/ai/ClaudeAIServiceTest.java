@@ -5,7 +5,9 @@ import com.chefcontrol.application.exception.ErrorCode;
 import com.chefcontrol.application.port.AIService.CatalogSpreadsheetRequest;
 import com.chefcontrol.application.port.AIService.ChatCatalogMenuItem;
 import com.chefcontrol.application.port.AIService.ChatCatalogProduct;
+import com.chefcontrol.application.port.AIService.ChatHistoryTurn;
 import com.chefcontrol.application.port.AIService.ChatMessageRequest;
+import com.chefcontrol.application.port.AIService.HistoryAction;
 import com.chefcontrol.application.port.AIService.CurrentRecipe;
 import com.chefcontrol.application.port.AIService.RecipeLine;
 import com.chefcontrol.application.port.AIService.RecipeMessageRequest;
@@ -140,6 +142,30 @@ class ClaudeAIServiceTest {
         assertNull(item.productId());
         assertEquals(0, new BigDecimal("2.5").compareTo(item.quantity()));
         assertEquals("EXPIRED", item.wasteReason());
+    }
+
+    @Test
+    void theConversationGoesInTheUserMessageWithItsNumberedActionsAndCorrectsIsRead() {
+        var request = new ChatMessageRequest("no, eran 5 kg", LocalDate.of(2026, 11, 18), CHAT.products(),
+                CHAT.menuItems(), CHAT.units(), List.of(new ChatHistoryTurn("compré 3 kg de comino a 3000",
+                "Listo: Compra: 3 kg Comino a $ 3.000.", List.of(new HistoryAction(1, "Compra: 3 kg Comino a $ 3.000", false)))));
+        var f = fixture();
+        f.server.expect(requestTo("https://api.anthropic.com/v1/messages"))
+                .andExpect(jsonPath("$.messages[0].content").value("CONVERSACIÓN DE HOY:\n"
+                        + "Usuario: compré 3 kg de comino a 3000\nRespondí: Listo: Compra: 3 kg Comino a $ 3.000.\n"
+                        + "  [acción 1] Compra: 3 kg Comino a $ 3.000\n\nHOY: 2026-11-18\nno, eran 5 kg"))
+                .andRespond(withSuccess("""
+                        {"content":[{"type":"tool_use","name":"record_operations","input":{"confidence":95,
+                          "needsConfirmation":false,"responseToUser":"","operations":[{"type":"purchase","corrects":1,
+                          "text":"no, eran 5 kg","items":[{"productId":"%s","name":"comino","quantity":5,"unit":"kg",
+                          "price":3000,"priceBasis":"unit"}]}]}}]}
+                        """.formatted(COMINO), MediaType.APPLICATION_JSON));
+
+        var op = f.service.interpretChatMessage(request).operations().getFirst();
+
+        assertEquals(1, op.corrects());
+        assertEquals("no, eran 5 kg", op.text());
+        f.server.verify();
     }
 
     @Test

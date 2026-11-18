@@ -25,4 +25,10 @@ public class ChatActionRepositoryAdapter implements ChatActionRepository {
     public Optional<ChatAction> findByIdAndRestaurantId(UUID id, UUID restaurantId) {
         return jpa.findByIdAndRestaurantId(id, restaurantId).map(ChatActionJpaEntity::toDomain);
     }
+
+    @Override
+    public java.util.List<ChatAction> findAllByIdInAndRestaurantId(java.util.Collection<UUID> ids, UUID restaurantId) {
+        if (ids.isEmpty()) return java.util.List.of();
+        return jpa.findAllByIdInAndRestaurantId(ids, restaurantId).stream().map(ChatActionJpaEntity::toDomain).toList();
+    }
 }

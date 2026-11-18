@@ -9,6 +9,7 @@ import com.chefcontrol.application.port.AIService.ChatInterpretation;
 import com.chefcontrol.application.port.AIService.InterpretedItem;
 import com.chefcontrol.application.port.AIService.InterpretedOperation;
 import com.chefcontrol.application.port.AIService.UnitOption;
+import com.chefcontrol.application.port.ChatExchangeRepository.Kind;
 import com.chefcontrol.application.port.CurrentUserProvider;
 import com.chefcontrol.application.service.ChatRecipeService.RecipePreview;
 import com.chefcontrol.domain.chat.ChatAction;
@@ -44,6 +45,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -85,6 +87,7 @@ public class ChatService {
 
     private final AIService aiService;
     private final ChatRecipeService chatRecipeService;
+    private final ChatHistoryService chatHistoryService;
     private final ProductRepository productRepository;
     private final MenuItemRepository menuItemRepository;
     private final UnitRepository unitRepository;
@@ -107,6 +110,19 @@ public class ChatService {
 
     /** @param permissions los del usuario en el local activo */
     public ChatResult sendChatMessage(String message, Set<Permission> permissions) {
+        ChatHistoryService.Conversation conversation = chatHistoryService.currentConversation();
+        ChatResult result = answerChatMessage(message, permissions, conversation);
+        chatHistoryService.rememberChatExchange(Kind.MESSAGE, message, result);
+        return result;
+    }
+
+    private ChatResult answerChatMessage(String message, Set<Permission> permissions,
+                                         ChatHistoryService.Conversation conversation) {
+        // "No", "cancelá", "dejalo" contra una pregunta pendiente: se cancela sin llamar al modelo (lo que va a usar
+        // WhatsApp, sin botones). Queda guardado, así la pregunta deja de estar pendiente.
+        if (!conversation.pendingProposals().isEmpty() && isCancellation(message)) {
+            return ChatResult.of(ChatStatus.NOT_REGISTERED, ChatHistoryService.CANCELLED);
+        }
         UUID restaurantId = TenantContext.require();
         List<Product> products = productRepository
                 .findByRestaurantIdAndIsActiveTrue(restaurantId, PageRequest.of(0, MAX_CATALOG)).content();
@@ -115,13 +131,14 @@ public class ChatService {
         List<Unit> units = unitRepository.findAll();
         Set<UUID> preparations = recipeRepository.findPreparationProductIds(restaurantId);
         ChatCatalog catalog = new ChatCatalog(products, menuItems, units, preparations);
+        ChatHistoryService.PromptHistory history = conversation.promptHistory();
 
         ChatInterpretation interpretation;
         try {
             interpretation = aiService.interpretChatMessage(new AIService.ChatMessageRequest(message,
                     LocalDate.now(clock.withZone(ChefControlTime.DEFAULT_ZONE)), catalog.chatProducts(),
                     menuItems.stream().map(m -> new ChatCatalogMenuItem(m.getId(), m.getName(), m.getPrice())).toList(),
-                    catalog.unitOptions()));
+                    catalog.unitOptions(), history.turns()));
         } catch (AppException e) {
             if (e.getErrorCode() != ErrorCode.AI_INTERPRETATION_FAILED) throw e;
             return ChatResult.of(ChatStatus.NOT_UNDERSTOOD, "No pude interpretar el mensaje. Probá de nuevo.");
@@ -146,6 +163,13 @@ public class ChatService {
                 skipped.add(permissionMissing(type));
                 continue;
             }
+            // "No, eran 5 kg": la acción se nombra por el número que se le mostró al modelo; solo esas se corrigen.
+            UUID corrects = op.corrects() == null ? null : history.actionNumbers().get(op.corrects());
+            if (op.corrects() != null && corrects == null) {
+                skipped.add(new Skipped(type, null, ErrorCode.CHAT_ACTION_NOT_FOUND,
+                        "No encontré la acción " + op.corrects() + " para corregir: no registré la corrección."));
+                continue;
+            }
             List<OperationItem> items = new ArrayList<>();
             // El pedazo del mensaje de esta operación: contra eso se verifica lo que el modelo clasificó.
             String said = op.text() == null || op.text().isBlank() ? message : op.text();
@@ -154,7 +178,7 @@ public class ChatService {
                 if (resolved == null) continue;
                 items.add(resolved);
             }
-            if (!items.isEmpty()) operations.add(new Operation(type, items));
+            if (!items.isEmpty()) operations.add(new Operation(type, items, corrects));
         }
 
         // La receta antes que lo operativo: sus motivos de "no" tienen que estar en skipped cuando se arma el texto.
@@ -162,16 +186,20 @@ public class ChatService {
 
         if (operations.isEmpty()) return withRecipe(nothingToRegister(interpretation, skipped), recipe);
 
+        // Contesta la pregunta anterior ("sí", "es el total"): se registra la alternativa tal como se mostró.
+        Proposal answered = answeredProposal(conversation.pendingProposals(), operations);
+        if (answered != null) return withRecipe(register(answered.operations(), skipped, permissions), recipe);
+
         boolean doubtful = interpretation.needsConfirmation() || interpretation.confidence() < MIN_CONFIDENCE;
         if (doubtful || !resolution.questions.isEmpty()) {
             String question = !resolution.questions.isEmpty() ? String.join(" ", resolution.questions)
                     : interpretation.needsConfirmation() && interpretation.responseToUser() != null
                     ? interpretation.responseToUser()
                     : "No estoy seguro de haber entendido. ¿Lo registro así?";
-            return withRecipe(new ChatResult(ChatStatus.NEEDS_CONFIRMATION, question, List.of(), operations, skipped),
-                    recipe);
+            return withRecipe(new ChatResult(ChatStatus.NEEDS_CONFIRMATION, question, List.of(),
+                    proposals(operations, resolution.readings), skipped), recipe);
         }
-        return withRecipe(register(operations, skipped), recipe);
+        return withRecipe(register(operations, skipped, permissions), recipe);
     }
 
     /**
@@ -181,18 +209,20 @@ public class ChatService {
     private static ChatResult withRecipe(ChatResult r, RecipePreview recipe) {
         if (recipe == null) return r;
         String preview = "Armé la receta de «" + recipe.name() + "»: revisala y confirmala.";
-        if (r.actions().isEmpty() && r.proposal().isEmpty()) {
+        if (r.actions().isEmpty() && r.proposals().isEmpty()) {
             String message = r.skipped().isEmpty() ? preview : preview + " No registré: " + skipMessages(r.skipped());
-            return new ChatResult(ChatStatus.RECIPE_PREVIEW, message, List.of(), List.of(), r.skipped(), recipe);
+            return new ChatResult(ChatStatus.RECIPE_PREVIEW, message, List.of(), List.of(), List.of(), r.skipped(), recipe);
         }
-        return new ChatResult(r.status(), r.message() + " " + preview, r.actions(), r.proposal(), r.skipped(), recipe);
+        return new ChatResult(r.status(), r.message() + " " + preview, r.actions(), r.undone(), r.proposals(),
+                r.skipped(), recipe);
     }
 
     // ── Confirmar ──────────────────────────────────────────────────────────────
 
     /**
-     * Registra una propuesta (la {@code proposal} de un NEEDS_CONFIRMATION, tal cual o editada). La cantidad ya viene en
-     * la unidad del insumo. Viene del cliente: se revalida todo como si fuera nueva.
+     * Registra una alternativa de un NEEDS_CONFIRMATION ({@code proposals}), tal cual o editada. La cantidad ya viene
+     * en la unidad del insumo. Viene del cliente: se revalida todo como si fuera nueva, y el deshacer de una corrección
+     * con sus reglas de siempre. Queda en la conversación.
      */
     public ChatResult confirmChatOperations(List<Operation> operations, Set<Permission> permissions) {
         UUID restaurantId = TenantContext.require();
@@ -215,12 +245,13 @@ public class ChatService {
                         : confirmedProductItem(op.type(), item, restaurantId, preparations, skipped);
                 if (checked != null) items.add(checked);
             }
-            if (!items.isEmpty()) valid.add(new Operation(op.type(), items));
+            if (!items.isEmpty()) valid.add(new Operation(op.type(), items, op.correctsActionId()));
         }
-        if (valid.isEmpty()) {
-            return new ChatResult(ChatStatus.NOT_REGISTERED, nothingRegistered(skipped), List.of(), List.of(), skipped);
-        }
-        return register(valid, skipped);
+        ChatResult result = valid.isEmpty()
+                ? new ChatResult(ChatStatus.NOT_REGISTERED, nothingRegistered(skipped), List.of(), List.of(), skipped)
+                : register(valid, skipped, permissions);
+        chatHistoryService.rememberChatExchange(Kind.CONFIRMATION, null, result);
+        return result;
     }
 
     private OperationItem confirmedSaleItem(OperationItem item, UUID restaurantId, List<Skipped> skipped) {
@@ -265,35 +296,40 @@ public class ChatService {
      * Quien lo cargó puede durante 15 minutos sin el permiso de borrar; después, o lo de otro, con ese permiso.
      */
     public ChatAction undoChatAction(UUID actionId, Set<Permission> permissions) {
-        UUID restaurantId = TenantContext.require();
-        ChatAction action = chatActionRepository.findByIdAndRestaurantId(actionId, restaurantId)
+        ChatAction action = undoable(actionId, permissions);
+        return transactions.execute(status -> revert(action));
+    }
+
+    /** La acción, si este usuario la puede deshacer ahora; si no, por qué (404, 409 o CHAT_UNDO_NOT_ALLOWED). */
+    private ChatAction undoable(UUID actionId, Set<Permission> permissions) {
+        ChatAction action = chatActionRepository.findByIdAndRestaurantId(actionId, TenantContext.require())
                 .orElseThrow(() -> AppException.notFound(ErrorCode.CHAT_ACTION_NOT_FOUND, "Chat action not found"));
         if (action.isUndone()) {
             throw AppException.conflict(ErrorCode.CHAT_ACTION_ALREADY_UNDONE, "Chat action already undone");
         }
-        Instant now = clock.instant();
-        if (!action.undoableWithoutPermissionBy(currentUserProvider.currentUserId(), now)
+        if (!action.undoableWithoutPermissionBy(currentUserProvider.currentUserId(), clock.instant())
                 && !permissions.contains(action.getType().undoPermission())) {
             throw AppException.forbidden(ErrorCode.CHAT_UNDO_NOT_ALLOWED,
                     "Undoing this needs " + action.getType().undoPermission());
         }
-        return transactions.execute(status -> {
-            switch (action.getType()) {
-                case PURCHASE -> purchaseService.reversePurchase(action.getEntityId());
-                case WASTE -> stockService.reverseMovement(wasteMovementOf(action.getEntityId()).getId());
-                case SALE -> saleService.reverseSale(action.getEntityId());
-                case PRODUCTION -> productionService.reverseProduction(action.getEntityId());
-                // Un conteo sin diferencias no movió nada: no hay qué revertir, pero queda deshecho igual.
-                case STOCK_ADJUSTMENT -> stockMovementRepository
-                        .findByReferenceIdAndReferenceType(action.getEntityId(), "stock_count").stream()
-                        .filter(m -> m.getType() != MovementType.REVERSAL && m.getReversedBy() == null)
-                        .forEach(m -> stockService.reverseMovement(m.getId()));
-                default -> throw AppException.badRequest(ErrorCode.CHAT_OPERATION_NOT_SUPPORTED,
-                        "Undo of " + action.getType() + " is not supported yet");
-            }
-            action.markUndone(now);
-            return chatActionRepository.save(action);
-        });
+        return action;
+    }
+
+    /** Con los métodos de siempre: queda auditado como cualquier reversión. Sin transacción propia: la pone quien llama. */
+    private ChatAction revert(ChatAction action) {
+        switch (action.getType()) {
+            case PURCHASE -> purchaseService.reversePurchase(action.getEntityId());
+            case WASTE -> stockService.reverseMovement(wasteMovementOf(action.getEntityId()).getId());
+            case SALE -> saleService.reverseSale(action.getEntityId());
+            case PRODUCTION -> productionService.reverseProduction(action.getEntityId());
+            // Un conteo sin diferencias no movió nada: no hay qué revertir, pero queda deshecho igual.
+            case STOCK_ADJUSTMENT -> stockMovementRepository
+                    .findByReferenceIdAndReferenceType(action.getEntityId(), "stock_count").stream()
+                    .filter(m -> m.getType() != MovementType.REVERSAL && m.getReversedBy() == null)
+                    .forEach(m -> stockService.reverseMovement(m.getId()));
+        }
+        action.markUndone(clock.instant());
+        return chatActionRepository.save(action);
     }
 
     private StockMovement wasteMovementOf(UUID wasteEventId) {
@@ -305,52 +341,154 @@ public class ChatService {
 
     // ── Registrar ──────────────────────────────────────────────────────────────
 
-    private ChatResult register(List<Operation> operations, List<Skipped> skipped) {
+    private ChatResult register(List<Operation> operations, List<Skipped> skipped, Set<Permission> permissions) {
         List<ChatAction> actions = new ArrayList<>();
+        List<ChatAction> undone = new ArrayList<>();
         for (Operation op : operations) {
-            switch (op.type()) {
-                case PURCHASE -> inOwnTransaction(op.type(), names(op.items()), skipped, () -> {
-                    var purchase = purchaseService.createPurchase(new PurchaseService.CreatePurchaseCommand(
-                            null, null, clock.instant(), null, op.items().stream().map(this::purchaseItem).toList()));
-                    actions.add(saveAction(ChatOperationType.PURCHASE, purchase.getId(), purchaseSummary(op.items())));
-                });
-                // Una acción por merma: cada waste_event es de un insumo, y así se deshace solo la equivocada.
-                case WASTE -> op.items().forEach(item -> inOwnTransaction(op.type(), item.name(), skipped, () -> {
-                    var event = wasteService.createWasteEvent(new WasteService.CreateWasteEventCommand(
-                            item.productId(), defaultUnitOf(item.productId()), item.quantity(), item.wasteReason()));
-                    actions.add(saveAction(ChatOperationType.WASTE, event.getId(), wasteSummary(item)));
-                }));
-                // Una venta con todos los platos, como el formulario. Descuenta con la receta (y produce lo que falte).
-                case SALE -> inOwnTransaction(op.type(), names(op.items()), skipped, () -> {
-                    var sale = saleService.recordSale(new SaleService.CreateSaleCommand(null, clock.instant(),
-                            op.items().stream().map(i -> new SaleService.SaleItemCommand(
-                                    i.menuItemId(), i.quantity().intValueExact())).toList()));
-                    actions.add(saveAction(ChatOperationType.SALE, sale.getId(), saleSummary(op.items())));
-                });
-                // Un conteo de solo esos insumos: "quedan 8 kg de harina" ajusta la harina y nada más.
-                case STOCK_ADJUSTMENT -> inOwnTransaction(op.type(), names(op.items()), skipped, () -> {
-                    var count = stockCountService.createStockCount(new StockCountService.CreateStockCountCommand(null,
-                            op.items().stream().map(i -> new StockCountService.StockCountItemCommand(
-                                    i.productId(), defaultUnitOf(i.productId()), i.quantity())).toList()));
-                    actions.add(saveAction(ChatOperationType.STOCK_ADJUSTMENT, count.count().getId(),
-                            adjustmentSummary(op.items())));
-                });
-                // Una acción por producción: cada tanda es una entidad, y así se deshace solo la equivocada.
-                case PRODUCTION -> op.items().forEach(item -> inOwnTransaction(op.type(), item.name(), skipped, () -> {
-                    accountService.requireFeature(Feature.RECIPES_AND_FOOD_COST);   // como POST /productions
-                    var production = productionService.recordProduction(new ProductionService.RecordProductionCommand(
-                            item.productId(), item.quantity(), defaultUnitOf(item.productId()), item.expirationDate(),
-                            clock.instant(), null));
-                    actions.add(saveAction(ChatOperationType.PRODUCTION, production.getId(), productionSummary(item)));
-                }));
+            if (op.correctsActionId() == null) {
+                // Una acción por merma y por producción: cada una es su entidad, y así se deshace solo la equivocada.
+                List<Operation> parts = op.type() == ChatOperationType.WASTE || op.type() == ChatOperationType.PRODUCTION
+                        ? op.items().stream().map(i -> new Operation(op.type(), List.of(i))).toList()
+                        : List.of(op);
+                parts.forEach(part -> inOwnTransaction(part.type(), names(part.items()), skipped,
+                        () -> actions.addAll(record(part))));
+                continue;
             }
+            // Una corrección: deshacer la vieja y registrar la nueva, juntas. Si la nueva falla, la vieja queda como
+            // estaba; si la vieja no se puede deshacer, la nueva no se registra.
+            ChatAction corrected;
+            try {
+                corrected = undoable(op.correctsActionId(), permissions);
+            } catch (AppException e) {
+                skipped.add(notCorrected(op, e));
+                continue;
+            }
+            inOwnTransaction(op.type(), names(op.items()), skipped, () -> {
+                ChatAction reverted = revert(corrected);
+                List<ChatAction> recorded = record(op);
+                undone.add(reverted);
+                actions.addAll(recorded);
+            });
         }
         if (actions.isEmpty()) {
             return new ChatResult(ChatStatus.NOT_REGISTERED, nothingRegistered(skipped), List.of(), List.of(), skipped);
         }
-        String message = "Listo: " + actions.stream().map(ChatAction::getSummary).collect(Collectors.joining("; ")) + ".";
+        String message = (undone.isEmpty() ? "" : "Corregí: deshice " + undone.stream()
+                .map(a -> "«" + a.getSummary() + "»").collect(Collectors.joining(", ")) + ". ")
+                + "Listo: " + actions.stream().map(ChatAction::getSummary).collect(Collectors.joining("; ")) + ".";
         if (!skipped.isEmpty()) message += " No registré: " + skipMessages(skipped);
-        return new ChatResult(ChatStatus.REGISTERED, message, actions, List.of(), skipped);
+        return new ChatResult(ChatStatus.REGISTERED, message, actions, undone, List.of(), skipped, null);
+    }
+
+    /** Registra una operación y devuelve sus acciones. Sin transacción propia: la pone quien llama. */
+    private List<ChatAction> record(Operation op) {
+        List<ChatAction> recorded = new ArrayList<>();
+        switch (op.type()) {
+            case PURCHASE -> {
+                var purchase = purchaseService.createPurchase(new PurchaseService.CreatePurchaseCommand(
+                        null, null, clock.instant(), null, op.items().stream().map(this::purchaseItem).toList()));
+                recorded.add(saveAction(ChatOperationType.PURCHASE, purchase.getId(), purchaseSummary(op.items())));
+            }
+            case WASTE -> op.items().forEach(item -> {
+                var event = wasteService.createWasteEvent(new WasteService.CreateWasteEventCommand(
+                        item.productId(), defaultUnitOf(item.productId()), item.quantity(), item.wasteReason()));
+                recorded.add(saveAction(ChatOperationType.WASTE, event.getId(), wasteSummary(item)));
+            });
+            // Una venta con todos los platos, como el formulario. Descuenta con la receta (y produce lo que falte).
+            case SALE -> {
+                var sale = saleService.recordSale(new SaleService.CreateSaleCommand(null, clock.instant(),
+                        op.items().stream().map(i -> new SaleService.SaleItemCommand(
+                                i.menuItemId(), i.quantity().intValueExact())).toList()));
+                recorded.add(saveAction(ChatOperationType.SALE, sale.getId(), saleSummary(op.items())));
+            }
+            // Un conteo de solo esos insumos: "quedan 8 kg de harina" ajusta la harina y nada más.
+            case STOCK_ADJUSTMENT -> {
+                var count = stockCountService.createStockCount(new StockCountService.CreateStockCountCommand(null,
+                        op.items().stream().map(i -> new StockCountService.StockCountItemCommand(
+                                i.productId(), defaultUnitOf(i.productId()), i.quantity())).toList()));
+                recorded.add(saveAction(ChatOperationType.STOCK_ADJUSTMENT, count.count().getId(),
+                        adjustmentSummary(op.items())));
+            }
+            case PRODUCTION -> op.items().forEach(item -> {
+                accountService.requireFeature(Feature.RECIPES_AND_FOOD_COST);   // como POST /productions
+                var production = productionService.recordProduction(new ProductionService.RecordProductionCommand(
+                        item.productId(), item.quantity(), defaultUnitOf(item.productId()), item.expirationDate(),
+                        clock.instant(), null));
+                recorded.add(saveAction(ChatOperationType.PRODUCTION, production.getId(), productionSummary(item)));
+            });
+        }
+        return recorded;
+    }
+
+    /** Por qué una corrección no se hizo: no se registró la nueva, y se dice. */
+    private Skipped notCorrected(Operation op, AppException e) {
+        String what = chatActionRepository.findByIdAndRestaurantId(op.correctsActionId(), TenantContext.require())
+                .map(a -> "«" + a.getSummary() + "»").orElse("lo que querés corregir");
+        String why = switch (e.getErrorCode()) {
+            case CHAT_ACTION_ALREADY_UNDONE -> what + " ya estaba deshecha";
+            case CHAT_UNDO_NOT_ALLOWED -> "para deshacer " + what
+                    + " hace falta el permiso de borrar (pasaron más de 15 minutos o no la cargaste vos)";
+            default -> "no encontré " + what;
+        };
+        return new Skipped(op.type(), names(op.items()), e.getErrorCode(), "No corregí nada: " + why + ".");
+    }
+
+    /**
+     * Qué se puede confirmar. Con un precio de dos lecturas, una alternativa por lectura (primero la del modelo), así el
+     * botón contesta la pregunta; si no, una sola, "Confirmar".
+     */
+    static List<Proposal> proposals(List<Operation> operations, Map<OperationItem, Readings> readings) {
+        if (readings.isEmpty()) return List.of(new Proposal("Confirmar", operations));
+        if (readings.size() > 1) {
+            return List.of(new Proposal("Precios por unidad", priced(operations, readings, true)),
+                    new Proposal("Precios totales", priced(operations, readings, false)));
+        }
+        var only = readings.entrySet().iterator().next();
+        OperationItem item = only.getKey();
+        Readings r = only.getValue();
+        Proposal perUnit = new Proposal("Por " + item.unitName() + " · " + money(r.perUnit().multiply(item.quantity())),
+                priced(operations, readings, true));
+        Proposal total = new Proposal("Total · " + money(r.ofTotal()) + " por " + item.unitName(),
+                priced(operations, readings, false));
+        return r.modelSaidTotal() ? List.of(total, perUnit) : List.of(perUnit, total);
+    }
+
+    private static List<Operation> priced(List<Operation> operations, Map<OperationItem, Readings> readings,
+                                          boolean perUnit) {
+        return operations.stream().map(op -> new Operation(op.type(), op.items().stream().map(i -> {
+            Readings r = readings.get(i);
+            return r == null ? i : i.withPrice(perUnit ? r.perUnit() : r.ofTotal());
+        }).toList(), op.correctsActionId())).toList();
+    }
+
+    /**
+     * La alternativa que contesta la pregunta anterior ("sí", "es el total", "por kilo"): lo interpretado ahora tiene
+     * los mismos insumos o platos, cantidades y precios que una de las que se mostraron. Sin esto, "es por kilo" volvería
+     * a caer en la regla de los $100.000 y preguntaría para siempre.
+     */
+    static Proposal answeredProposal(List<Proposal> pending, List<Operation> operations) {
+        List<String> now = keys(operations);
+        return pending.stream().filter(p -> keys(p.operations()).equals(now)).findFirst().orElse(null);
+    }
+
+    /** Las palabras de un "no" a la pregunta pendiente: el mensaje entero tiene que ser solo esto ("mejor no", "dejalo"). */
+    static final Set<String> CANCEL_WORDS = Set.of("no", "cancela", "cancelalo", "cancelar", "deja", "dejalo",
+            "olvidalo", "olvidate", "nada", "mejor", "asi", "gracias");
+
+    /** "No, eran 5 kg" no es cancelar: trae algo más, y lo interpreta el modelo como siempre. */
+    static boolean isCancellation(String message) {
+        List<String> words = java.util.Arrays.stream(CatalogImportService.key(message).split("[^a-z]+"))
+                .filter(w -> !w.isEmpty()).toList();
+        return !words.isEmpty() && CANCEL_WORDS.containsAll(words);
+    }
+
+    private static List<String> keys(List<Operation> operations) {
+        return operations.stream().flatMap(op -> op.items().stream().map(i -> op.type() + "|" + i.productId() + "|"
+                + i.menuItemId() + "|" + plain(i.quantity()) + "|" + plain(i.pricePerUnit()))).sorted().toList();
+    }
+
+    private static String plain(BigDecimal n) {
+        return n == null ? "" : n.stripTrailingZeros().toPlainString();
     }
 
     /** La operación y su fila de chat_actions juntas: no queda una compra sin deshacer ni un deshacer sin compra. */
@@ -399,6 +537,8 @@ public class ChatService {
         final Set<UUID> preparations;
         /** Lo que hay que preguntar antes de registrar nada: un precio con dos lecturas, una unidad que nadie dijo. */
         final List<String> questions = new ArrayList<>();
+        /** Los ítems con un precio de dos lecturas (por identidad): cada lectura es una alternativa para confirmar. */
+        final Map<OperationItem, Readings> readings = new IdentityHashMap<>();
 
         Resolution(List<Product> catalog, List<MenuItem> dishes, List<Unit> all, Set<UUID> preparations) {
             this.preparations = preparations;
@@ -443,6 +583,7 @@ public class ChatService {
                 BigDecimal quantity = convert(() -> unitConversionService.convert(
                         item.quantity(), unit.getId(), product.getDefaultUnitId()), 3);
                 BigDecimal price = null;
+                Readings twoReadings = null;
                 if (!validQuantity(type, quantity)) {   // 0,0001 g de algo en kg: redondeado no queda nada
                     skipped.add(skip(type, product.getName(), ErrorCode.CHAT_INVALID_QUANTITY));
                     return null;
@@ -469,11 +610,14 @@ public class ChatService {
                     price = basis == PriceBasis.TOTAL ? ofTotal : perUnit;
                     if (basis.isAmbiguous(quantity, perUnit, said)) {
                         questions.add(priceQuestion(product, item.price(), priceUnit, quantity, perUnit, ofTotal));
+                        twoReadings = new Readings(perUnit, ofTotal, basis == PriceBasis.TOTAL);
                     }
                 }
-                return new OperationItem(product.getId(), null, product.getName(), quantity, unitLabel(product),
-                        price, datedByUser(type) ? item.expirationDate() : null,
+                OperationItem resolved = new OperationItem(product.getId(), null, product.getName(), quantity,
+                        unitLabel(product), price, datedByUser(type) ? item.expirationDate() : null,
                         type == ChatOperationType.WASTE ? reasonOf(item.wasteReason()) : null);
+                if (twoReadings != null) readings.put(resolved, twoReadings);
+                return resolved;
             } catch (AppException e) {   // UNIT_CONVERSION_NOT_FOUND: litros de un insumo en kg
                 skipped.add(new Skipped(type, product.getName(), e.getErrorCode(),
                         "«" + product.getName() + "» va en " + unitLabel(product) + " y no se puede pasar de "
@@ -792,7 +936,18 @@ public class ChatService {
 
     public enum ChatStatus { REGISTERED, NEEDS_CONFIRMATION, RECIPE_PREVIEW, NOT_REGISTERED, NOT_SUPPORTED, NOT_UNDERSTOOD }
 
-    public record Operation(ChatOperationType type, List<OperationItem> items) {}
+    /** @param correctsActionId la acción que esta operación corrige (se deshace en la misma transacción); null si no */
+    public record Operation(ChatOperationType type, List<OperationItem> items, UUID correctsActionId) {
+        public Operation(ChatOperationType type, List<OperationItem> items) {
+            this(type, items, null);
+        }
+    }
+
+    /** Una alternativa de un NEEDS_CONFIRMATION: lo que confirma su botón. El label lo arma el back. */
+    public record Proposal(String label, List<Operation> operations) {}
+
+    /** Las dos lecturas de un precio, calculadas por el back, por unidad del insumo. */
+    record Readings(BigDecimal perUnit, BigDecimal ofTotal, boolean modelSaidTotal) {}
 
     /**
      * @param quantity     en la unidad por defecto del insumo (ya convertida); en ventas, porciones
@@ -800,17 +955,25 @@ public class ChatService {
      * @param pricePerUnit solo compras: pesos por {@code unitName}
      */
     public record OperationItem(UUID productId, UUID menuItemId, String name, BigDecimal quantity, String unitName,
-                                    BigDecimal pricePerUnit, LocalDate expirationDate, WasteReason wasteReason) {}
+                                    BigDecimal pricePerUnit, LocalDate expirationDate, WasteReason wasteReason) {
+        OperationItem withPrice(BigDecimal price) {
+            return new OperationItem(productId, menuItemId, name, quantity, unitName, price, expirationDate, wasteReason);
+        }
+    }
 
     /** @param name como lo dijo el usuario, o el nombre del catálogo si ya se lo reconoció */
     public record Skipped(ChatOperationType type, String name, ErrorCode errorCode, String message) {}
 
-    /** @param recipe la receta para la vista previa del import; null si el mensaje no trae receta */
-    public record ChatResult(ChatStatus status, String message, List<ChatAction> actions,
-                             List<Operation> proposal, List<Skipped> skipped, RecipePreview recipe) {
-        public ChatResult(ChatStatus status, String message, List<ChatAction> actions, List<Operation> proposal,
+    /**
+     * @param undone    lo que deshizo una corrección en este mensaje
+     * @param proposals las alternativas de un NEEDS_CONFIRMATION, cada una con su botón
+     * @param recipe    la receta para la vista previa del import; null si el mensaje no trae receta
+     */
+    public record ChatResult(ChatStatus status, String message, List<ChatAction> actions, List<ChatAction> undone,
+                             List<Proposal> proposals, List<Skipped> skipped, RecipePreview recipe) {
+        public ChatResult(ChatStatus status, String message, List<ChatAction> actions, List<Proposal> proposals,
                           List<Skipped> skipped) {
-            this(status, message, actions, proposal, skipped, null);
+            this(status, message, actions, List.of(), proposals, skipped, null);
         }
 
         static ChatResult of(ChatStatus status, String message) {
