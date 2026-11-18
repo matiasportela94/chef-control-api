@@ -97,15 +97,30 @@ public interface AIService {
      * @param corrects el número de la acción de la conversación que esta operación corrige ("no, eran 5 kg"); null si
      *                 no corrige nada
      */
-    record InterpretedOperation(String type, List<InterpretedItem> items, String text, Integer corrects) {
+    record InterpretedOperation(String type, List<InterpretedItem> items, String text, Integer corrects,
+                                InterpretedQuery query) {
         public InterpretedOperation(String type, List<InterpretedItem> items) {
-            this(type, items, null, null);
+            this(type, items, null, null, null);
         }
 
         public InterpretedOperation(String type, List<InterpretedItem> items, String text) {
-            this(type, items, text, null);
+            this(type, items, text, null, null);
+        }
+
+        public InterpretedOperation(String type, List<InterpretedItem> items, String text, Integer corrects) {
+            this(type, items, text, corrects, null);
         }
     }
+
+    /**
+     * Una consulta de la lista fija, con un período con nombre: el modelo no cuenta días ("el lunes de la semana pasada",
+     * fin de mes, año nuevo); las fechas las calcula el back. Solo en {@code range} vienen fechas: las que dijo el usuario.
+     *
+     * @param name   stock, expirations, sales, purchases, waste, last_purchase_price, food_cost u open_alerts
+     * @param period today, yesterday, this_week, last_week, this_month, last_month, last_n_days o range; null = no dijo
+     * @param days   en last_n_days
+     */
+    record InterpretedQuery(String name, String period, Integer days, LocalDate from, LocalDate to) {}
 
     /**
      * Cantidad, unidad y precio tal como los dijo el usuario: las cuentas las hace el back, no la IA. Con "500 g de

@@ -88,6 +88,7 @@ public class ChatService {
     private final AIService aiService;
     private final ChatRecipeService chatRecipeService;
     private final ChatHistoryService chatHistoryService;
+    private final ChatQueryService chatQueryService;
     private final ProductRepository productRepository;
     private final MenuItemRepository menuItemRepository;
     private final UnitRepository unitRepository;
@@ -149,10 +150,15 @@ public class ChatService {
         List<Skipped> skipped = new ArrayList<>();
         List<Operation> operations = new ArrayList<>();
         List<ChatRecipeService.RecipeRequest> recipes = new ArrayList<>();
+        List<InterpretedOperation> queries = new ArrayList<>();
         for (InterpretedOperation op : interpretation.operations()) {
             if (isRecipe(op.type())) {
                 boolean preparation = "preparation_recipe".equalsIgnoreCase(op.type().trim());
                 op.items().forEach(i -> recipes.add(new ChatRecipeService.RecipeRequest(preparation, i, op.text())));
+                continue;
+            }
+            if (op.type() != null && "query".equalsIgnoreCase(op.type().trim())) {
+                queries.add(op);
                 continue;
             }
             ChatOperationType type = typeOf(op.type());
@@ -184,12 +190,15 @@ public class ChatService {
 
         // La receta antes que lo operativo: sus motivos de "no" tienen que estar en skipped cuando se arma el texto.
         RecipePreview recipe = chatRecipeService.previewChatRecipe(message, recipes, catalog, permissions, skipped);
+        // Las consultas las contesta el back con sus números; el modelo solo eligió cuál y de qué período.
+        List<String> answers = chatQueryService.answerChatQueries(queries, catalog, permissions, skipped);
+        boolean asked = !queries.isEmpty();
 
-        if (operations.isEmpty()) return withRecipe(nothingToRegister(interpretation, skipped), recipe);
+        if (operations.isEmpty()) return finish(nothingToRegister(interpretation, skipped), answers, asked, recipe);
 
         // Contesta la pregunta anterior ("sí", "es el total"): se registra la alternativa tal como se mostró.
         Proposal answered = answeredProposal(conversation.pendingProposals(), operations);
-        if (answered != null) return withRecipe(register(answered.operations(), skipped, permissions), recipe);
+        if (answered != null) return finish(register(answered.operations(), skipped, permissions), answers, asked, recipe);
 
         boolean doubtful = interpretation.needsConfirmation() || interpretation.confidence() < MIN_CONFIDENCE;
         if (doubtful || !resolution.questions.isEmpty()) {
@@ -197,20 +206,46 @@ public class ChatService {
                     : interpretation.needsConfirmation() && interpretation.responseToUser() != null
                     ? interpretation.responseToUser()
                     : "No estoy seguro de haber entendido. ¿Lo registro así?";
-            return withRecipe(new ChatResult(ChatStatus.NEEDS_CONFIRMATION, question, List.of(),
-                    proposals(operations, resolution.readings), skipped), recipe);
+            return finish(new ChatResult(ChatStatus.NEEDS_CONFIRMATION, question, List.of(),
+                    proposals(operations, resolution.readings), skipped), answers, asked, recipe);
         }
-        return withRecipe(register(operations, skipped, permissions), recipe);
+        return finish(register(operations, skipped, permissions), answers, asked, recipe);
     }
 
     /**
      * Un mensaje mixto resuelve cada parte: el status es el de lo operativo y la receta viene aparte. RECIPE_PREVIEW
      * queda para cuando la receta es lo único para hacer (no se registró nada ni hay nada que confirmar).
      */
+    private static ChatResult finish(ChatResult r, List<String> answers, boolean asked, RecipePreview recipe) {
+        return withRecipe(withAnswers(r, answers, asked), recipe);
+    }
+
+    /**
+     * Las respuestas de las consultas: solas, ANSWERED; con lo operativo, se suman a su texto y el status es el de lo
+     * operativo (como con las recetas).
+     */
+    private static ChatResult withAnswers(ChatResult r, List<String> answers, boolean asked) {
+        if (!asked) return r;
+        boolean nothingElse = r.actions().isEmpty() && r.proposals().isEmpty();
+        if (answers.isEmpty()) {
+            // Solo consultas que no se pudieron responder: el motivo, sin el "No registré nada" de las operaciones.
+            return nothingElse && !r.skipped().isEmpty()
+                    ? new ChatResult(r.status(), skipMessages(r.skipped()), List.of(), List.of(), r.skipped())
+                    : r;
+        }
+        String said = String.join(" ", answers);
+        if (nothingElse) {
+            return new ChatResult(ChatStatus.ANSWERED, r.skipped().isEmpty() ? said : said + " " + skipMessages(r.skipped()),
+                    List.of(), List.of(), r.skipped());
+        }
+        return new ChatResult(r.status(), r.message() + " " + said, r.actions(), r.undone(), r.proposals(), r.skipped(),
+                r.recipe());
+    }
+
     private static ChatResult withRecipe(ChatResult r, RecipePreview recipe) {
         if (recipe == null) return r;
         String preview = "Armé la receta de «" + recipe.name() + "»: revisala y confirmala.";
-        if (r.actions().isEmpty() && r.proposals().isEmpty()) {
+        if (r.actions().isEmpty() && r.proposals().isEmpty() && r.status() != ChatStatus.ANSWERED) {
             String message = r.skipped().isEmpty() ? preview : preview + " No registré: " + skipMessages(r.skipped());
             return new ChatResult(ChatStatus.RECIPE_PREVIEW, message, List.of(), List.of(), List.of(), r.skipped(), recipe);
         }
@@ -872,7 +907,8 @@ public class ChatService {
 
     private static Skipped notSupported(ChatOperationType type) {
         String message = type == null
-                ? "Por ahora no respondo consultas: registro compras, mermas, ventas, ajustes de stock y producciones, y armo recetas."
+                ? "Eso no lo hago por acá: registro compras, mermas, ventas, ajustes y producciones, armo recetas y "
+                        + "respondo consultas de stock, vencimientos, ventas, compras, mermas, precios, food cost y alertas."
                 : "Todavía no registro " + plural(type) + " por acá: usá el formulario.";
         return new Skipped(type, null, ErrorCode.CHAT_OPERATION_NOT_SUPPORTED, message);
     }
@@ -941,7 +977,7 @@ public class ChatService {
         return f.format(i.quantity()) + " " + (i.unitName() == null ? "" : i.unitName() + " ") + i.name();
     }
 
-    private static String money(BigDecimal amount) {
+    static String money(BigDecimal amount) {
         NumberFormat f = NumberFormat.getNumberInstance(ES_AR);
         boolean cents = amount.stripTrailingZeros().scale() > 0;
         f.setMinimumFractionDigits(cents ? 2 : 0);
@@ -951,7 +987,9 @@ public class ChatService {
 
     // ── Tipos ──────────────────────────────────────────────────────────────────
 
-    public enum ChatStatus { REGISTERED, NEEDS_CONFIRMATION, RECIPE_PREVIEW, NOT_REGISTERED, NOT_SUPPORTED, NOT_UNDERSTOOD }
+    /** ANSWERED: el mensaje solo tenía consultas, y la respuesta va en el texto. */
+    public enum ChatStatus { REGISTERED, NEEDS_CONFIRMATION, RECIPE_PREVIEW, ANSWERED, NOT_REGISTERED, NOT_SUPPORTED,
+        NOT_UNDERSTOOD }
 
     /** @param correctsActionId la acción que esta operación corrige (se deshace en la misma transacción); null si no */
     public record Operation(ChatOperationType type, List<OperationItem> items, UUID correctsActionId) {

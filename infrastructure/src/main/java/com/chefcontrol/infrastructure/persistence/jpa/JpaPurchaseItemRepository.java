@@ -17,4 +17,15 @@ public interface JpaPurchaseItemRepository extends JpaRepository<PurchaseItemJpa
 
     @EntityGraph(attributePaths = {"product", "unit"})
     java.util.Optional<PurchaseItemJpaEntity> findWithRelationshipsById(UUID id);
+
+    @org.springframework.data.jpa.repository.Query("""
+            SELECT i.quantity, i.unitId, i.pricePerUnit, p.purchasedAt, p.pricesIncludeIva
+            FROM PurchaseItemJpaEntity i, PurchaseJpaEntity p
+            WHERE p.id = i.purchaseId AND i.productId = :productId AND p.restaurantId = :restaurantId
+              AND p.status = 'ACTIVE'
+            ORDER BY p.purchasedAt DESC, i.createdAt DESC
+            """)
+    List<Object[]> findActiveLinesOfProduct(@org.springframework.data.repository.query.Param("productId") UUID productId,
+                                            @org.springframework.data.repository.query.Param("restaurantId") UUID restaurantId,
+                                            org.springframework.data.domain.Pageable pageable);
 }

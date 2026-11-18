@@ -77,6 +77,7 @@ public enum ErrorCode {
     CHAT_MENU_ITEM_NOT_IN_CATALOG (Category.BAD_REQUEST),
     CHAT_MISSING_PRICE          (Category.BAD_REQUEST),
     CHAT_INVALID_QUANTITY       (Category.BAD_REQUEST),
+    CHAT_INVALID_PERIOD(Category.BAD_REQUEST),
     CHAT_OPERATION_NOT_SUPPORTED (Category.BAD_REQUEST),
 
     // WhatsApp

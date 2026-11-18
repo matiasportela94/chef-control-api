@@ -8,6 +8,7 @@ import com.chefcontrol.application.port.AIService.ChatMessageRequest;
 import com.chefcontrol.application.port.AIService.HistoryAction;
 import com.chefcontrol.application.port.AIService.InterpretedItem;
 import com.chefcontrol.application.port.AIService.InterpretedOperation;
+import com.chefcontrol.application.port.AIService.InterpretedQuery;
 import com.fasterxml.jackson.databind.JsonNode;
 
 import java.math.BigDecimal;
@@ -42,7 +43,8 @@ final class ChatPrompt {
                            {"type":"sale","items":[{"menuItemId":"<id>","name":"milanesa","quantity":5}]},
                            {"type":"stock_adjustment","items":[{"productId":"<id>","name":"harina","quantity":8,"unit":"kg"}]},
                            {"type":"production","items":[{"productId":"<id>","name":"mayonesa","quantity":5,"unit":"kg","expirationDate":"2026-12-01"}]},
-                           {"type":"recipe","text":"la napolitana lleva 200 g de jamón","items":[{"menuItemId":"<id>","name":"napolitana"}]}]}
+                           {"type":"recipe","text":"la napolitana lleva 200 g de jamón","items":[{"menuItemId":"<id>","name":"napolitana"}]},
+                           {"type":"query","text":"¿cuánto vendimos ayer?","query":"sales","period":"yesterday","items":[]}]}
 
             TIPOS DE OPERACIÓN (type):
             - purchase: compra de insumos ("compramos 10 kg de harina a $2000").
@@ -54,7 +56,7 @@ final class ChatPrompt {
             al flan").
             - preparation_recipe: crear o cambiar la receta de una preparación hecha en tandas ("la mayonesa base rinde \
             1 kg y lleva 6 huevos y 1 l de aceite").
-            - query: una pregunta o consulta ("¿cuánta harina hay?"), sin items.
+            - query: una pregunta ("¿cuánta harina hay?", "¿cuánto vendimos ayer?"): ver la regla 13.
             Un mensaje puede pedir varias cosas: una operación por tipo, con todos sus items y en text el pedazo del \
             mensaje que la pide, copiado tal cual. Si no pide nada de esto, \
             operations va vacío.
@@ -96,6 +98,16 @@ final class ChatPrompt {
             pregunta. Fuera de eso no preguntes ni objetes: devolvé la operación como la pidió el usuario aunque te \
             parezca rara ("hice 3 kilos de harina" es una production de la harina). El sistema valida y le explica al \
             usuario lo que no se puede.
+            13. CONSULTAS (type query), una operación por pregunta, con query, uno de: stock (cuánto hay de un insumo: el \
+            insumo en items, con productId), expirations (qué vence), sales (cuánto se vendió), purchases (cuánto se \
+            compró), waste (cuánta merma hubo), last_purchase_price (a cuánto se compró por última vez un insumo: el \
+            insumo en items), food_cost (de un plato: el plato en items, con menuItemId; o del período, sin items) u \
+            open_alerts (alertas abiertas). Si pregunta otra cosa, query null. period, si dice uno: today, yesterday, \
+            this_week, last_week, this_month, last_month, last_n_days (con days: "los últimos 10 días" → 10) o range \
+            (solo si dice fechas: "del 1 al 15 de noviembre" → from y to, YYYY-MM-DD). NUNCA calcules fechas: "ayer" es \
+            yesterday, "la semana pasada" es last_week; el sistema cuenta los días. Sin período dicho, period null. No \
+            respondas la consulta ni des números: los pone el sistema. Con la CONVERSACIÓN, "¿y ayer?" después de \
+            "¿cuánto vendimos hoy?" es la misma consulta con yesterday.
             12. CONVERSACIÓN: es para entender a qué se refiere el mensaje nuevo ("eran 5", "sí", "el total", "el \
             de recién"). Devolvé solo lo que pide el mensaje nuevo: nunca repitas una operación ya registrada. Si \
             corrige algo registrado ("no, eran 5 kg", "me equivoqué, era tomate"), devolvé la operación corregida \
@@ -159,7 +171,12 @@ final class ChatPrompt {
                         "enum", List.of("purchase", "waste", "sale", "stock_adjustment", "production", "recipe",
                                 "preparation_recipe", "query")),
                 "items", Map.of("type", "array", "items", item), "text", type("string"),
-                "corrects", type("integer")),
+                "corrects", type("integer"),
+                "query", Map.of("type", "string", "enum", List.of("stock", "expirations", "sales", "purchases", "waste",
+                        "last_purchase_price", "food_cost", "open_alerts")),
+                "period", Map.of("type", "string", "enum", List.of("today", "yesterday", "this_week", "last_week",
+                        "this_month", "last_month", "last_n_days", "range")),
+                "days", type("integer"), "from", type("string"), "to", type("string")),
                 "required", List.of("type", "items"));
         return Map.of("type", "object", "properties", Map.of(
                 "confidence", Map.of("type", "integer", "minimum", 0, "maximum", 100),
@@ -183,8 +200,12 @@ final class ChatPrompt {
                         date(text(i, "expirationDate")), text(i, "reason")));
             }
             JsonNode corrects = op.get("corrects");
+            JsonNode days = op.get("days");
+            InterpretedQuery query = text(op, "query") == null ? null : new InterpretedQuery(text(op, "query"),
+                    text(op, "period"), days == null || days.isNull() || days.asInt(0) <= 0 ? null : days.asInt(),
+                    date(text(op, "from")), date(text(op, "to")));
             operations.add(new InterpretedOperation(text(op, "type"), items, text(op, "text"),
-                    corrects == null || corrects.isNull() || corrects.asInt(0) <= 0 ? null : corrects.asInt()));
+                    corrects == null || corrects.isNull() || corrects.asInt(0) <= 0 ? null : corrects.asInt(), query));
         }
         return new ChatInterpretation(root.path("confidence").asInt(0),
                 root.path("needsConfirmation").asBoolean(true), text(root, "responseToUser"), operations);

@@ -6,6 +6,14 @@ import com.chefcontrol.application.port.AIService;
 import com.chefcontrol.application.port.AIService.CatalogSpreadsheetInterpretation;
 import com.chefcontrol.application.port.AIService.ChatInterpretation;
 import com.chefcontrol.application.port.AIService.HistoryAction;
+import com.chefcontrol.application.port.AIService.InterpretedQuery;
+import com.chefcontrol.domain.repository.AlertRepository;
+import com.chefcontrol.domain.repository.PurchaseItemRepository;
+import com.chefcontrol.domain.repository.PurchaseRepository;
+import com.chefcontrol.domain.repository.SaleRepository;
+import com.chefcontrol.domain.repository.StockBatchRepository;
+import com.chefcontrol.domain.repository.WasteEventRepository;
+import java.time.LocalDate;
 import com.chefcontrol.application.port.ChatExchangeRepository;
 import com.chefcontrol.application.port.ChatExchangeRepository.ChatExchange;
 import com.chefcontrol.application.port.ChatExchangeRepository.Kind;
@@ -94,6 +102,13 @@ class ChatServiceTest {
     @Mock ChatActionRepository chatActionRepository;
     @Mock CurrentUserProvider currentUserProvider;
     @Mock ChatExchangeRepository chatExchangeRepository;
+    @Mock StockBatchRepository stockBatchRepository;
+    @Mock SaleRepository saleRepository;
+    @Mock PurchaseRepository purchaseRepository;
+    @Mock PurchaseItemRepository purchaseItemRepository;
+    @Mock WasteEventRepository wasteEventRepository;
+    @Mock FoodCostService foodCostService;
+    @Mock AlertRepository alertRepository;
 
     private static final UUID R = UUID.randomUUID();
     private static final UUID USER = UUID.randomUUID();
@@ -149,8 +164,11 @@ class ChatServiceTest {
         when(stockCountService.createStockCount(any())).thenReturn(new StockCountService.StockCountResult(count, List.of()));
         history = new ChatHistoryService(chatExchangeRepository, chatActionRepository, currentUserProvider,
                 Clock.fixed(NOW, ZoneOffset.UTC));
+        var queries = new ChatQueryService(stockService, stockBatchRepository, saleRepository, purchaseRepository,
+                purchaseItemRepository, wasteEventRepository, foodCostService, alertRepository, accountService,
+                Clock.fixed(NOW, ZoneOffset.UTC));
         service = new ChatService(aiService, new ChatRecipeService(aiService, recipeRepository, accountService), history,
-                productRepository, menuItemRepository, unitRepository,
+                queries, productRepository, menuItemRepository, unitRepository,
                 unitConversionService, purchaseService, wasteService, saleService, stockCountService,
                 productionService, recipeRepository, accountService, stockService,
                 stockMovementRepository, chatActionRepository, currentUserProvider,
@@ -218,6 +236,121 @@ class ChatServiceTest {
 
     private static BigDecimal priceOf(ChatService.Proposal p) {
         return p.operations().getFirst().items().getFirst().pricePerUnit();
+    }
+
+    // ── Consultas (tanda 6) ──
+
+    @Test
+    void aQueryIsAnsweredByTheBackWithItsOwnNumbersForWholeArgentineDays() {
+        // HOY es el 17/11 en Argentina: "ayer" es el 16/11 entero, de 00:00 a 23:59:59.999 de acá.
+        Instant from = Instant.parse("2026-11-16T03:00:00Z");
+        Instant to = Instant.parse("2026-11-17T02:59:59.999Z");
+        when(saleRepository.countByRestaurantIdAndSoldAtBetween(R, from, to)).thenReturn(14L);
+        when(saleRepository.sumTotalAmountByRestaurantIdAndSoldAtBetween(R, from, to)).thenReturn(new BigDecimal("120000"));
+        answer(95, false, query("sales", "yesterday"));
+
+        var result = service.sendChatMessage("¿cuánto vendimos ayer?", ALL);
+
+        assertEquals(ChatStatus.ANSWERED, result.status());
+        assertEquals("Ayer vendiste $ 120.000 en 14 ventas.", result.message());
+    }
+
+    @Test
+    void periodsHaveNamesAndTheBackCountsTheDays() {
+        LocalDate wednesday = LocalDate.of(2026, 11, 18);
+        assertPeriod("this_week", null, wednesday, "2026-11-16", "2026-11-18");    // de lunes a hoy
+        assertPeriod("last_week", null, wednesday, "2026-11-09", "2026-11-15");    // lunes a domingo
+        assertPeriod("this_month", null, wednesday, "2026-11-01", "2026-11-18");
+        assertPeriod("last_n_days", 10, wednesday, "2026-11-09", "2026-11-18");
+        assertPeriod("last_month", null, LocalDate.of(2027, 1, 5), "2026-12-01", "2026-12-31");   // año nuevo
+        assertPeriod("last_week", null, LocalDate.of(2026, 11, 16), "2026-11-09", "2026-11-15");  // el lunes mismo
+        assertThrows(ChatQueryService.InvalidPeriod.class, () -> ChatQueryService.period(new InterpretedQuery("sales",
+                "range", null, wednesday, wednesday.plusDays(1)), wednesday));                    // futuro
+        assertThrows(ChatQueryService.InvalidPeriod.class, () -> ChatQueryService.period(new InterpretedQuery("sales",
+                "range", null, LocalDate.of(2025, 1, 1), wednesday), wednesday));                 // más de un año
+        assertThrows(ChatQueryService.InvalidPeriod.class, () -> ChatQueryService.period(new InterpretedQuery("sales",
+                "range", null, wednesday, wednesday.minusDays(3)), wednesday));                   // desde > hasta
+        assertEquals(wednesday.plusDays(7), ChatQueryService.expirationLimit(
+                new InterpretedQuery("expirations", null, null, null, null), wednesday));
+        assertEquals(LocalDate.of(2026, 11, 22), ChatQueryService.expirationLimit(
+                new InterpretedQuery("expirations", "this_week", null, null, null), wednesday));   // hasta el domingo
+    }
+
+    private static void assertPeriod(String name, Integer days, LocalDate today, String from, String to) {
+        var p = ChatQueryService.period(new InterpretedQuery("sales", name, days, null, null), today);
+        assertEquals(LocalDate.parse(from), p.from(), name);
+        assertEquals(LocalDate.parse(to), p.to(), name);
+    }
+
+    @Test
+    void aQueryNeedsThePermissionToSeeItsScreen() {
+        answer(95, false, query("sales", "today"));
+        Set<Permission> noSales = EnumSet.allOf(Permission.class);
+        noSales.remove(Permission.SALES_VIEW);
+
+        var result = service.sendChatMessage("¿cuánto vendimos hoy?", noSales);
+
+        assertEquals(ChatStatus.NOT_REGISTERED, result.status());
+        assertEquals("No tenés permiso para ver las ventas.", result.message());
+        assertEquals(ErrorCode.CHAT_PERMISSION_MISSING, result.skipped().getFirst().errorCode());
+        verify(saleRepository, never()).sumTotalAmountByRestaurantIdAndSoldAtBetween(any(), any(), any());
+    }
+
+    @Test
+    void theFoodCostNeedsItsPlan() {
+        answer(95, false, query("food_cost", "this_month"));
+        doThrow(AppException.forbidden(ErrorCode.PLAN_FEATURE_REQUIRED, "no"))
+                .when(accountService).requireFeature(Feature.RECIPES_AND_FOOD_COST);
+
+        var result = service.sendChatMessage("¿cómo viene el food cost?", ALL);
+
+        assertEquals(ErrorCode.PLAN_FEATURE_REQUIRED, result.skipped().getFirst().errorCode());
+        assertEquals("El food cost no está incluido en tu plan.", result.message());
+        verify(foodCostService, never()).calculate(any(), any());
+    }
+
+    @Test
+    void theLastPurchasePriceIsAsLoadedAndSaysWhenItHasNoIva() {
+        when(purchaseItemRepository.findLastActiveLineOfProduct(comino.getId(), R)).thenReturn(Optional.of(
+                new PurchaseItemRepository.LastPurchaseLine(new BigDecimal("0.5"), kg.getId(), new BigDecimal("3000"),
+                        Instant.parse("2026-11-15T15:00:00Z"), false)));
+        answer(95, false, query("last_purchase_price", null, item(comino, "1", null, null, null)));
+
+        var result = service.sendChatMessage("¿a cuánto compramos el comino?", ALL);
+
+        assertEquals("La última compra de Comino: 0,5 kg a $ 3.000 el kg (sin IVA), el 15/11.", result.message());
+    }
+
+    @Test
+    void aMixedMessageRegistersAndAnswersWithTheStatusOfTheOperation() {
+        tomate.setMinStock(new BigDecimal("2"));
+        when(stockService.getCurrentStock(tomate.getId())).thenReturn(new BigDecimal("1.5"));
+        answer(95, false, op("purchase", item(comino, "1", "kg", "3000", null)),
+                query("stock", null, item(tomate, "1", null, null, null)));
+
+        var result = service.sendChatMessage("compré 1 kg de comino a 3000, ¿cuánto tomate queda?", ALL);
+
+        assertEquals(ChatStatus.REGISTERED, result.status());
+        assertTrue(result.message().endsWith("Hay 1,5 kg de Tomate. Está por debajo del mínimo (2 kg)."), result.message());
+    }
+
+    @Test
+    void aQueryOutsideTheListOrWithABadPeriodSaysSo() {
+        answer(95, false, new InterpretedOperation("query", List.of(), null, null,
+                new InterpretedQuery(null, null, null, null, null)));
+        var result = service.sendChatMessage("¿quién es el mejor proveedor?", ALL);
+        assertEquals(ChatStatus.NOT_SUPPORTED, result.status());
+        assertEquals(ErrorCode.CHAT_OPERATION_NOT_SUPPORTED, result.skipped().getFirst().errorCode());
+
+        answer(95, false, new InterpretedOperation("query", List.of(), null, null, new InterpretedQuery("sales", "range",
+                null, LocalDate.of(2026, 12, 1), LocalDate.of(2026, 12, 31))));
+        assertEquals(ErrorCode.CHAT_INVALID_PERIOD,
+                service.sendChatMessage("¿cuánto vendimos en diciembre?", ALL).skipped().getFirst().errorCode());
+    }
+
+    private static InterpretedOperation query(String name, String period, InterpretedItem... items) {
+        return new InterpretedOperation("query", List.of(items), null, null,
+                new InterpretedQuery(name, period, null, null, null));
     }
 
     // ── Memoria (tanda 5) ──

@@ -81,4 +81,9 @@ public class StockBatchRepositoryAdapter implements StockBatchRepository {
                 .map(StockBatchJpaEntity::toDomain)
                 .collect(Collectors.toList());
     }
+
+    @Override
+    public List<StockBatch> findExpiringByRestaurant(UUID restaurantId, LocalDate maxDate) {
+        return jpa.findExpiringByRestaurant(restaurantId, maxDate).stream().map(StockBatchJpaEntity::toDomain).toList();
+    }
 }

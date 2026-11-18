@@ -163,9 +163,27 @@ class ClaudeAIServiceTest {
 
         var op = f.service.interpretChatMessage(request).operations().getFirst();
 
+        assertNull(op.query());
         assertEquals(1, op.corrects());
         assertEquals("no, eran 5 kg", op.text());
         f.server.verify();
+    }
+
+    @Test
+    void aQueryComesWithItsNamedPeriodAndNoDates() {
+        var f = fixture();
+        f.server.expect(requestTo("https://api.anthropic.com/v1/messages")).andRespond(withSuccess("""
+                {"content":[{"type":"tool_use","name":"record_operations","input":{"confidence":95,
+                  "needsConfirmation":false,"responseToUser":"","operations":[{"type":"query","query":"sales",
+                  "period":"last_n_days","days":10,"items":[]}]}}]}
+                """, MediaType.APPLICATION_JSON));
+
+        var q = f.service.interpretChatMessage(CHAT).operations().getFirst().query();
+
+        assertEquals("sales", q.name());
+        assertEquals("last_n_days", q.period());
+        assertEquals(10, q.days());
+        assertNull(q.from());
     }
 
     @Test
