@@ -199,5 +199,10 @@ class CatalogSpreadsheetServiceTest {
             requests.add(request);
             return answer;
         }
+
+        @Override
+        public ChatInterpretation interpretChatMessage(ChatMessageRequest request) {
+            throw new UnsupportedOperationException();
+        }
     }
 }

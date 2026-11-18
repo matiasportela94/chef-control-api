@@ -4,6 +4,8 @@ import com.chefcontrol.api.catalog.dto.CatalogImportRequest.PreparationImportRow
 import com.chefcontrol.api.catalog.dto.CatalogImportRequest.ProductImportRow;
 import com.chefcontrol.api.catalog.dto.CatalogImportRequest.RecipeImportRow;
 import com.chefcontrol.api.plan.RequiresFeature;
+import com.chefcontrol.application.exception.AppException;
+import com.chefcontrol.application.exception.ErrorCode;
 import com.chefcontrol.application.port.AIService.SpreadsheetRow;
 import com.chefcontrol.application.port.AIService.SpreadsheetSheet;
 import com.chefcontrol.application.service.CatalogImportService.ProductRow;
@@ -22,6 +24,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -29,6 +32,8 @@ import java.io.IOException;
 
 import java.util.List;
 import java.util.Map;
+
+import static com.chefcontrol.api.shared.Authorities.hasAuthority;
 
 @RestController
 @RequestMapping("/ai")
@@ -49,9 +54,22 @@ public class AIController {
                 r.intent(), r.confidence(), r.needsConfirmation(), r.extractedData(), r.responseToUser()));
     }
 
+    /**
+     * Deprecado: lo reemplaza /ai/chat, se borra cuando el front migre. Hasta entonces pide además el permiso de la
+     * pantalla de esa operación (antes solo AI_USE: alguien sin PURCHASES_CREATE cargaba compras por acá).
+     */
     @PostMapping("/execute")
     @PreAuthorize("hasAuthority('PERM_AI_USE')")
-    public ResponseEntity<ExecuteResponse> execute(@Valid @RequestBody ExecuteRequest request) {
+    public ResponseEntity<ExecuteResponse> execute(@Valid @RequestBody ExecuteRequest request,
+                                                   Authentication authentication) {
+        String needed = switch (request.intent()) {
+            case "purchase" -> "PERM_PURCHASES_CREATE";
+            case "waste" -> "PERM_WASTE_CREATE";
+            default -> null;   // el resto no ejecuta nada
+        };
+        if (needed != null && !hasAuthority(authentication, needed)) {
+            throw AppException.forbidden(ErrorCode.FORBIDDEN, "Missing " + needed);
+        }
         var result = aiExecuteService.execute(request.intent(), request.data());
         return ResponseEntity.ok(new ExecuteResponse(result.success(), result.message(), result.created(), result.skipped()));
     }

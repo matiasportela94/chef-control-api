@@ -2,6 +2,8 @@ package com.chefcontrol.api.catalog;
 
 import com.chefcontrol.api.catalog.dto.CatalogImportRequest;
 import com.chefcontrol.api.catalog.dto.CatalogImportResult;
+import static com.chefcontrol.api.shared.Authorities.hasAuthority;
+import static com.chefcontrol.api.shared.Authorities.permissionsOf;
 import com.chefcontrol.application.exception.AppException;
 import com.chefcontrol.application.exception.ErrorCode;
 import com.chefcontrol.application.service.AccountService;
@@ -10,16 +12,13 @@ import com.chefcontrol.application.service.CatalogImportService.PreparationRow;
 import com.chefcontrol.application.service.CatalogImportService.ProductRow;
 import com.chefcontrol.application.service.CatalogImportService.RecipeRow;
 import com.chefcontrol.domain.plan.Feature;
-import com.chefcontrol.domain.user.Permission;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.GrantedAuthority;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.EnumSet;
 import java.util.Set;
 
 @RestController
@@ -63,19 +62,6 @@ public class CatalogImportController {
                 dryRun, permissionsOf(authentication), Set.copyOf(request.replaceRecipeMenuItemIds()),
                 Set.copyOf(request.replacePreparationProductIds()));
         return ResponseEntity.ok(CatalogImportResult.from(report));
-    }
-
-    /** Las authorities PERM_X del JWT, de vuelta a {@link Permission}. */
-    private static Set<Permission> permissionsOf(Authentication authentication) {
-        Set<Permission> permissions = EnumSet.noneOf(Permission.class);
-        for (Permission p : Permission.values()) {
-            if (hasAuthority(authentication, "PERM_" + p.name())) permissions.add(p);
-        }
-        return permissions;
-    }
-
-    private static boolean hasAuthority(Authentication authentication, String authority) {
-        return authentication.getAuthorities().stream().map(GrantedAuthority::getAuthority).anyMatch(authority::equals);
     }
 
     private static void requireAuthority(Authentication authentication, String authority) {

@@ -4,6 +4,8 @@ import com.chefcontrol.application.service.CatalogImportService.PreparationRow;
 import com.chefcontrol.application.service.CatalogImportService.ProductRow;
 import com.chefcontrol.application.service.CatalogImportService.RecipeRow;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -18,6 +20,41 @@ public interface AIService {
      * {@code AI_INTERPRETATION_FAILED} si el modelo no responde o no se entiende lo que respondió.
      */
     CatalogSpreadsheetInterpretation interpretCatalogSpreadsheet(CatalogSpreadsheetRequest request);
+
+    /**
+     * Un mensaje del chat (escrito o dictado) → las operaciones que pide. No registra nada: qué se registra, qué se
+     * pregunta y qué se rechaza lo decide {@code ChatService}. Lanza {@code AI_INTERPRETATION_FAILED} si el modelo no
+     * responde o no se entiende lo que respondió.
+     */
+    ChatInterpretation interpretChatMessage(ChatMessageRequest request);
+
+    /**
+     * @param today    la fecha argentina, para "vence el viernes"
+     * @param products los insumos activos del restaurante
+     */
+    record ChatMessageRequest(String message, LocalDate today, List<ChatCatalogProduct> products, List<UnitOption> units) {}
+
+    /** @param unit la abreviatura de su unidad por defecto */
+    record ChatCatalogProduct(UUID id, String name, String unit) {}
+
+    /** @param needsConfirmation lo que dice la IA; ChatService además aplica sus propias reglas */
+    record ChatInterpretation(int confidence, boolean needsConfirmation, String responseToUser,
+                              List<InterpretedOperation> operations) {}
+
+    /** @param type purchase, waste, sale, stock_adjustment, production o query: viene aunque no tenga ejecución */
+    record InterpretedOperation(String type, List<InterpretedItem> items) {}
+
+    /**
+     * Cantidad y unidad tal como las dijo el usuario: la conversión la hace el back, no la IA (con "500 g de comino" y el
+     * comino en kg, una cuenta mal hecha por el modelo entraría 500 kg sin aviso).
+     *
+     * @param productId el insumo del catálogo; null si no es ninguno o el modelo duda
+     * @param name      como lo dijo el usuario
+     * @param unit      una abreviatura de la lista de unidades; null si no dijo ninguna
+     * @param priceUnit la unidad a la que se refiere el precio ("a 3000 el kilo"); null = la de la cantidad
+     */
+    record InterpretedItem(UUID productId, String name, BigDecimal quantity, String unit, BigDecimal pricePerUnit,
+                           String priceUnit, LocalDate expirationDate, String wasteReason) {}
 
     record InterpretRequest(
         String message,

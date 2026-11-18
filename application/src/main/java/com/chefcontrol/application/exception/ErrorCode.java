@@ -66,6 +66,18 @@ public enum ErrorCode {
     /** Sin OPENAI_API_KEY: transcribir no está disponible (nunca se inventa un texto). */
     AI_TRANSCRIPTION_NOT_CONFIGURED (Category.INTERNAL),
 
+    // Chat de la IA (F19): deshacer lo que registró
+    CHAT_ACTION_NOT_FOUND       (Category.NOT_FOUND),
+    CHAT_ACTION_ALREADY_UNDONE  (Category.CONFLICT),
+    /** Pasaron los 15 minutos, o lo cargó otro, y falta el permiso de borrar de esa operación. */
+    CHAT_UNDO_NOT_ALLOWED       (Category.FORBIDDEN),
+    // Motivos de lo que el chat no registró (ChatResponse.skipped): nunca salen como error HTTP.
+    CHAT_PERMISSION_MISSING     (Category.FORBIDDEN),
+    CHAT_PRODUCT_NOT_IN_CATALOG (Category.BAD_REQUEST),
+    CHAT_MISSING_PRICE          (Category.BAD_REQUEST),
+    CHAT_INVALID_QUANTITY       (Category.BAD_REQUEST),
+    CHAT_OPERATION_NOT_SUPPORTED (Category.BAD_REQUEST),
+
     // WhatsApp
     UNREGISTERED_PHONE      (Category.FORBIDDEN),
 

@@ -3,6 +3,8 @@ package com.chefcontrol.infrastructure.ai;
 import com.chefcontrol.application.exception.AppException;
 import com.chefcontrol.application.exception.ErrorCode;
 import com.chefcontrol.application.port.AIService.CatalogSpreadsheetRequest;
+import com.chefcontrol.application.port.AIService.ChatCatalogProduct;
+import com.chefcontrol.application.port.AIService.ChatMessageRequest;
 import com.chefcontrol.application.port.AIService.SpreadsheetRow;
 import com.chefcontrol.application.port.AIService.SpreadsheetSheet;
 import com.chefcontrol.application.port.AIService.UnitOption;
@@ -13,7 +15,10 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.*;
@@ -74,6 +79,66 @@ class ClaudeAIServiceTest {
         f.server.expect(requestTo("https://api.anthropic.com/v1/messages")).andRespond(withServerError());
 
         var e = assertThrows(AppException.class, () -> f.service.interpretCatalogSpreadsheet(REQUEST));
+        assertEquals(ErrorCode.AI_INTERPRETATION_FAILED, e.getErrorCode());
+    }
+
+    // ── Chat ──
+
+    private static final UUID COMINO = UUID.fromString("0b6c1c3e-6f3a-4d43-9a39-4c7f6d1c2a10");
+    private static final ChatMessageRequest CHAT = new ChatMessageRequest("compré 500 g de comino a 3000 el kilo",
+            LocalDate.of(2026, 11, 17), List.of(new ChatCatalogProduct(COMINO, "Comino", "kg")),
+            List.of(new UnitOption("Kilogramo", "kg"), new UnitOption("Gramo", "g")));
+
+    @Test
+    void theChatCachesTheSystemPromptAndKeepsTheDateOutOfIt() {
+        var f = fixture();
+        f.server.expect(requestTo("https://api.anthropic.com/v1/messages"))
+                .andExpect(jsonPath("$.system[0].cache_control.type").value("ephemeral"))
+                .andExpect(jsonPath("$.system[0].text").value(org.hamcrest.Matchers.containsString(COMINO + " | Comino | kg")))
+                .andExpect(jsonPath("$.system[0].text").value(org.hamcrest.Matchers.not(
+                        org.hamcrest.Matchers.containsString("2026-11-17"))))
+                .andExpect(jsonPath("$.tool_choice.name").value("record_operations"))
+                .andExpect(jsonPath("$.messages[0].content").value("HOY: 2026-11-17\ncompré 500 g de comino a 3000 el kilo"))
+                .andRespond(withSuccess("""
+                        {"stop_reason":"tool_use","usage":{"input_tokens":30,"output_tokens":90,"cache_read_input_tokens":4100},
+                         "content":[{"type":"tool_use","name":"record_operations","input":{
+                           "confidence":95,"needsConfirmation":false,"responseToUser":"Listo",
+                           "operations":[{"type":"purchase","items":[{"productId":"%s","name":"comino","quantity":500,
+                             "unit":"g","pricePerUnit":3000,"priceUnit":"kg"}]}]}}]}
+                        """.formatted(COMINO), MediaType.APPLICATION_JSON));
+
+        var result = f.service.interpretChatMessage(CHAT);
+
+        var item = result.operations().getFirst().items().getFirst();
+        assertEquals(COMINO, item.productId());
+        assertEquals("g", item.unit());
+        assertEquals("kg", item.priceUnit());
+        assertEquals(0, new BigDecimal("500").compareTo(item.quantity()));
+        f.server.verify();
+    }
+
+    @Test
+    void anInventedIdIsReadAsNotInTheCatalog() {
+        var f = fixture();
+        f.server.expect(requestTo("https://api.anthropic.com/v1/messages")).andRespond(withSuccess("""
+                {"content":[{"type":"tool_use","name":"record_operations","input":{"confidence":90,
+                  "needsConfirmation":false,"responseToUser":"","operations":[{"type":"waste",
+                  "items":[{"productId":"tomate-1","name":"tomate","quantity":"2,5","reason":"EXPIRED"}]}]}}]}
+                """, MediaType.APPLICATION_JSON));
+
+        var item = f.service.interpretChatMessage(CHAT).operations().getFirst().items().getFirst();
+
+        assertNull(item.productId());
+        assertEquals(0, new BigDecimal("2.5").compareTo(item.quantity()));
+        assertEquals("EXPIRED", item.wasteReason());
+    }
+
+    @Test
+    void aChatProviderErrorIsAnInterpretationFailure() {
+        var f = fixture();
+        f.server.expect(requestTo("https://api.anthropic.com/v1/messages")).andRespond(withServerError());
+
+        var e = assertThrows(AppException.class, () -> f.service.interpretChatMessage(CHAT));
         assertEquals(ErrorCode.AI_INTERPRETATION_FAILED, e.getErrorCode());
     }
 }
