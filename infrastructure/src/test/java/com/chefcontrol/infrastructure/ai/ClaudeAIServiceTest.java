@@ -111,7 +111,7 @@ class ClaudeAIServiceTest {
                          "content":[{"type":"tool_use","name":"record_operations","input":{
                            "confidence":95,"needsConfirmation":false,"responseToUser":"Listo",
                            "operations":[{"type":"purchase","items":[{"productId":"%s","name":"comino","quantity":500,
-                             "unit":"g","pricePerUnit":3000,"priceUnit":"kg"}]}]}}]}
+                             "unit":"g","price":3000,"priceBasis":"unit","priceUnit":"kg"}]}]}}]}
                         """.formatted(COMINO), MediaType.APPLICATION_JSON));
 
         var result = f.service.interpretChatMessage(CHAT);
@@ -120,6 +120,7 @@ class ClaudeAIServiceTest {
         assertEquals(COMINO, item.productId());
         assertEquals("g", item.unit());
         assertEquals("kg", item.priceUnit());
+        assertEquals("unit", item.priceBasis());
         assertEquals(0, new BigDecimal("500").compareTo(item.quantity()));
         f.server.verify();
     }

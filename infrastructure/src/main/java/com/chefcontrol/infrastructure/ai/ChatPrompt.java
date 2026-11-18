@@ -34,7 +34,7 @@ final class ChatPrompt {
 
             SALIDA, con esta forma:
             {"confidence":95,"needsConfirmation":false,"responseToUser":"...",
-             "operations":[{"type":"purchase","items":[{"productId":"<id>","name":"harina","quantity":10,"unit":"kg","pricePerUnit":2000,"priceUnit":"kg","expirationDate":"2026-12-31"}]},
+             "operations":[{"type":"purchase","items":[{"productId":"<id>","name":"harina","quantity":10,"unit":"kg","price":2000,"priceBasis":"unit","priceUnit":"kg","expirationDate":"2026-12-31"}]},
                            {"type":"waste","items":[{"productId":"<id>","name":"tomate","quantity":2,"unit":"kg","reason":"EXPIRED"}]},
                            {"type":"sale","items":[{"menuItemId":"<id>","name":"milanesa","quantity":5}]},
                            {"type":"stock_adjustment","items":[{"productId":"<id>","name":"harina","quantity":8,"unit":"kg"}]},
@@ -65,13 +65,13 @@ final class ChatPrompt {
             el insumo vaya en kg; el sistema convierte. unit es una abreviatura de la lista de UNIDADES ("kilos" → kg, \
             "gramos" → g, "litros" → l, "unidades" → u). Si no dijo unidad, null. Números escritos a número ("tres" → \
             3, "media docena" → 6 y unit null, "medio kilo" → 0.5 y kg).
-            3. pricePerUnit, en pesos y como número (sin "$" ni separador de miles: "25 mil" → 25000). "a [precio]" \
-            con una cantidad es SIEMPRE por unidad: "5 kg a 25 mil" → 25000. Es el total solo si lo dice ("en total", \
-            "todo", "me salió", "el lote"), y ahí dividilo por la cantidad: "5 kg, 25 mil en total" → 5000. Si no lo \
-            dice, nunca lo dividas por tu cuenta, aunque te parezca caro: "5 kg de comino a 150 mil" → 150000 y \
-            needsConfirmation = true (regla 10); el sistema le pregunta al usuario. \
-            priceUnit: la unidad a la que se refiere el precio si la dice ("500 g a 3000 el kilo" → kg); si no, null. \
-            Sin precio, null.
+            3. price: el precio tal como lo dijo, en pesos y como número (sin "$" ni separador de miles: "25 mil" → \
+            25000). Nunca hagas cuentas con el precio, ni aunque te parezca caro o barato: no lo dividas ni lo \
+            multipliques; la cuenta la hace el sistema. priceBasis, a qué se refiere ese número: "unit" si es por \
+            unidad ("a [precio]" con una cantidad es por unidad: "5 kg a 25 mil", "a 3000 el kilo", "a 500 cada uno"); \
+            "total" solo si lo dice ("en total", "todo", "me salió", "el lote", "pagué 25 mil por los 5 kg"); "unclear" \
+            si no se puede saber ("5 kg de harina, 25 mil"). priceUnit: la unidad de un precio por unidad si la dice \
+            ("500 g a 3000 el kilo" → kg); si no, null. Sin precio, price y priceBasis en null.
             4. expirationDate: solo en compras y producciones, y si lo dice, como YYYY-MM-DD, contando desde HOY.
             5. reason: solo en mermas. EXPIRED (vencido), DAMAGED (roto, quemado, en mal estado), OVERPRODUCTION \
             (sobró), THEFT (robo) u OTHER.
@@ -85,12 +85,12 @@ final class ChatPrompt {
             dijo, sin el artículo ("la napolitana" → "napolitana"). Sin cantidades: los ingredientes los lee otro paso. Un insumo del catálogo \
             que pasa a tener receta de tanda es preparation_recipe.
             10. confidence: de 0 a 100, cuán seguro estás de haber entendido todo. needsConfirmation = true SOLO si \
-            confidence < 80, si dudás entre dos insumos o platos, o si en una compra la cantidad es mayor a 1 y el \
-            precio por unidad supera $100.000 (puede ser el total). Fuera de eso no preguntes ni objetes: devolvé la \
-            operación como la pidió el usuario aunque te parezca rara ("hice 3 kilos de harina" es una production de \
-            la harina). El sistema valida y le explica al usuario lo que no se puede.
+            confidence < 80 o si dudás entre dos insumos o platos. Por el precio no: si puede ser el total, el sistema \
+            pregunta. Fuera de eso no preguntes ni objetes: devolvé la operación como la pidió el usuario aunque te \
+            parezca rara ("hice 3 kilos de harina" es una production de la harina). El sistema valida y le explica al \
+            usuario lo que no se puede.
             11. responseToUser, en castellano rioplatense, corto y sin muletillas (nada de "che", "dale", "genial"): \
-            si needsConfirmation, la pregunta concreta (si el precio es por unidad o el total, cuál de dos insumos). \
+            si needsConfirmation, la pregunta concreta (cuál de dos insumos). \
             Si no, una frase corta y sin preguntas: el detalle de lo registrado o rechazado lo arma el sistema. Si el \
             mensaje no pide nada para registrar, decí en una frase qué podés registrar.
             """;
@@ -122,7 +122,9 @@ final class ChatPrompt {
         Map<String, Object> item = Map.of("type", "object", "properties", Map.of(
                 "productId", type("string"), "menuItemId", type("string"), "name", type("string"),
                 "quantity", type("number"),
-                "unit", type("string"), "pricePerUnit", type("number"), "priceUnit", type("string"),
+                "unit", type("string"), "price", type("number"),
+                "priceBasis", Map.of("type", "string", "enum", List.of("unit", "total", "unclear")),
+                "priceUnit", type("string"),
                 "expirationDate", type("string"),
                 "reason", Map.of("type", "string", "enum", List.of("EXPIRED", "DAMAGED", "OVERPRODUCTION", "THEFT", "OTHER"))),
                 "required", List.of("name"));
@@ -150,7 +152,7 @@ final class ChatPrompt {
             List<InterpretedItem> items = new ArrayList<>();
             for (JsonNode i : op.path("items")) {
                 items.add(new InterpretedItem(uuid(text(i, "productId")), uuid(text(i, "menuItemId")), text(i, "name"),
-                        number(i, "quantity"), text(i, "unit"), number(i, "pricePerUnit"), text(i, "priceUnit"),
+                        number(i, "quantity"), text(i, "unit"), number(i, "price"), text(i, "priceBasis"), text(i, "priceUnit"),
                         date(text(i, "expirationDate")), text(i, "reason")));
             }
             operations.add(new InterpretedOperation(text(op, "type"), items));

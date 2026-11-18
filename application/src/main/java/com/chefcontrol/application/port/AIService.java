@@ -78,18 +78,23 @@ public interface AIService {
     record InterpretedOperation(String type, List<InterpretedItem> items) {}
 
     /**
-     * Cantidad y unidad tal como las dijo el usuario: la conversión la hace el back, no la IA (con "500 g de comino" y el
-     * comino en kg, una cuenta mal hecha por el modelo entraría 500 kg sin aviso).
+     * Cantidad, unidad y precio tal como los dijo el usuario: las cuentas las hace el back, no la IA. Con "500 g de
+     * comino" y el comino en kg, una conversión mal hecha por el modelo entraría 500 kg sin aviso; y con "5 kg a 150 mil"
+     * el modelo llegó a dividir por su cuenta y la compra entró a $30.000 el kg.
      *
      * @param productId  el insumo del catálogo; null si no es ninguno o el modelo duda
      * @param menuItemId el plato, en una venta; null si no es ninguno o el modelo duda
      * @param name       como lo dijo el usuario
      * @param quantity   en una venta, porciones; en un ajuste, lo que hay ahora (no la diferencia)
      * @param unit       una abreviatura de la lista de unidades; null si no dijo ninguna
-     * @param priceUnit  la unidad a la que se refiere el precio ("a 3000 el kilo"); null = la de la cantidad
+     * @param price      el número tal como lo dijo, sin cuentas
+     * @param priceBasis a qué se refiere ese número: unit (por unidad), total o unclear. Lo clasifica la IA; la división
+     *                   de un total la hace ChatService
+     * @param priceUnit  la unidad de un precio por unidad, si la dijo ("a 3000 el kilo"); null = la de la cantidad
      */
     record InterpretedItem(UUID productId, UUID menuItemId, String name, BigDecimal quantity, String unit,
-                           BigDecimal pricePerUnit, String priceUnit, LocalDate expirationDate, String wasteReason) {}
+                           BigDecimal price, String priceBasis, String priceUnit, LocalDate expirationDate,
+                           String wasteReason) {}
 
     record InterpretRequest(
         String message,

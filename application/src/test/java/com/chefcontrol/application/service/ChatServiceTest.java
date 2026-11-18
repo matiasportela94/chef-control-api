@@ -189,14 +189,48 @@ class ChatServiceTest {
     }
 
     @Test
-    void aHighUnitPriceIsAskedBeforeRegistering() {
+    void aHighUnitPriceIsAskedWithBothReadingsComputedByTheBack() {
         answer(95, false, op("purchase", item(comino, "5", "kg", "150000", null)));
 
         var result = service.sendChatMessage("5 kg de comino a 150 mil", ALL);
 
         assertEquals(ChatStatus.NEEDS_CONFIRMATION, result.status());
-        assertEquals(1, result.proposal().size());
+        assertEquals("«Comino»: ¿$ 150.000 es por kg o el total de los 5 kg? Por kg serían $ 750.000; "
+                + "si es el total, $ 30.000 por kg.", result.message());
+        assertEquals(0, new BigDecimal("150000").compareTo(result.proposal().getFirst().items().getFirst().pricePerUnit()));
         verify(purchaseService, never()).createPurchase(any());
+    }
+
+    @Test
+    void aTotalIsDividedByTheBackNeverByTheModelAndAsked() {
+        // "5 kg de comino, 150 mil en total": el modelo dice "total" y devuelve 150000 tal cual.
+        answer(95, false, op("purchase", new InterpretedItem(comino.getId(), null, "comino", new BigDecimal("5"), "kg",
+                new BigDecimal("150000"), "total", null, null, null)));
+
+        var result = service.sendChatMessage("5 kg de comino, 150 mil en total", ALL);
+
+        assertEquals(ChatStatus.NEEDS_CONFIRMATION, result.status());
+        assertEquals(0, new BigDecimal("30000").compareTo(result.proposal().getFirst().items().getFirst().pricePerUnit()));
+        verify(purchaseService, never()).createPurchase(any());
+    }
+
+    @Test
+    void aTotalOfOneUnitIsTheSameAsItsPriceAndIsRegistered() {
+        answer(95, false, op("purchase", new InterpretedItem(comino.getId(), null, "comino", BigDecimal.ONE, "kg",
+                new BigDecimal("3000"), "total", null, null, null)));
+
+        assertEquals(ChatStatus.REGISTERED, service.sendChatMessage("1 kg de comino, 3000 todo", ALL).status());
+    }
+
+    @Test
+    void anUnclearPriceIsAsked() {
+        answer(95, false, op("purchase", new InterpretedItem(comino.getId(), null, "comino", new BigDecimal("2"), "kg",
+                new BigDecimal("6000"), "unclear", null, null, null)));
+
+        var result = service.sendChatMessage("2 kg de comino, 6000", ALL);
+
+        assertEquals(ChatStatus.NEEDS_CONFIRMATION, result.status());
+        assertTrue(result.message().startsWith("«Comino»: ¿$ 6.000 es por kg"), result.message());
     }
 
     @Test
@@ -210,7 +244,7 @@ class ChatServiceTest {
     @Test
     void aProductOutsideTheCatalogIsNeverRegistered() {
         answer(95, false, op("purchase", new InterpretedItem(null, null, "tomate cherry", BigDecimal.ONE, "kg",
-                new BigDecimal("4000"), null, null, null)));
+                new BigDecimal("4000"), "unit", null, null, null)));
 
         var result = service.sendChatMessage("1 kg de tomate cherry a 4000", ALL);
 
@@ -287,7 +321,7 @@ class ChatServiceTest {
     @Test
     void aMixedMessageRegistersTheOperationsAndBringsTheRecipe() {
         answer(95, false, op("purchase", item(comino, "1", "kg", "3000", null)),
-                op("recipe", new InterpretedItem(null, null, "napolitana", null, null, null, null, null, null)));
+                op("recipe", new InterpretedItem(null, null, "napolitana", null, null, null, null, null, null, null)));
         when(aiService.interpretRecipeMessage(any())).thenReturn(new CatalogSpreadsheetInterpretation(List.of(),
                 List.of(), List.of(new RecipeRow(1, "Napolitana", null, null, "Tomate", new BigDecimal("0.1"), "kg")),
                 List.of(), List.of(), List.of()));
@@ -334,7 +368,7 @@ class ChatServiceTest {
     @Test
     void oneRecipePerMessage() {
         answer(95, false, op("recipe", dish(milanesa, "1"),
-                new InterpretedItem(null, null, "flan", null, null, null, null, null, null)));
+                new InterpretedItem(null, null, "flan", null, null, null, null, null, null, null)));
         when(aiService.interpretRecipeMessage(any())).thenReturn(new CatalogSpreadsheetInterpretation(List.of(),
                 List.of(), List.of(new RecipeRow(1, "Milanesa", null, null, "Tomate", BigDecimal.ONE, "kg")),
                 List.of(), List.of(), List.of()));
@@ -390,8 +424,8 @@ class ChatServiceTest {
 
     @Test
     void withoutIdsTheNameFindsTheExistingRecipe() {
-        answer(95, false, op("recipe", new InterpretedItem(null, null, "MILANESA", null, null, null, null, null, null)),
-                op("recipe", new InterpretedItem(null, null, "comino", null, null, null, null, null, null)));
+        answer(95, false, op("recipe", new InterpretedItem(null, null, "MILANESA", null, null, null, null, null, null, null)),
+                op("recipe", new InterpretedItem(null, null, "comino", null, null, null, null, null, null, null)));
         when(aiService.interpretRecipeMessage(any())).thenReturn(new CatalogSpreadsheetInterpretation(List.of(),
                 List.of(), List.of(new RecipeRow(1, "Milanesa", null, null, "Tomate", BigDecimal.ONE, "kg")),
                 List.of(), List.of(), List.of()));
@@ -420,7 +454,7 @@ class ChatServiceTest {
     @Test
     void aProductionOfAPreparationIsRegisteredInItsUnitWithItsExpiration() {
         // "hice 1500 g de mayonesa, vence el 1/12": una producción por tanda, convertida a kg.
-        var said = new InterpretedItem(mayonesa.getId(), null, "mayonesa", new BigDecimal("1500"), "g", null, null,
+        var said = new InterpretedItem(mayonesa.getId(), null, "mayonesa", new BigDecimal("1500"), "g", null, null, null,
                 java.time.LocalDate.of(2026, 12, 1), null);
         answer(95, false, op("production", said));
         when(unitConversionService.convert(new BigDecimal("1500"), g.getId(), kg.getId())).thenReturn(new BigDecimal("1.5"));
@@ -498,7 +532,7 @@ class ChatServiceTest {
     @Test
     void aSaleNeedsPortionsAndADishOfTheMenu() {
         answer(95, false, op("sale", dish(milanesa, "2.5"),
-                new InterpretedItem(null, null, "pizza", BigDecimal.ONE, null, null, null, null, null)));
+                new InterpretedItem(null, null, "pizza", BigDecimal.ONE, null, null, null, null, null, null)));
 
         var result = service.sendChatMessage("vendimos dos milanesas y media y una pizza", ALL);
 
@@ -694,13 +728,13 @@ class ChatServiceTest {
     private static InterpretedItem item(Product p, String qty, String unit, String price, String reasonOrPriceUnit) {
         boolean isReason = reasonOrPriceUnit != null && reasonOrPriceUnit.equals(reasonOrPriceUnit.toUpperCase());
         return new InterpretedItem(p.getId(), null, p.getName().toLowerCase(), new BigDecimal(qty), unit,
-                price == null ? null : new BigDecimal(price), isReason ? null : reasonOrPriceUnit, null,
-                isReason ? reasonOrPriceUnit : null);
+                price == null ? null : new BigDecimal(price), price == null ? null : "unit",
+                isReason ? null : reasonOrPriceUnit, null, isReason ? reasonOrPriceUnit : null);
     }
 
     private static InterpretedItem dish(MenuItem m, String portions) {
         return new InterpretedItem(null, m.getId(), m.getName().toLowerCase(), new BigDecimal(portions), null, null, null,
-                null, null);
+                null, null, null);
     }
 
     private static Unit unit(String name, String abbreviation) {

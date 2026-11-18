@@ -131,7 +131,6 @@ public class ChatService {
         List<Skipped> skipped = new ArrayList<>();
         List<Operation> operations = new ArrayList<>();
         List<ChatRecipeService.RecipeRequest> recipes = new ArrayList<>();
-        boolean highPrice = false;
         for (InterpretedOperation op : interpretation.operations()) {
             if (isRecipe(op.type())) {
                 boolean preparation = "preparation_recipe".equalsIgnoreCase(op.type().trim());
@@ -152,7 +151,6 @@ public class ChatService {
                 OperationItem resolved = resolution.resolve(type, item, skipped);
                 if (resolved == null) continue;
                 items.add(resolved);
-                highPrice |= type == ChatOperationType.PURCHASE && isHighPrice(item);
             }
             if (!items.isEmpty()) operations.add(new Operation(type, items));
         }
@@ -163,10 +161,10 @@ public class ChatService {
         if (operations.isEmpty()) return withRecipe(nothingToRegister(interpretation, skipped), recipe);
 
         boolean doubtful = interpretation.needsConfirmation() || interpretation.confidence() < MIN_CONFIDENCE;
-        if (doubtful || highPrice) {
-            String question = interpretation.needsConfirmation() && interpretation.responseToUser() != null
+        if (doubtful || !resolution.priceQuestions.isEmpty()) {
+            String question = !resolution.priceQuestions.isEmpty() ? String.join(" ", resolution.priceQuestions)
+                    : interpretation.needsConfirmation() && interpretation.responseToUser() != null
                     ? interpretation.responseToUser()
-                    : highPrice ? "¿El precio es por unidad o el total de la compra?"
                     : "No estoy seguro de haber entendido. ¿Lo registro así?";
             return withRecipe(new ChatResult(ChatStatus.NEEDS_CONFIRMATION, question, List.of(), operations, skipped),
                     recipe);
@@ -397,6 +395,8 @@ public class ChatService {
         final Map<UUID, Unit> unitsById = new HashMap<>();
 
         final Set<UUID> preparations;
+        /** Las compras cuyo precio puede leerse de dos formas: se pregunta antes de registrar nada. */
+        final List<String> priceQuestions = new ArrayList<>();
 
         Resolution(List<Product> catalog, List<MenuItem> dishes, List<Unit> all, Set<UUID> preparations) {
             this.preparations = preparations;
@@ -435,8 +435,12 @@ public class ChatService {
                 BigDecimal quantity = convert(() -> unitConversionService.convert(
                         item.quantity(), unit.getId(), product.getDefaultUnitId()), 3);
                 BigDecimal price = null;
+                if (!validQuantity(type, quantity)) {   // 0,0001 g de algo en kg: redondeado no queda nada
+                    skipped.add(skip(type, product.getName(), ErrorCode.CHAT_INVALID_QUANTITY));
+                    return null;
+                }
                 if (type == ChatOperationType.PURCHASE) {
-                    if (!positive(item.pricePerUnit())) {
+                    if (!positive(item.price())) {
                         skipped.add(skip(type, product.getName(), ErrorCode.CHAT_MISSING_PRICE));
                         return null;
                     }
@@ -445,12 +449,15 @@ public class ChatService {
                         skipped.add(skip(type, product.getName(), ErrorCode.UNIT_NOT_FOUND));
                         return null;
                     }
-                    price = convert(() -> unitConversionService.convertPrice(
-                            item.pricePerUnit(), priceUnit.getId(), product.getDefaultUnitId()), 4);
-                }
-                if (!validQuantity(type, quantity)) {   // 0,0001 g de algo en kg: redondeado no queda nada
-                    skipped.add(skip(type, product.getName(), ErrorCode.CHAT_INVALID_QUANTITY));
-                    return null;
+                    // Las dos lecturas del número, calculadas acá: el modelo solo dice cuál le parece.
+                    BigDecimal perUnit = convert(() -> unitConversionService.convertPrice(
+                            item.price(), priceUnit.getId(), product.getDefaultUnitId()), 4);
+                    BigDecimal ofTotal = convert(() -> item.price().divide(quantity, 6, RoundingMode.HALF_UP), 4);
+                    PriceBasis basis = PriceBasis.of(item.priceBasis());
+                    price = basis == PriceBasis.TOTAL ? ofTotal : perUnit;
+                    if (basis.isAmbiguous(quantity, perUnit)) {
+                        priceQuestions.add(priceQuestion(product, item.price(), priceUnit, quantity, perUnit, ofTotal));
+                    }
                 }
                 return new OperationItem(product.getId(), null, product.getName(), quantity, unitLabel(product),
                         price, datedByUser(type) ? item.expirationDate() : null,
@@ -506,9 +513,49 @@ public class ChatService {
         return n.scale() < 0 ? n.setScale(0) : n;
     }
 
-    private static boolean isHighPrice(InterpretedItem item) {
-        return item.quantity() != null && item.quantity().compareTo(BigDecimal.ONE) > 0
-                && item.pricePerUnit() != null && item.pricePerUnit().compareTo(HIGH_UNIT_PRICE) > 0;
+    /** A qué se refiere el precio que dijo el usuario. Lo clasifica la IA; las cuentas, ChatService. */
+    enum PriceBasis {
+        UNIT, TOTAL, UNCLEAR;
+
+        static PriceBasis of(String basis) {
+            if (basis == null) return UNCLEAR;
+            return switch (basis.trim().toLowerCase(Locale.ROOT)) {
+                case "unit" -> UNIT;
+                case "total" -> TOTAL;
+                default -> UNCLEAR;
+            };
+        }
+
+        /**
+         * Cuándo las dos lecturas pueden ser la que no es. Por unidad: la regla de siempre (más de una unidad y más de
+         * $100.000 cada una: puede ser el total). Total: con más de una unidad, siempre (si la IA se equivocó, la
+         * división esconde el error). Sin saber: si la cantidad no es 1, porque las dos lecturas difieren.
+         *
+         * @param quantity en la unidad del insumo
+         * @param perUnit  la lectura "por unidad", por unidad del insumo
+         */
+        boolean isAmbiguous(BigDecimal quantity, BigDecimal perUnit) {
+            return switch (this) {
+                case UNIT -> quantity.compareTo(BigDecimal.ONE) > 0 && perUnit.compareTo(HIGH_UNIT_PRICE) > 0;
+                case TOTAL -> quantity.compareTo(BigDecimal.ONE) > 0;
+                case UNCLEAR -> quantity.compareTo(BigDecimal.ONE) != 0;
+            };
+        }
+    }
+
+    /** "«Comino»: ¿$ 150.000 es por kg o el total de los 5 kg? Por kg serían $ 750.000; si es el total, $ 30.000 por kg." */
+    static String priceQuestion(Product product, BigDecimal said, Unit priceUnit, BigDecimal quantity,
+                                BigDecimal perUnit, BigDecimal ofTotal) {
+        String u = unitLabel(product);
+        return "«" + product.getName() + "»: ¿" + money(said) + " es por " + priceUnit.getAbbreviation()
+                + " o el total de los " + num(quantity) + " " + u + "? Por " + priceUnit.getAbbreviation() + " serían "
+                + money(perUnit.multiply(quantity)) + "; si es el total, " + money(ofTotal) + " por " + u + ".";
+    }
+
+    private static String num(BigDecimal n) {
+        NumberFormat f = NumberFormat.getNumberInstance(ES_AR);
+        f.setMaximumFractionDigits(3);
+        return f.format(n);
     }
 
     private static boolean isRecipe(String type) {
