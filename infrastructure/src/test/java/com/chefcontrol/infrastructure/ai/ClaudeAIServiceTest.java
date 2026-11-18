@@ -88,7 +88,7 @@ class ClaudeAIServiceTest {
     private static final UUID COMINO = UUID.fromString("0b6c1c3e-6f3a-4d43-9a39-4c7f6d1c2a10");
     private static final UUID MILANESA = UUID.fromString("5d1f2a3b-0c4e-4f6a-8b7c-9d0e1f2a3b4c");
     private static final ChatMessageRequest CHAT = new ChatMessageRequest("compré 500 g de comino a 3000 el kilo",
-            LocalDate.of(2026, 11, 17), List.of(new ChatCatalogProduct(COMINO, "Comino", "kg")),
+            LocalDate.of(2026, 11, 17), List.of(new ChatCatalogProduct(COMINO, "Comino", "kg", false)),
             List.of(new ChatCatalogMenuItem(MILANESA, "Milanesa", new BigDecimal("12000"))),
             List.of(new UnitOption("Kilogramo", "kg"), new UnitOption("Gramo", "g")));
 

@@ -36,8 +36,11 @@ public interface AIService {
     record ChatMessageRequest(String message, LocalDate today, List<ChatCatalogProduct> products,
                               List<ChatCatalogMenuItem> menuItems, List<UnitOption> units) {}
 
-    /** @param unit la abreviatura de su unidad por defecto */
-    record ChatCatalogProduct(UUID id, String name, String unit) {}
+    /**
+     * @param unit        la abreviatura de su unidad por defecto
+     * @param preparation tiene receta de tanda: es lo único que se puede producir
+     */
+    record ChatCatalogProduct(UUID id, String name, String unit, boolean preparation) {}
 
     record ChatCatalogMenuItem(UUID id, String name, BigDecimal price) {}
 

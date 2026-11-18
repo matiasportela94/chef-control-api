@@ -37,7 +37,8 @@ final class ChatPrompt {
              "operations":[{"type":"purchase","items":[{"productId":"<id>","name":"harina","quantity":10,"unit":"kg","pricePerUnit":2000,"priceUnit":"kg","expirationDate":"2026-12-31"}]},
                            {"type":"waste","items":[{"productId":"<id>","name":"tomate","quantity":2,"unit":"kg","reason":"EXPIRED"}]},
                            {"type":"sale","items":[{"menuItemId":"<id>","name":"milanesa","quantity":5}]},
-                           {"type":"stock_adjustment","items":[{"productId":"<id>","name":"harina","quantity":8,"unit":"kg"}]}]}
+                           {"type":"stock_adjustment","items":[{"productId":"<id>","name":"harina","quantity":8,"unit":"kg"}]},
+                           {"type":"production","items":[{"productId":"<id>","name":"mayonesa","quantity":5,"unit":"kg","expirationDate":"2026-12-01"}]}]}
 
             TIPOS DE OPERACIÓN (type):
             - purchase: compra de insumos ("compramos 10 kg de harina a $2000").
@@ -53,7 +54,8 @@ final class ChatPrompt {
             1. productId: el id exacto de CATÁLOGO DE INSUMOS si el insumo es claramente ese (plural o singular, \
             acentos, mayúsculas: "tomates" es "Tomate"). En una venta va menuItemId, el id exacto de PLATOS, y no \
             productId. Si no está, o dudás entre dos, null: nunca inventes un id ni elijas uno parecido ("Tomate" no es \
-            "Tomate perita"). name: el insumo o el plato como lo dijo el usuario.
+            "Tomate perita"). Aunque no esté, devolvé el ítem con el id en null: el sistema le avisa al usuario qué no \
+            encontró. name: el insumo o el plato como lo dijo el usuario.
             2. quantity y unit: tal como los dijo el usuario, SIN convertir: "500 g" es quantity 500 y unit "g" aunque \
             el insumo vaya en kg; el sistema convierte. unit es una abreviatura de la lista de UNIDADES ("kilos" → kg, \
             "gramos" → g, "litros" → l, "unidades" → u). Si no dijo unidad, null. Números escritos a número ("tres" → \
@@ -63,16 +65,18 @@ final class ChatPrompt {
             "todo", "me salió", "el lote"), y ahí dividilo por la cantidad: "5 kg, 25 mil en total" → 5000. \
             priceUnit: la unidad a la que se refiere el precio si la dice ("500 g a 3000 el kilo" → kg); si no, null. \
             Sin precio, null.
-            4. expirationDate: solo en compras y si lo dice, como YYYY-MM-DD, contando desde HOY.
+            4. expirationDate: solo en compras y producciones, y si lo dice, como YYYY-MM-DD, contando desde HOY.
             5. reason: solo en mermas. EXPIRED (vencido), DAMAGED (roto, quemado, en mal estado), OVERPRODUCTION \
             (sobró), THEFT (robo) u OTHER.
             6. En una venta, quantity son las porciones vendidas, sin unit y sin precio: el precio es el del plato.
             7. En un ajuste, quantity es lo que HAY AHORA, contado, no lo que se usó ni la diferencia: "quedan 8 kg de \
             harina" → 8 y kg; "no queda más aceite" → 0. Lo que se usó o se gastó no es un ajuste.
-            8. confidence: de 0 a 100, cuán seguro estás de haber entendido todo. needsConfirmation = true si \
+            8. En una producción, productId es una preparación: un insumo marcado "preparación" en el catálogo. \
+            quantity y unit, lo que salió de la tanda, como lo dijo el usuario ("hice 5 kilos de mayonesa" → 5 y kg).
+            9. confidence: de 0 a 100, cuán seguro estás de haber entendido todo. needsConfirmation = true si \
             confidence < 80, si algo es ambiguo, o si en una compra la cantidad es mayor a 1 y el precio por unidad \
             supera $100.000 (puede ser el total).
-            9. responseToUser, en castellano rioplatense y corto: si needsConfirmation, la pregunta concreta (si el \
+            10. responseToUser, en castellano rioplatense y corto: si needsConfirmation, la pregunta concreta (si el \
             precio es por unidad o el total, cuál de dos insumos); si no entendiste, qué falta. Si no, una frase \
             corta: el detalle de lo registrado lo arma el sistema.
             """;
@@ -82,7 +86,8 @@ final class ChatPrompt {
     /** @param output cómo devolver el resultado: el JSON en el texto (Gemini) o la herramienta (Claude) */
     static String systemPrompt(ChatMessageRequest r, String output) {
         String products = r.products().isEmpty() ? "(sin insumos cargados)" : r.products().stream()
-                .map(p -> p.id() + " | " + p.name() + " | " + (p.unit() == null ? "-" : p.unit()))
+                .map(p -> p.id() + " | " + p.name() + " | " + (p.unit() == null ? "-" : p.unit())
+                        + (p.preparation() ? " | preparación" : ""))
                 .collect(Collectors.joining("\n"));
         String menuItems = r.menuItems().isEmpty() ? "(sin platos cargados)" : r.menuItems().stream()
                 .map(m -> m.id() + " | " + m.name() + " | " + (m.price() == null ? "-" : m.price().toPlainString()))
@@ -90,7 +95,7 @@ final class ChatPrompt {
         return RULES + output + "\n\n"
                 + "UNIDADES (abreviatura: nombre): " + r.units().stream()
                         .map(u -> u.abbreviation() + ": " + u.name()).collect(Collectors.joining("; ")) + "\n\n"
-                + "CATÁLOGO DE INSUMOS (id | nombre | unidad):\n" + products + "\n\n"
+                + "CATÁLOGO DE INSUMOS (id | nombre | unidad | \"preparación\" si tiene receta de tanda):\n" + products + "\n\n"
                 + "PLATOS (id | nombre | precio):\n" + menuItems;
     }
 

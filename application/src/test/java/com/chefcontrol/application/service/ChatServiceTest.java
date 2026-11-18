@@ -19,7 +19,10 @@ import com.chefcontrol.domain.product.Product;
 import com.chefcontrol.domain.product.Unit;
 import com.chefcontrol.domain.purchase.Purchase;
 import com.chefcontrol.domain.repository.MenuItemRepository;
+import com.chefcontrol.domain.plan.Feature;
+import com.chefcontrol.domain.stock.Production;
 import com.chefcontrol.domain.repository.ProductRepository;
+import com.chefcontrol.domain.repository.RecipeRepository;
 import com.chefcontrol.domain.repository.StockMovementRepository;
 import com.chefcontrol.domain.repository.UnitRepository;
 import com.chefcontrol.domain.shared.Page;
@@ -69,6 +72,9 @@ class ChatServiceTest {
     @Mock WasteService wasteService;
     @Mock SaleService saleService;
     @Mock StockCountService stockCountService;
+    @Mock ProductionService productionService;
+    @Mock RecipeRepository recipeRepository;
+    @Mock AccountService accountService;
     @Mock StockService stockService;
     @Mock StockMovementRepository stockMovementRepository;
     @Mock ChatActionRepository chatActionRepository;
@@ -84,6 +90,7 @@ class ChatServiceTest {
     private final Unit l = unit("Litro", "l");
     private final Product comino = product("Comino", kg);
     private final Product tomate = product("Tomate", kg);
+    private final Product mayonesa = product("Mayonesa", kg);
     private final MenuItem milanesa = MenuItem.builder().id(UUID.randomUUID()).restaurantId(R).name("Milanesa")
             .price(new BigDecimal("12000")).active(true).build();
     private ChatService service;
@@ -94,7 +101,11 @@ class ChatServiceTest {
         when(unitRepository.findAll()).thenReturn(List.of(kg, g, l));
         when(productRepository.findByRestaurantIdAndIsActiveTrue(eq(R), any()))
                 .thenReturn(new Page<>(List.of(comino, tomate), 0, 2, 2));
-        for (Product p : List.of(comino, tomate)) {
+        when(productRepository.findByRestaurantIdAndIsActiveTrue(eq(R), any()))
+                .thenReturn(new Page<>(List.of(comino, tomate, mayonesa), 0, 3, 3));
+        when(recipeRepository.findPreparationProductIds(R)).thenReturn(Set.of(mayonesa.getId()));
+        when(productionService.recordProduction(any())).thenAnswer(i -> Production.builder().id(UUID.randomUUID()).build());
+        for (Product p : List.of(comino, tomate, mayonesa)) {
             when(productRepository.findByIdAndRestaurantId(p.getId(), R)).thenReturn(Optional.of(p));
         }
         when(unitConversionService.convert(any(), any(), any())).thenAnswer(i -> i.getArgument(0));
@@ -121,7 +132,8 @@ class ChatServiceTest {
         count.setId(UUID.randomUUID());
         when(stockCountService.createStockCount(any())).thenReturn(new StockCountService.StockCountResult(count, List.of()));
         service = new ChatService(aiService, productRepository, menuItemRepository, unitRepository,
-                unitConversionService, purchaseService, wasteService, saleService, stockCountService, stockService,
+                unitConversionService, purchaseService, wasteService, saleService, stockCountService,
+                productionService, recipeRepository, accountService, stockService,
                 stockMovementRepository, chatActionRepository, currentUserProvider,
                 TransactionOperations.withoutTransaction(), Clock.fixed(NOW, ZoneOffset.UTC));
     }
@@ -223,12 +235,77 @@ class ChatServiceTest {
 
     @Test
     void operationsWithoutExecutionYetAreNotSupported() {
-        answer(95, false, op("production", List.of()), op("query", List.of()));
+        answer(95, false, op("query", List.of()));
 
-        var result = service.sendChatMessage("hice 5 kg de mayonesa, ¿cuánta harina queda?", ALL);
+        var result = service.sendChatMessage("¿cuánta harina queda?", ALL);
 
         assertEquals(ChatStatus.NOT_SUPPORTED, result.status());
-        assertEquals(2, result.skipped().size());
+        assertEquals(1, result.skipped().size());
+    }
+
+    // ── Producción ──
+
+    @Test
+    void aProductionOfAPreparationIsRegisteredInItsUnitWithItsExpiration() {
+        // "hice 1500 g de mayonesa, vence el 1/12": una producción por tanda, convertida a kg.
+        var said = new InterpretedItem(mayonesa.getId(), null, "mayonesa", new BigDecimal("1500"), "g", null, null,
+                java.time.LocalDate.of(2026, 12, 1), null);
+        answer(95, false, op("production", said));
+        when(unitConversionService.convert(new BigDecimal("1500"), g.getId(), kg.getId())).thenReturn(new BigDecimal("1.5"));
+
+        var result = service.sendChatMessage("hice 1500 g de mayonesa, vence el 1/12", ALL);
+
+        assertEquals(ChatStatus.REGISTERED, result.status());
+        var cmd = ArgumentCaptor.forClass(ProductionService.RecordProductionCommand.class);
+        verify(productionService).recordProduction(cmd.capture());
+        assertEquals(mayonesa.getId(), cmd.getValue().productId());
+        assertEquals(0, new BigDecimal("1.5").compareTo(cmd.getValue().quantity()));
+        assertEquals(kg.getId(), cmd.getValue().unitId());
+        assertEquals(java.time.LocalDate.of(2026, 12, 1), cmd.getValue().expirationDate());
+        verify(accountService).requireFeature(Feature.RECIPES_AND_FOOD_COST);
+        assertEquals("Producción: 1,5 kg Mayonesa", result.actions().getFirst().getSummary());
+    }
+
+    @Test
+    void onlyAPreparationCanBeProduced() {
+        answer(95, false, op("production", item(tomate, "2", "kg", null, null)));
+
+        var result = service.sendChatMessage("hice 2 kg de tomate", ALL);
+
+        assertEquals(ChatStatus.NOT_REGISTERED, result.status());
+        assertEquals(ErrorCode.PRODUCT_NOT_A_PREPARATION, result.skipped().getFirst().errorCode());
+        verify(productionService, never()).recordProduction(any());
+    }
+
+    @Test
+    void producingNeedsThePlanWithRecipes() {
+        answer(95, false, op("production", item(mayonesa, "1", "kg", null, null)));
+        doThrow(AppException.forbidden(ErrorCode.PLAN_FEATURE_REQUIRED, "no"))
+                .when(accountService).requireFeature(Feature.RECIPES_AND_FOOD_COST);
+
+        var result = service.sendChatMessage("hice 1 kg de mayonesa", ALL);
+
+        assertEquals(ErrorCode.PLAN_FEATURE_REQUIRED, result.skipped().getFirst().errorCode());
+        verify(productionService, never()).recordProduction(any());
+    }
+
+    @Test
+    void confirmingAProductionRechecksThatItIsAPreparation() {
+        var ops = List.of(new Operation(ChatOperationType.PRODUCTION, List.of(
+                new OperationItem(tomate.getId(), null, "Tomate", BigDecimal.ONE, "kg", null, null, null))));
+
+        var result = service.confirmChatOperations(ops, ALL);
+
+        assertEquals(ErrorCode.PRODUCT_NOT_A_PREPARATION, result.skipped().getFirst().errorCode());
+    }
+
+    @Test
+    void undoingAProductionReversesIt() {
+        ChatAction action = stored(ChatOperationType.PRODUCTION, USER, NOW);
+
+        service.undoChatAction(action.getId(), Set.of());
+
+        verify(productionService).reverseProduction(action.getEntityId());
     }
 
     // ── Ventas y ajustes ──

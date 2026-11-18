@@ -18,7 +18,9 @@ import com.chefcontrol.domain.menu.MenuItem;
 import com.chefcontrol.domain.product.Product;
 import com.chefcontrol.domain.product.Unit;
 import com.chefcontrol.domain.repository.MenuItemRepository;
+import com.chefcontrol.domain.plan.Feature;
 import com.chefcontrol.domain.repository.ProductRepository;
+import com.chefcontrol.domain.repository.RecipeRepository;
 import com.chefcontrol.domain.repository.StockMovementRepository;
 import com.chefcontrol.domain.repository.UnitRepository;
 import com.chefcontrol.domain.shared.PageRequest;
@@ -71,9 +73,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ChatService {
 
-    /** La producción llega en la tanda siguiente. */
-    static final Set<ChatOperationType> SUPPORTED = EnumSet.of(ChatOperationType.PURCHASE, ChatOperationType.WASTE,
-            ChatOperationType.SALE, ChatOperationType.STOCK_ADJUSTMENT);
+    /** Todo lo operativo. Las recetas (tanda 4) no van acá: siempre terminan en la vista previa del import. */
+    static final Set<ChatOperationType> SUPPORTED = EnumSet.allOf(ChatOperationType.class);
 
     static final int MIN_CONFIDENCE = 80;
     /** La regla de la confirmación por precio alto: cantidad mayor a 1 y precio unitario mayor a esto. */
@@ -90,6 +91,9 @@ public class ChatService {
     private final WasteService wasteService;
     private final SaleService saleService;
     private final StockCountService stockCountService;
+    private final ProductionService productionService;
+    private final RecipeRepository recipeRepository;
+    private final AccountService accountService;
     private final StockService stockService;
     private final StockMovementRepository stockMovementRepository;
     private final ChatActionRepository chatActionRepository;
@@ -107,12 +111,14 @@ public class ChatService {
         List<MenuItem> menuItems = menuItemRepository
                 .findByRestaurantIdAndActive(restaurantId, true, PageRequest.of(0, MAX_CATALOG)).content();
         List<Unit> units = unitRepository.findAll();
+        Set<UUID> preparations = recipeRepository.findPreparationProductIds(restaurantId);
 
         ChatInterpretation interpretation;
         try {
             interpretation = aiService.interpretChatMessage(new AIService.ChatMessageRequest(message,
                     LocalDate.now(clock.withZone(ChefControlTime.DEFAULT_ZONE)),
-                    products.stream().map(p -> new ChatCatalogProduct(p.getId(), p.getName(), unitLabel(p))).toList(),
+                    products.stream().map(p -> new ChatCatalogProduct(p.getId(), p.getName(), unitLabel(p),
+                            preparations.contains(p.getId()))).toList(),
                     menuItems.stream().map(m -> new ChatCatalogMenuItem(m.getId(), m.getName(), m.getPrice())).toList(),
                     units.stream().map(u -> new UnitOption(u.getName(), u.getAbbreviation())).toList()));
         } catch (AppException e) {
@@ -120,7 +126,7 @@ public class ChatService {
             return ChatResult.of(ChatStatus.NOT_UNDERSTOOD, "No pude interpretar el mensaje. Probá de nuevo.");
         }
 
-        Resolution resolution = new Resolution(products, menuItems, units);
+        Resolution resolution = new Resolution(products, menuItems, units, preparations);
         List<Skipped> skipped = new ArrayList<>();
         List<Operation> operations = new ArrayList<>();
         boolean highPrice = false;
@@ -167,6 +173,7 @@ public class ChatService {
         UUID restaurantId = TenantContext.require();
         List<Skipped> skipped = new ArrayList<>();
         List<Operation> valid = new ArrayList<>();
+        Set<UUID> preparations = recipeRepository.findPreparationProductIds(restaurantId);
         for (Operation op : operations) {
             if (op.type() == null || !SUPPORTED.contains(op.type())) {
                 skipped.add(notSupported(op.type()));
@@ -180,7 +187,7 @@ public class ChatService {
             for (OperationItem item : op.items()) {
                 OperationItem checked = op.type() == ChatOperationType.SALE
                         ? confirmedSaleItem(item, restaurantId, skipped)
-                        : confirmedProductItem(op.type(), item, restaurantId, skipped);
+                        : confirmedProductItem(op.type(), item, restaurantId, preparations, skipped);
                 if (checked != null) items.add(checked);
             }
             if (!items.isEmpty()) valid.add(new Operation(op.type(), items));
@@ -206,11 +213,13 @@ public class ChatService {
     }
 
     private OperationItem confirmedProductItem(ChatOperationType type, OperationItem item, UUID restaurantId,
-                                               List<Skipped> skipped) {
+                                               Set<UUID> preparations, List<Skipped> skipped) {
         Product product = item.productId() == null ? null : productRepository
                 .findByIdAndRestaurantId(item.productId(), restaurantId).filter(Product::isActive).orElse(null);
         if (product == null) {
             skipped.add(skip(type, item.name(), ErrorCode.CHAT_PRODUCT_NOT_IN_CATALOG));
+        } else if (type == ChatOperationType.PRODUCTION && !preparations.contains(product.getId())) {
+            skipped.add(skip(type, product.getName(), ErrorCode.PRODUCT_NOT_A_PREPARATION));
         } else if (!validQuantity(type, item.quantity())) {
             skipped.add(skip(type, product.getName(), ErrorCode.CHAT_INVALID_QUANTITY));
         } else if (type == ChatOperationType.PURCHASE && !positive(item.pricePerUnit())) {
@@ -218,7 +227,7 @@ public class ChatService {
         } else {
             return new OperationItem(product.getId(), null, product.getName(), item.quantity(), unitLabel(product),
                     type == ChatOperationType.PURCHASE ? item.pricePerUnit() : null,
-                    type == ChatOperationType.PURCHASE ? item.expirationDate() : null,
+                    datedByUser(type) ? item.expirationDate() : null,
                     type == ChatOperationType.WASTE ? orOther(item.wasteReason()) : null);
         }
         return null;
@@ -248,6 +257,7 @@ public class ChatService {
                 case PURCHASE -> purchaseService.reversePurchase(action.getEntityId());
                 case WASTE -> stockService.reverseMovement(wasteMovementOf(action.getEntityId()).getId());
                 case SALE -> saleService.reverseSale(action.getEntityId());
+                case PRODUCTION -> productionService.reverseProduction(action.getEntityId());
                 // Un conteo sin diferencias no movió nada: no hay qué revertir, pero queda deshecho igual.
                 case STOCK_ADJUSTMENT -> stockMovementRepository
                         .findByReferenceIdAndReferenceType(action.getEntityId(), "stock_count").stream()
@@ -300,7 +310,14 @@ public class ChatService {
                     actions.add(saveAction(ChatOperationType.STOCK_ADJUSTMENT, count.count().getId(),
                             adjustmentSummary(op.items())));
                 });
-                default -> skipped.add(notSupported(op.type()));
+                // Una acción por producción: cada tanda es una entidad, y así se deshace solo la equivocada.
+                case PRODUCTION -> op.items().forEach(item -> inOwnTransaction(op.type(), item.name(), skipped, () -> {
+                    accountService.requireFeature(Feature.RECIPES_AND_FOOD_COST);   // como POST /productions
+                    var production = productionService.recordProduction(new ProductionService.RecordProductionCommand(
+                            item.productId(), item.quantity(), defaultUnitOf(item.productId()), item.expirationDate(),
+                            clock.instant(), null));
+                    actions.add(saveAction(ChatOperationType.PRODUCTION, production.getId(), productionSummary(item)));
+                }));
             }
         }
         if (actions.isEmpty()) {
@@ -354,7 +371,10 @@ public class ChatService {
         final Map<String, Unit> units = new HashMap<>();
         final Map<UUID, Unit> unitsById = new HashMap<>();
 
-        Resolution(List<Product> catalog, List<MenuItem> dishes, List<Unit> all) {
+        final Set<UUID> preparations;
+
+        Resolution(List<Product> catalog, List<MenuItem> dishes, List<Unit> all, Set<UUID> preparations) {
+            this.preparations = preparations;
             catalog.forEach(p -> products.put(p.getId(), p));
             dishes.forEach(m -> menuItems.put(m.getId(), m));
             all.forEach(u -> {
@@ -371,6 +391,10 @@ public class ChatService {
             Product product = item.productId() == null ? null : products.get(item.productId());
             if (product == null) {
                 skipped.add(skip(type, item.name(), ErrorCode.CHAT_PRODUCT_NOT_IN_CATALOG));
+                return null;
+            }
+            if (type == ChatOperationType.PRODUCTION && !preparations.contains(product.getId())) {
+                skipped.add(skip(type, product.getName(), ErrorCode.PRODUCT_NOT_A_PREPARATION));
                 return null;
             }
             if (!validQuantity(type, item.quantity())) {
@@ -404,7 +428,7 @@ public class ChatService {
                     return null;
                 }
                 return new OperationItem(product.getId(), null, product.getName(), quantity, unitLabel(product),
-                        price, type == ChatOperationType.PURCHASE ? item.expirationDate() : null,
+                        price, datedByUser(type) ? item.expirationDate() : null,
                         type == ChatOperationType.WASTE ? reasonOf(item.wasteReason()) : null);
             } catch (AppException e) {   // UNIT_CONVERSION_NOT_FOUND: litros de un insumo en kg
                 skipped.add(new Skipped(type, product.getName(), e.getErrorCode(),
@@ -439,6 +463,11 @@ public class ChatService {
 
     private static boolean isPortions(BigDecimal n) {
         return positive(n) && n.stripTrailingZeros().scale() <= 0;
+    }
+
+    /** El vencimiento lo dice quien carga en una compra o una producción; en lo demás no hay lote nuevo. */
+    private static boolean datedByUser(ChatOperationType type) {
+        return type == ChatOperationType.PURCHASE || type == ChatOperationType.PRODUCTION;
     }
 
     /** Un ajuste puede ser 0 ("no queda más aceite"); lo demás, más de 0. */
@@ -516,6 +545,7 @@ public class ChatService {
         String message = switch (code) {
             case CHAT_PRODUCT_NOT_IN_CATALOG -> who + " no está en el catálogo.";
             case CHAT_MENU_ITEM_NOT_IN_CATALOG -> who + " no es un plato del menú.";
+            case PRODUCT_NOT_A_PREPARATION -> who + " no tiene receta de preparación: no se puede producir.";
             case CHAT_INVALID_QUANTITY -> type == ChatOperationType.SALE
                     ? "La venta de " + who + " tiene que ser en porciones enteras."
                     : "Falta la cantidad de " + who + ".";
@@ -528,7 +558,7 @@ public class ChatService {
 
     private static Skipped notSupported(ChatOperationType type) {
         String message = type == null
-                ? "Por ahora no respondo consultas: solo registro compras, mermas, ventas y ajustes de stock."
+                ? "Por ahora no respondo consultas: solo registro compras, mermas, ventas, ajustes de stock y producciones."
                 : "Todavía no registro " + plural(type) + " por acá: usá el formulario.";
         return new Skipped(type, null, ErrorCode.CHAT_OPERATION_NOT_SUPPORTED, message);
     }
@@ -581,6 +611,10 @@ public class ChatService {
 
     static String saleSummary(List<OperationItem> items) {
         return "Venta: " + items.stream().map(ChatService::quantity).collect(Collectors.joining(", "));
+    }
+
+    static String productionSummary(OperationItem item) {
+        return "Producción: " + quantity(item);
     }
 
     static String adjustmentSummary(List<OperationItem> items) {
