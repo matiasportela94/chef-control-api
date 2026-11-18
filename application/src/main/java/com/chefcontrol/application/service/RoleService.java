@@ -97,7 +97,7 @@ public class RoleService {
     private UUID currentAccountId() {
         UUID restaurantId = TenantContext.require();
         return restaurantRepository.findByIdAndIsActiveTrue(restaurantId)
-                .orElseThrow(() -> new IllegalStateException("Restaurant not found"))
+                .orElseThrow(AppException::sessionRestaurantGone)
                 .getAccountId();
     }
 }

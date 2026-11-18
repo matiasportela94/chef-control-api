@@ -26,6 +26,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 /** El reparto de features por plan (decidido el 2026-10-23) y que el corte use el plan efectivo, no el guardado. */
@@ -57,7 +58,7 @@ class AccountServiceRequireFeatureTest {
         r.setAccountId(accountId);
         when(restaurantRepository.findByIdAndIsActiveTrue(restaurantId)).thenReturn(Optional.of(r));
         account = Account.builder().id(accountId).plan(PlanTier.TRIAL).build();
-        when(accountRepository.findById(accountId)).thenReturn(Optional.of(account));
+        lenient().when(accountRepository.findById(accountId)).thenReturn(Optional.of(account));
     }
 
     @AfterEach
@@ -86,5 +87,13 @@ class AccountServiceRequireFeatureTest {
         account.setPlan(PlanTier.PRO);
         account.setPlanExpiresAt(Instant.now().minusSeconds(1));
         assertThrows(AppException.class, () -> service().requireFeature(Feature.RECIPES_AND_FOOD_COST));
+    }
+
+    @Test
+    void aSessionOnADeletedRestaurantIsNoSessionAt401() {
+        // Borraron el local con la sesión abierta (p. ej. un invitado cuyo dueño cerró la cuenta): era un 500.
+        when(restaurantRepository.findByIdAndIsActiveTrue(restaurantId)).thenReturn(Optional.empty());
+        assertEquals(ErrorCode.AUTHENTICATION_REQUIRED,
+                assertThrows(AppException.class, () -> service().requireFeature(Feature.AI_INTERPRETER)).getErrorCode());
     }
 }
