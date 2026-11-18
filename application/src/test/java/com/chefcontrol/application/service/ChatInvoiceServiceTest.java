@@ -71,6 +71,7 @@ class ChatInvoiceServiceTest {
     @Mock ChatExchangeRepository chatExchangeRepository;
     @Mock CurrentUserProvider currentUserProvider;
     @Mock com.chefcontrol.domain.repository.MenuItemRepository menuItemRepository;
+    @Mock com.chefcontrol.domain.repository.RecipeRepository recipeRepository;
 
     private static final UUID R = UUID.randomUUID();
     private static final UUID USER = UUID.randomUUID();
@@ -113,7 +114,7 @@ class ChatInvoiceServiceTest {
                 productService, chatActionRepository, history, currentUserProvider,
                 TransactionOperations.withoutTransaction(), clock);
         when(menuItemRepository.findByRestaurantIdAndActive(eq(R), eq(true), any())).thenReturn(new Page<>(List.of(), 0, 0, 0));
-        documents = new ChatDocumentService(aiService, productRepository, menuItemRepository, unitRepository, service, null,
+        documents = new ChatDocumentService(aiService, productRepository, menuItemRepository, unitRepository, recipeRepository, service, null, null,
                 history);
     }
 

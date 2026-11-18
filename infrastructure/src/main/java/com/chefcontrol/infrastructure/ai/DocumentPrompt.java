@@ -41,6 +41,10 @@ final class DocumentPrompt {
              "invoiceNumber":"0001-00001234","date":"2026-11-15","printedTotal":12100,
              "lines":[{"printedText":"TOMATE PERITA X KG","quantity":5,"unit":"kg","unitPrice":2000,"lineTotal":10000,
                        "ivaPercentage":21,"catalogName":"Tomate perita","suggestedName":"Tomate perita"}]}
+            {"kind":"recipe","dishes":[{"menuItem":"Ñoquis de papa","servings":4,"ingredients":[\
+            {"ingredient":"papas","quantity":1,"unit":"kg","catalogName":"Papa"}]}],\
+             "preparations":[{"preparation":"Salsa fileto","yieldQuantity":1.5,"yieldUnit":"l","ingredients":[...]}],\
+             "proposedProducts":[{"name":"nuez moscada","unit":"g"}],"warnings":["..."]}
             {"kind":"sales_report","reportNumber":"0012","date":"2026-11-18","time":"23:45","printedTotal":356000,
              "salesLines":[{"printedText":"MILANESA NAPO","quantity":12,"unitPrice":9500,"lineTotal":114000,
                             "catalogName":"Milanesa napolitana"}]}
@@ -48,7 +52,8 @@ final class DocumentPrompt {
             REGLAS:
             1. kind: "invoice" si es una factura, un ticket de compra o un remito de un PROVEEDOR (le vende al \
             restaurante); "sales_report" si es un cierre de caja del propio restaurante (ticket Z, cierre de turno, \
-            reporte de ventas por producto del sistema de caja); "other" si no es ninguno: ahí lo demás vacío.
+            reporte de ventas por producto del sistema de caja); "recipe" si es una o varias recetas (una ficha, una \
+            hoja de un cuaderno de recetas); "other" si no es ninguno: ahí lo demás vacío.
             2. Copiá los números tal como están impresos, SIN hacer cuentas: ni sumar, ni dividir, ni calcular IVA. \
             Como números, con punto decimal ("1.500,50" → 1500.5). date como YYYY-MM-DD; time como HH:MM, o null si no \
             está impresa.
@@ -75,6 +80,20 @@ final class DocumentPrompt {
             descuentos, cubiertos ni totales. catalogName: el nombre EXACTO de un plato del MENÚ si el renglón es \
             claramente ese plato ("MILANESA NAPO" → "Milanesa napolitana"); si dudás o no es un plato, null.
             10. printedTotal: el total de ventas impreso.
+            RECETA:
+            11. Una entrada en dishes o preparations por receta, con el nombre como está escrito. preparations: lo que \
+            el restaurante hace en tandas y usa como ingrediente (salsas, masas, fondos, bases) o que dice cuánto rinde \
+            en cantidad ("rinde 1,5 l"), con yieldQuantity y yieldUnit. dishes: lo que se vende; servings: para \
+            cuántas porciones son las cantidades, solo si lo dice. price y section solo si están escritos.
+            12. Cada ingrediente con su cantidad y su unidad tal como están, SIN hacer cuentas: ni dividir por \
+            porciones ni pasar de una unidad a otra (fracciones a número: "½ kg" → 0.5 y kg). unit es una abreviatura \
+            de UNIDADES; si la unidad no está en la lista (taza, cucharada), no la conviertas: dejá afuera el \
+            ingrediente y avisalo. Un ingrediente sin cantidad ("sal c/n", "a gusto") queda afuera, con su aviso.
+            13. catalogName: el nombre EXACTO de un insumo del CATÁLOGO DE INSUMOS si el ingrediente es claramente ese \
+            ("papas" → "Papa"); si dudás, null. Un ingrediente que no está en el catálogo y no es una preparación de \
+            la foto va además una vez a proposedProducts, con su nombre y la unidad típica de compra (g → kg, ml → l, \
+            u → u).
+            14. warnings: cortos, en castellano rioplatense, lo que no pudiste leer o dejaste afuera.
             """;
 
     private DocumentPrompt() {}
@@ -107,7 +126,7 @@ final class DocumentPrompt {
                 "printedText", type("string"), "quantity", type("number"), "unitPrice", type("number"),
                 "lineTotal", type("number"), "catalogName", type("string")), "required", List.of("printedText"));
         Map<String, Object> properties = new java.util.LinkedHashMap<>();
-        properties.put("kind", Map.of("type", "string", "enum", List.of("invoice", "sales_report", "other")));
+        properties.put("kind", Map.of("type", "string", "enum", List.of("invoice", "sales_report", "recipe", "other")));
         properties.put("supplierName", type("string"));
         properties.put("supplierCuit", type("string"));
         properties.put("invoiceType", Map.of("type", "string", "enum", List.of("A", "B", "C", "REMITO")));
@@ -118,6 +137,17 @@ final class DocumentPrompt {
         properties.put("printedTotal", type("number"));
         properties.put("lines", Map.of("type", "array", "items", line));
         properties.put("salesLines", Map.of("type", "array", "items", salesLine));
+        Map<String, Object> ingredient = Map.of("type", "object", "properties", Map.of("ingredient", type("string"),
+                "quantity", type("number"), "unit", type("string"), "catalogName", type("string")));
+        properties.put("dishes", Map.of("type", "array", "items", Map.of("type", "object", "properties", Map.of(
+                "menuItem", type("string"), "servings", type("number"), "price", type("number"), "section", type("string"),
+                "ingredients", Map.of("type", "array", "items", ingredient)))));
+        properties.put("preparations", Map.of("type", "array", "items", Map.of("type", "object", "properties", Map.of(
+                "preparation", type("string"), "yieldQuantity", type("number"), "yieldUnit", type("string"),
+                "ingredients", Map.of("type", "array", "items", ingredient)))));
+        properties.put("proposedProducts", Map.of("type", "array", "items", Map.of("type", "object", "properties",
+                Map.of("name", type("string"), "unit", type("string")))));
+        properties.put("warnings", Map.of("type", "array", "items", type("string")));
         return Map.of("type", "object", "properties", properties, "required", List.of("kind"));
     }
 
@@ -129,6 +159,7 @@ final class DocumentPrompt {
         return switch (root.path("kind").asText("other")) {
             case "invoice" -> new DocumentReading(DocumentKind.INVOICE, invoice(root), null);
             case "sales_report" -> new DocumentReading(DocumentKind.SALES_REPORT, null, salesReport(root));
+            case "recipe" -> new DocumentReading(DocumentKind.RECIPE, null, null, recipes(root));
             default -> new DocumentReading(DocumentKind.OTHER, null, null);
         };
     }
@@ -152,6 +183,32 @@ final class DocumentPrompt {
         }
         return new SalesReportReading(text(root, "reportNumber"), date(text(root, "date")), time(text(root, "time")),
                 number(root, "printedTotal"), lines);
+    }
+
+    /**
+     * Las recetas, con la forma del Excel con IA: {@code row} = la posición del ingrediente en la foto (el modelo no la
+     * numera), y un insumo propuesto, en la fila del primer ingrediente que lo usa.
+     */
+    private static com.chefcontrol.application.port.AIService.CatalogSpreadsheetInterpretation recipes(JsonNode root) {
+        int row = 0;
+        java.util.Map<String, Integer> rowOf = new java.util.HashMap<>();
+        for (String list : List.of("dishes", "preparations")) {
+            for (JsonNode recipe : root.path(list)) {
+                for (JsonNode i : recipe.path("ingredients")) {
+                    if (!(i instanceof com.fasterxml.jackson.databind.node.ObjectNode o)) continue;
+                    o.put("row", ++row);
+                    if (text(i, "ingredient") != null) rowOf.putIfAbsent(text(i, "ingredient").toLowerCase(java.util.Locale.ROOT), row);
+                }
+            }
+        }
+        for (JsonNode p : root.path("proposedProducts")) {
+            if (p instanceof com.fasterxml.jackson.databind.node.ObjectNode o) {
+                String name = text(p, "name");
+                o.put("row", name == null ? 1 : rowOf.getOrDefault(name.toLowerCase(java.util.Locale.ROOT), 1));
+            }
+        }
+        if (root instanceof com.fasterxml.jackson.databind.node.ObjectNode o) o.remove("products");   // una foto no da de alta insumos sueltos
+        return CatalogSpreadsheetPrompt.parse(root);
     }
 
     private static LocalTime time(String s) {

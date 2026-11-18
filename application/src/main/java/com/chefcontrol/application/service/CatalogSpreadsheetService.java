@@ -24,6 +24,7 @@ import com.chefcontrol.domain.shared.PageRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -99,6 +100,7 @@ public class CatalogSpreadsheetService {
      * con una receta por chat, y el "huevos" propuesto se habría creado duplicado.
      */
     static CatalogSpreadsheetInterpretation applyMatches(CatalogSpreadsheetInterpretation r, List<String> catalog) {
+        r = perServing(r);
         Set<Integer> recipeRows = new HashSet<>();
         r.recipes().forEach(x -> recipeRows.add(x.row()));
         r.preparations().forEach(x -> recipeRows.add(x.row()));
@@ -175,6 +177,31 @@ public class CatalogSpreadsheetService {
                         spelled.apply(x.row(), x.ingredient()), x.quantity(), x.unit()))
                 .toList();
         return new CatalogSpreadsheetInterpretation(products, preparations, recipes, proposed, List.of(), warnings);
+    }
+
+    /**
+     * "Rinde 4 porciones" con las cantidades de las 4: el import guarda la receta de un plato, así que se dividen acá y
+     * se avisa. Lo hace el back y no el modelo, que no hace cuentas (antes el prompt le pedía dividir).
+     */
+    static CatalogSpreadsheetInterpretation perServing(CatalogSpreadsheetInterpretation r) {
+        Map<String, BigDecimal> servings = new HashMap<>();
+        Map<String, String> named = new HashMap<>();
+        for (AIService.DishServings s : r.dishServings()) {
+            if (s.menuItem() == null || s.servings() == null || s.servings().compareTo(BigDecimal.ONE) <= 0) continue;
+            servings.putIfAbsent(CatalogImportService.key(s.menuItem()), s.servings());
+            named.putIfAbsent(CatalogImportService.key(s.menuItem()), s.menuItem());
+        }
+        if (servings.isEmpty()) return r;
+        List<RecipeRow> recipes = r.recipes().stream().map(x -> {
+            BigDecimal n = x.menuItem() == null ? null : servings.get(CatalogImportService.key(x.menuItem()));
+            return n == null || x.quantity() == null ? x : new RecipeRow(x.row(), x.menuItem(), x.price(), x.section(),
+                    x.ingredient(), x.quantity().divide(n, 6, java.math.RoundingMode.HALF_UP).stripTrailingZeros(), x.unit());
+        }).toList();
+        List<String> warnings = new ArrayList<>(r.warnings());
+        servings.forEach((key, n) -> warnings.add("«" + named.get(key) + "» rinde " + n.stripTrailingZeros().toPlainString()
+                + " porciones: puse las cantidades de una."));
+        return new CatalogSpreadsheetInterpretation(r.products(), r.preparations(), recipes, r.proposedProducts(),
+                r.ingredientMatches(), warnings);
     }
 
     /**

@@ -50,10 +50,18 @@ public interface AIService {
     record ChatDocumentRequest(List<DocumentPage> pages, String message, List<ChatCatalogProduct> products,
                                List<ChatCatalogMenuItem> menuItems, List<UnitOption> units) {}
 
-    enum DocumentKind { INVOICE, SALES_REPORT, OTHER }
+    enum DocumentKind { INVOICE, SALES_REPORT, RECIPE, OTHER }
 
-    /** Según {@code kind}, viene {@code invoice} o {@code salesReport}; el otro, null. */
-    record DocumentReading(DocumentKind kind, InvoiceReading invoice, SalesReportReading salesReport) {}
+    /**
+     * Según {@code kind}, viene {@code invoice}, {@code salesReport} o {@code recipes} (una o varias recetas, con la forma
+     * del Excel con IA y {@code row} = la posición del ingrediente); los demás, null.
+     */
+    record DocumentReading(DocumentKind kind, InvoiceReading invoice, SalesReportReading salesReport,
+                           CatalogSpreadsheetInterpretation recipes) {
+        public DocumentReading(DocumentKind kind, InvoiceReading invoice, SalesReportReading salesReport) {
+            this(kind, invoice, salesReport, null);
+        }
+    }
 
     /** @param invoiceType A, B, C o REMITO, como está impreso; null si no se ve */
     record InvoiceReading(String supplierName, String supplierCuit, String invoiceType,
@@ -233,8 +241,21 @@ public interface AIService {
         List<RecipeRow> recipes,
         List<ProductRow> proposedProducts,
         List<IngredientMatch> ingredientMatches,
-        List<String> warnings
-    ) {}
+        List<String> warnings,
+        List<DishServings> dishServings
+    ) {
+        public CatalogSpreadsheetInterpretation(List<ProductRow> products, List<PreparationRow> preparations,
+                                                List<RecipeRow> recipes, List<ProductRow> proposedProducts,
+                                                List<IngredientMatch> ingredientMatches, List<String> warnings) {
+            this(products, preparations, recipes, proposedProducts, ingredientMatches, warnings, List.of());
+        }
+    }
+
+    /**
+     * Un plato cuya receta dice para cuántas porciones es ("rinde 4 porciones"), con las cantidades como vinieron. Las
+     * divide el servicio (la IA no hace cuentas); lo que devuelve el servicio ya viene dividido y esta lista vacía.
+     */
+    record DishServings(String menuItem, BigDecimal servings) {}
 
     /**
      * @param row la fila de receta (o de preparación); {@code writtenName} como vino, {@code catalogName} el insumo que el

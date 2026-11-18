@@ -99,14 +99,15 @@ public class AIChatController {
     }
 
     /**
-     * Una factura o un remito, o un cierre de caja: hasta 5 fotos (sus hojas) o un PDF, por magic bytes. El modelo dice
+     * Una factura o un remito, un cierre de caja o una o varias recetas: hasta 5 fotos (sus hojas) o un PDF, por magic bytes. El modelo dice
      * qué es. Siempre vuelve como vista previa (NEEDS_CONFIRMATION con {@code invoice} o {@code salesReport}): nada se
      * registra en el acto. Los archivos los guarda el front y los sube a /purchases/{id}/attachments o
      * /sales/{id}/attachments después de confirmar. La factura pide PURCHASES_CREATE y el cierre SALES_CREATE: sin el
      * que corresponde, NOT_REGISTERED con CHAT_PERMISSION_MISSING.
      */
     @PostMapping(value = "/documents", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("hasAuthority('PERM_AI_USE') and (hasAuthority('PERM_PURCHASES_CREATE') or hasAuthority('PERM_SALES_CREATE'))")
+    @PreAuthorize("hasAuthority('PERM_AI_USE') and (hasAuthority('PERM_PURCHASES_CREATE') or hasAuthority('PERM_SALES_CREATE')"
+            + " or hasAuthority('PERM_MENU_CREATE') or hasAuthority('PERM_PRODUCTS_CREATE'))")
     public ResponseEntity<ChatResponse> sendChatDocument(
             @RequestParam("files") List<org.springframework.web.multipart.MultipartFile> files,
             @RequestParam(value = "message", required = false) @Size(max = 2000) String message,

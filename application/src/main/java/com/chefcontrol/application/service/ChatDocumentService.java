@@ -45,8 +45,10 @@ public class ChatDocumentService {
     private final ProductRepository productRepository;
     private final MenuItemRepository menuItemRepository;
     private final UnitRepository unitRepository;
+    private final com.chefcontrol.domain.repository.RecipeRepository recipeRepository;
     private final ChatInvoiceService chatInvoiceService;
     private final ChatSalesReportService chatSalesReportService;
+    private final ChatRecipeService chatRecipeService;
     private final ChatHistoryService chatHistoryService;
 
     /**
@@ -60,7 +62,8 @@ public class ChatDocumentService {
                 .findByRestaurantIdAndIsActiveTrue(restaurantId, PageRequest.of(0, MAX_CATALOG)).content();
         List<MenuItem> menuItems = menuItemRepository
                 .findByRestaurantIdAndActive(restaurantId, true, PageRequest.of(0, MAX_CATALOG)).content();
-        ChatCatalog catalog = new ChatCatalog(products, menuItems, unitRepository.findAll(), Set.of());
+        ChatCatalog catalog = new ChatCatalog(products, menuItems, unitRepository.findAll(),
+                recipeRepository.findPreparationProductIds(restaurantId));
         ChatResult result;
         try {
             DocumentReading reading = aiService.interpretChatDocument(new AIService.ChatDocumentRequest(pages, message,
@@ -74,6 +77,7 @@ public class ChatDocumentService {
                 case SALES_REPORT -> permissions.contains(Permission.SALES_CREATE)
                         ? chatSalesReportService.previewSalesReport(reading.salesReport(), catalog)
                         : missing(ChatOperationType.SALE, "es un cierre de caja y no tenés permiso para cargar ventas");
+                case RECIPE -> chatRecipeService.previewDocumentRecipes(reading.recipes(), catalog, permissions);
                 case OTHER -> notRecognized();
             };
         } catch (AppException e) {
@@ -113,9 +117,9 @@ public class ChatDocumentService {
     }
 
     private static ChatResult notRecognized() {
-        String why = "No reconozco una factura, un remito ni un cierre de caja en el archivo.";
+        String why = "No reconozco una factura, un remito, un cierre de caja ni una receta en el archivo.";
         return new ChatResult(ChatStatus.NOT_UNDERSTOOD, ChatService.NOTHING_REGISTERED
-                + ": no reconozco una factura, un remito ni un cierre de caja en el archivo.", List.of(), List.of(),
+                + ": no reconozco una factura, un remito, un cierre de caja ni una receta en el archivo.", List.of(), List.of(),
                 List.of(new Skipped(null, null, ErrorCode.CHAT_DOCUMENT_NOT_RECOGNIZED, why)));
     }
 }

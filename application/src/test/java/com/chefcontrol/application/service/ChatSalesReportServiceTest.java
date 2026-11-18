@@ -68,6 +68,7 @@ class ChatSalesReportServiceTest {
     @Mock ProductRepository productRepository;
     @Mock MenuItemRepository menuItemRepository;
     @Mock UnitRepository unitRepository;
+    @Mock com.chefcontrol.domain.repository.RecipeRepository recipeRepository;
 
     private static final UUID R = UUID.randomUUID();
     /** Miércoles 18/11, 15:00 en Argentina. */
@@ -240,8 +241,8 @@ class ChatSalesReportServiceTest {
         when(aiService.interpretChatDocument(any())).thenReturn(new AIService.DocumentReading(
                 AIService.DocumentKind.SALES_REPORT, null, report(TODAY, null, null,
                 line("FLAN", "1", "5000", "5000", "Flan casero"))));
-        var documents = new ChatDocumentService(aiService, productRepository, menuItemRepository, unitRepository, null,
-                service, new ChatHistoryService(chatExchangeRepository, chatActionRepository, currentUserProvider,
+        var documents = new ChatDocumentService(aiService, productRepository, menuItemRepository, unitRepository, recipeRepository, null,
+                service, null, new ChatHistoryService(chatExchangeRepository, chatActionRepository, currentUserProvider,
                 Clock.fixed(NOW, ZoneOffset.UTC)));
         byte[] pdf = "%PDF-1.4 z".getBytes(StandardCharsets.US_ASCII);
 

@@ -42,7 +42,7 @@ final class RecipeChatPrompt {
             después "MENSAJE:" y el mensaje.
 
             SALIDA, con esta forma:
-            {"price":9500,"section":"Principales","yieldQuantity":1.2,"yieldUnit":"kg",
+            {"price":9500,"section":"Principales","servings":4,"yieldQuantity":1.2,"yieldUnit":"kg",
              "ingredients":[{"ingredient":"papas","quantity":300,"unit":"g","catalogName":"Papa"}],
              "proposedProducts":[{"name":"crema","unit":"l"}],
              "warnings":["..."]}
@@ -54,8 +54,9 @@ final class RecipeChatPrompt {
             (mismo nombre, cantidad y unidad). Si no hay receta actual, o el mensaje da la receta entera, solo lo que \
             dice el mensaje.
             2. quantity y unit: los que dijo para ese ingrediente, nunca los de otro ni los del catálogo ("200 g de \
-            acelga y 100 g de harina" → harina 100 y g). En un plato, para UNA porción (si dice "para 4 porciones", dividí cada cantidad y \
-            avisalo en warnings); en una preparación, para la tanda que rinde yieldQuantity. unit es una abreviatura \
+            acelga y 100 g de harina" → harina 100 y g). Tal como los dijo, SIN hacer cuentas: si en un plato da la receta entera \
+            "para 4 porciones", poné servings: 4 y NO dividas (el sistema divide y avisa); en una preparación, para la \
+            tanda que rinde yieldQuantity. unit es una abreviatura \
             de la lista de UNIDADES ("gramos" → g, "kilos" → kg, "litros" → l, "unidades" → u). Números como números, \
             con punto decimal ("medio kilo" → 0.5 y kg; "tres" → 3).
             3. Si un ingrediente es claramente un insumo del CATÁLOGO escrito de otra forma (plural o singular, \
@@ -159,7 +160,9 @@ final class RecipeChatPrompt {
         }
         List<String> warnings = new ArrayList<>();
         root.path("warnings").forEach(w -> warnings.add(w.asText()));
-        return new CatalogSpreadsheetInterpretation(List.of(), preparations, recipes, proposed, matches, warnings);
+        List<com.chefcontrol.application.port.AIService.DishServings> servings = r.preparation() || number(root, "servings") == null ? List.of()
+                : List.of(new com.chefcontrol.application.port.AIService.DishServings(r.recipeName(), number(root, "servings")));
+        return new CatalogSpreadsheetInterpretation(List.of(), preparations, recipes, proposed, matches, warnings, servings);
     }
 
     static AppException failed(String why) {
