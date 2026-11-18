@@ -48,11 +48,8 @@ public class GemmaAIService implements AIService {
     public AIInterpretation interpret(InterpretRequest request) {
         try {
             Map<String, Object> body = buildRequestBody(request);
-            JsonNode response = restClient.post()
-                    .uri("/v1beta/models/" + model + ":generateContent")
-                    .body(body)
-                    .retrieve()
-                    .body(JsonNode.class);
+            JsonNode response = ProviderRetry.once("Gemma", BUSY, () -> restClient.post()
+                    .uri("/v1beta/models/" + model + ":generateContent").body(body).retrieve().body(JsonNode.class));
             return parseResponse(response);
         } catch (Exception e) {
             log.error("[Gemma] interpret failed: {}", e.getMessage());
@@ -205,8 +202,8 @@ public class GemmaAIService implements AIService {
         long start = System.currentTimeMillis();
         JsonNode response;
         try {
-            response = restClient.post().uri("/v1beta/models/" + model + ":generateContent")
-                    .body(body).retrieve().body(JsonNode.class);
+            response = ProviderRetry.once("Gemma", BUSY, () -> restClient.post()
+                    .uri("/v1beta/models/" + model + ":generateContent").body(body).retrieve().body(JsonNode.class));
         } catch (RestClientException e) {
             log.error("[Gemma] interpretChatMessage failed: {}", e.getMessage());
             throw ChatPrompt.failed(e.getMessage());
@@ -232,8 +229,8 @@ public class GemmaAIService implements AIService {
         long start = System.currentTimeMillis();
         JsonNode response;
         try {
-            response = restClient.post().uri("/v1beta/models/" + model + ":generateContent")
-                    .body(body).retrieve().body(JsonNode.class);
+            response = ProviderRetry.once("Gemma", BUSY, () -> restClient.post()
+                    .uri("/v1beta/models/" + model + ":generateContent").body(body).retrieve().body(JsonNode.class));
         } catch (RestClientException e) {
             log.error("[Gemma] interpretRecipeMessage failed: {}", e.getMessage());
             throw RecipeChatPrompt.failed(e.getMessage());
@@ -246,6 +243,9 @@ public class GemmaAIService implements AIService {
                 System.currentTimeMillis() - start);
         return RecipeChatPrompt.parse(CatalogSpreadsheetPrompt.extractJson(answerText(response), objectMapper), request);
     }
+
+    /** "Ocupado" en Google: límite por minuto (429) y "high demand" (503). */
+    private static final java.util.Set<Integer> BUSY = java.util.Set.of(429, 503);
 
     /** JSON, sin azar y, en 2.5 Flash, sin razonamiento: gasta tokens de salida y traducir no lo necesita. */
     private Map<String, Object> generationConfig(int maxOutputTokens) {
@@ -284,8 +284,8 @@ public class GemmaAIService implements AIService {
         long start = System.currentTimeMillis();
         JsonNode response;
         try {
-            response = restClient.post().uri("/v1beta/models/" + model + ":generateContent")
-                    .body(body).retrieve().body(JsonNode.class);
+            response = ProviderRetry.once("Gemma", BUSY, () -> restClient.post()
+                    .uri("/v1beta/models/" + model + ":generateContent").body(body).retrieve().body(JsonNode.class));
         } catch (RestClientException e) {
             log.error("[Gemma] interpretCatalogSpreadsheet failed: {}", e.getMessage());
             throw CatalogSpreadsheetPrompt.failed(e.getMessage());

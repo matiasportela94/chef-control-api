@@ -26,6 +26,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.*;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withRawStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
@@ -139,6 +140,30 @@ class ClaudeAIServiceTest {
         assertNull(item.productId());
         assertEquals(0, new BigDecimal("2.5").compareTo(item.quantity()));
         assertEquals("EXPIRED", item.wasteReason());
+    }
+
+    @Test
+    void aBusyProviderIsRetriedOnce() {
+        var f = fixture();
+        f.server.expect(requestTo("https://api.anthropic.com/v1/messages")).andRespond(withRawStatus(529));
+        f.server.expect(requestTo("https://api.anthropic.com/v1/messages")).andRespond(withSuccess("""
+                {"content":[{"type":"tool_use","name":"record_operations","input":{"confidence":90,
+                  "needsConfirmation":false,"responseToUser":"","operations":[]}}]}
+                """, MediaType.APPLICATION_JSON));
+
+        assertEquals(90, f.service.interpretChatMessage(CHAT).confidence());
+        f.server.verify();
+    }
+
+    @Test
+    void aBusyProviderTwiceIsAnInterpretationFailure() {
+        var f = fixture();
+        f.server.expect(requestTo("https://api.anthropic.com/v1/messages")).andRespond(withRawStatus(503));
+        f.server.expect(requestTo("https://api.anthropic.com/v1/messages")).andRespond(withRawStatus(503));
+
+        var e = assertThrows(AppException.class, () -> f.service.interpretChatMessage(CHAT));
+        assertEquals(ErrorCode.AI_INTERPRETATION_FAILED, e.getErrorCode());
+        f.server.verify();
     }
 
     @Test

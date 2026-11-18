@@ -127,7 +127,7 @@ public class ChatService {
             return ChatResult.of(ChatStatus.NOT_UNDERSTOOD, "No pude interpretar el mensaje. Probá de nuevo.");
         }
 
-        Resolution resolution = new Resolution(message, products, menuItems, units, preparations);
+        Resolution resolution = new Resolution(products, menuItems, units, preparations);
         List<Skipped> skipped = new ArrayList<>();
         List<Operation> operations = new ArrayList<>();
         List<ChatRecipeService.RecipeRequest> recipes = new ArrayList<>();
@@ -147,8 +147,10 @@ public class ChatService {
                 continue;
             }
             List<OperationItem> items = new ArrayList<>();
+            // El pedazo del mensaje de esta operación: contra eso se verifica lo que el modelo clasificó.
+            String said = op.text() == null || op.text().isBlank() ? message : op.text();
             for (InterpretedItem item : op.items()) {
-                OperationItem resolved = resolution.resolve(type, item, skipped);
+                OperationItem resolved = resolution.resolve(type, item, said, skipped);
                 if (resolved == null) continue;
                 items.add(resolved);
             }
@@ -397,10 +399,8 @@ public class ChatService {
         final Set<UUID> preparations;
         /** Lo que hay que preguntar antes de registrar nada: un precio con dos lecturas, una unidad que nadie dijo. */
         final List<String> questions = new ArrayList<>();
-        final String message;
 
-        Resolution(String message, List<Product> catalog, List<MenuItem> dishes, List<Unit> all, Set<UUID> preparations) {
-            this.message = message;
+        Resolution(List<Product> catalog, List<MenuItem> dishes, List<Unit> all, Set<UUID> preparations) {
             this.preparations = preparations;
             catalog.forEach(p -> products.put(p.getId(), p));
             dishes.forEach(m -> menuItems.put(m.getId(), m));
@@ -413,7 +413,7 @@ public class ChatService {
         }
 
         /** null (y su motivo en skipped) si el ítem no se puede registrar. */
-        OperationItem resolve(ChatOperationType type, InterpretedItem item, List<Skipped> skipped) {
+        OperationItem resolve(ChatOperationType type, InterpretedItem item, String said, List<Skipped> skipped) {
             if (type == ChatOperationType.SALE) return resolveSale(item, skipped);
             Product product = item.productId() == null ? null : products.get(item.productId());
             if (product == null) {
@@ -433,7 +433,9 @@ public class ChatService {
                 skipped.add(skip(type, product.getName(), ErrorCode.UNIT_NOT_FOUND));
                 return null;
             }
-            if (item.unit() != null && !unitSaid(message, unit)) {
+            // Sin unidad dicha también: "se tiraron 100 de harina" entraba como 100 kg (la del insumo) sin preguntar.
+            // Un 0 es 0 en cualquier unidad ("no queda más aceite").
+            if (item.quantity().signum() != 0 && !unitSaid(said, unit)) {
                 questions.add("«" + product.getName() + "»: entendí " + num(item.quantity()) + " " + unit.getAbbreviation()
                         + ", ¿es así?");
             }
@@ -455,7 +457,7 @@ public class ChatService {
                         skipped.add(skip(type, product.getName(), ErrorCode.UNIT_NOT_FOUND));
                         return null;
                     }
-                    if (item.priceUnit() != null && !unitSaid(message, priceUnit)) {
+                    if (item.priceUnit() != null && !unitSaid(said, priceUnit)) {
                         questions.add("«" + product.getName() + "»: ¿" + money(item.price()) + " por "
                                 + priceUnit.getAbbreviation() + "?");
                     }
@@ -465,7 +467,7 @@ public class ChatService {
                     BigDecimal ofTotal = convert(() -> item.price().divide(quantity, 6, RoundingMode.HALF_UP), 4);
                     PriceBasis basis = PriceBasis.of(item.priceBasis());
                     price = basis == PriceBasis.TOTAL ? ofTotal : perUnit;
-                    if (basis.isAmbiguous(quantity, perUnit)) {
+                    if (basis.isAmbiguous(quantity, perUnit, said)) {
                         questions.add(priceQuestion(product, item.price(), priceUnit, quantity, perUnit, ofTotal));
                     }
                 }
@@ -538,19 +540,29 @@ public class ChatService {
 
         /**
          * Cuándo las dos lecturas pueden ser la que no es. Por unidad: la regla de siempre (más de una unidad y más de
-         * $100.000 cada una: puede ser el total). Total: con más de una unidad, siempre (si la IA se equivocó, la
-         * división esconde el error). Sin saber: si la cantidad no es 1, porque las dos lecturas difieren.
+         * $100.000 cada una: puede ser el total). Total: con más de una unidad, salvo que el texto lo diga ("en total",
+         * "me salió"…): la clasificación del modelo se acepta solo si el texto la respalda, así un "a 1.500" mal
+         * clasificado nunca se divide en silencio. Sin saber: si la cantidad no es 1, porque las dos lecturas difieren.
          *
          * @param quantity en la unidad del insumo
          * @param perUnit  la lectura "por unidad", por unidad del insumo
+         * @param said     el pedazo del mensaje de la operación
          */
-        boolean isAmbiguous(BigDecimal quantity, BigDecimal perUnit) {
+        boolean isAmbiguous(BigDecimal quantity, BigDecimal perUnit, String said) {
             return switch (this) {
                 case UNIT -> quantity.compareTo(BigDecimal.ONE) > 0 && perUnit.compareTo(HIGH_UNIT_PRICE) > 0;
-                case TOTAL -> quantity.compareTo(BigDecimal.ONE) > 0;
+                case TOTAL -> quantity.compareTo(BigDecimal.ONE) > 0 && !saysTotal(said);
                 case UNCLEAR -> quantity.compareTo(BigDecimal.ONE) != 0;
             };
         }
+    }
+
+    /** Lo que, dicho en el mensaje, respalda que un precio es el total. Comparado sin mayúsculas ni acentos. */
+    static final List<String> TOTAL_WORDS = List.of("total", "todo", "me salio", "me costo", "pague", "la bolsa", "el lote");
+
+    static boolean saysTotal(String said) {
+        String words = " " + String.join(" ", CatalogImportService.key(said == null ? "" : said).split("[^a-z]+")) + " ";
+        return TOTAL_WORDS.stream().anyMatch(w -> words.contains(" " + w + " "));
     }
 
     /** "«Comino»: ¿$ 150.000 es por kg o el total de los 5 kg? Por kg serían $ 750.000; si es el total, $ 30.000 por kg." */

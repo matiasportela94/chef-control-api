@@ -34,7 +34,7 @@ final class ChatPrompt {
 
             SALIDA, con esta forma:
             {"confidence":95,"needsConfirmation":false,"responseToUser":"...",
-             "operations":[{"type":"purchase","items":[{"productId":"<id>","name":"harina","quantity":10,"unit":"kg","price":2000,"priceBasis":"unit","priceUnit":"kg","expirationDate":"2026-12-31"}]},
+             "operations":[{"type":"purchase","text":"compramos 10 kg de harina a 2000","items":[{"productId":"<id>","name":"harina","quantity":10,"unit":"kg","price":2000,"priceBasis":"unit","priceUnit":"kg","expirationDate":"2026-12-31"}]},
                            {"type":"waste","items":[{"productId":"<id>","name":"tomate","quantity":2,"unit":"kg","reason":"EXPIRED"}]},
                            {"type":"sale","items":[{"menuItemId":"<id>","name":"milanesa","quantity":5}]},
                            {"type":"stock_adjustment","items":[{"productId":"<id>","name":"harina","quantity":8,"unit":"kg"}]},
@@ -52,7 +52,8 @@ final class ChatPrompt {
             - preparation_recipe: crear o cambiar la receta de una preparación hecha en tandas ("la mayonesa base rinde \
             1 kg y lleva 6 huevos y 1 l de aceite").
             - query: una pregunta o consulta ("¿cuánta harina hay?"), sin items.
-            Un mensaje puede pedir varias cosas: una operación por tipo, con todos sus items. Si no pide nada de esto, \
+            Un mensaje puede pedir varias cosas: una operación por tipo, con todos sus items y en text el pedazo del \
+            mensaje que la pide, copiado tal cual. Si no pide nada de esto, \
             operations va vacío.
 
             REGLAS:

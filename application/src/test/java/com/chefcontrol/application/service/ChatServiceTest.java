@@ -44,6 +44,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -223,16 +225,29 @@ class ChatServiceTest {
     }
 
     @Test
-    void aTotalIsDividedByTheBackNeverByTheModelAndAsked() {
-        // "5 kg de comino, 150 mil en total": el modelo dice "total" y devuelve 150000 tal cual.
+    void aTotalIsDividedByTheBackNeverByTheModel() {
+        // "5 kg de comino, 150 mil en total": el modelo dice "total" y devuelve 150000 tal cual; divide el back.
         answer(95, false, op("purchase", new InterpretedItem(comino.getId(), null, "comino", new BigDecimal("5"), "kg",
                 new BigDecimal("150000"), "total", null, null, null)));
 
         var result = service.sendChatMessage("5 kg de comino, 150 mil en total", ALL);
 
+        assertEquals(ChatStatus.REGISTERED, result.status());
+        var cmd = ArgumentCaptor.forClass(PurchaseService.CreatePurchaseCommand.class);
+        verify(purchaseService).createPurchase(cmd.capture());
+        assertEquals(0, new BigDecimal("30000").compareTo(cmd.getValue().items().getFirst().pricePerUnit()));
+    }
+
+    @Test
+    void aNumberWithoutAUnitIsAskedUnlessTheProductGoesInUnits() {
+        // Pasó en el front: "se tiraron 100 de harina" → "Merma: 100 kg Harina" y el stock en −90.
+        answer(95, false, op("waste", item(tomate, "100", null, null, "DAMAGED")));
+
+        var result = service.sendChatMessage("se tiraron 100 de tomate", ALL);
+
         assertEquals(ChatStatus.NEEDS_CONFIRMATION, result.status());
-        assertEquals(0, new BigDecimal("30000").compareTo(result.proposal().getFirst().items().getFirst().pricePerUnit()));
-        verify(purchaseService, never()).createPurchase(any());
+        assertTrue(result.message().contains("«Tomate»: entendí 100 kg, ¿es así?"), result.message());
+        verify(wasteService, never()).createWasteEvent(any());
     }
 
     @Test
@@ -241,6 +256,38 @@ class ChatServiceTest {
                 new BigDecimal("3000"), "total", null, null, null)));
 
         assertEquals(ChatStatus.REGISTERED, service.sendChatMessage("1 kg de comino, 3000 todo", ALL).status());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"5 kg de comino, 7500 en total", "5 kg de comino a 7500 todo", "5 kg de comino, me salió 7500",
+            "5 kg de comino, me costó 7500", "pagué 7500 por 5 kg de comino", "la bolsa de 5 kg de comino a 7500",
+            "el lote de 5 kg de comino a 7500"})
+    void aTotalTheTextBacksIsDividedWithoutAsking(String said) {
+        // Una por cada palabra de TOTAL_WORDS: la clasificación del modelo se acepta si el texto la respalda.
+        answer(95, false, new InterpretedOperation("purchase", List.of(new InterpretedItem(comino.getId(), null, "comino",
+                new BigDecimal("5"), "kg", new BigDecimal("7500"), "total", null, null, null)), said));
+
+        var result = service.sendChatMessage(said, ALL);
+
+        assertEquals(ChatStatus.REGISTERED, result.status(), result.message());
+        var cmd = ArgumentCaptor.forClass(PurchaseService.CreatePurchaseCommand.class);
+        verify(purchaseService).createPurchase(cmd.capture());
+        assertEquals(0, new BigDecimal("1500").compareTo(cmd.getValue().items().getFirst().pricePerUnit()));
+    }
+
+    @Test
+    void everyTotalWordHasItsCase() {
+        assertEquals(7, ChatService.TOTAL_WORDS.size(), "una palabra nueva necesita su caso en el test de arriba");
+    }
+
+    @Test
+    void aTotalTheTextDoesNotBackIsAsked() {
+        // "a 1.500" que el modelo clasificó como total: dividirlo en silencio entraría a $300 el kg.
+        answer(95, false, new InterpretedOperation("purchase", List.of(new InterpretedItem(comino.getId(), null, "comino",
+                new BigDecimal("5"), "kg", new BigDecimal("1500"), "total", null, null, null)), "5 kg de comino a 1500"));
+
+        assertEquals(ChatStatus.NEEDS_CONFIRMATION, service.sendChatMessage("5 kg de comino a 1500", ALL).status());
+        verify(purchaseService, never()).createPurchase(any());
     }
 
     @Test

@@ -28,6 +28,8 @@ public class ClaudeAIService implements AIService {
     private static final String TOOL_NAME = "interpret_inventory";
     private static final String CATALOG_TOOL = "import_catalog";
     private static final String CHAT_TOOL = "record_operations";
+    /** "Ocupado" en Anthropic: límite (429), no disponible (503) y sobrecargado (529). */
+    private static final java.util.Set<Integer> BUSY = java.util.Set.of(429, 503, 529);
     private static final String RECIPE_TOOL = "write_recipe";
 
     private final RestClient restClient;
@@ -59,11 +61,8 @@ public class ClaudeAIService implements AIService {
     public AIInterpretation interpret(InterpretRequest request) {
         try {
             Map<String, Object> body = buildRequestBody(request);
-            JsonNode response = restClient.post()
-                    .uri("/v1/messages")
-                    .body(body)
-                    .retrieve()
-                    .body(JsonNode.class);
+            JsonNode response = ProviderRetry.once("Claude", BUSY,
+                    () -> restClient.post().uri("/v1/messages").body(body).retrieve().body(JsonNode.class));
             return parseResponse(response);
         } catch (Exception e) {
             log.error("[Claude] interpret failed: {}", e.getMessage());
@@ -214,7 +213,8 @@ public class ClaudeAIService implements AIService {
         long start = System.currentTimeMillis();
         JsonNode response;
         try {
-            response = restClient.post().uri("/v1/messages").body(body).retrieve().body(JsonNode.class);
+            response = ProviderRetry.once("Claude", BUSY,
+                    () -> restClient.post().uri("/v1/messages").body(body).retrieve().body(JsonNode.class));
         } catch (RestClientException e) {
             log.error("[Claude] interpretChatMessage failed: {}", e.getMessage());
             throw ChatPrompt.failed(e.getMessage());
@@ -254,7 +254,8 @@ public class ClaudeAIService implements AIService {
         long start = System.currentTimeMillis();
         JsonNode response;
         try {
-            response = restClient.post().uri("/v1/messages").body(body).retrieve().body(JsonNode.class);
+            response = ProviderRetry.once("Claude", BUSY,
+                    () -> restClient.post().uri("/v1/messages").body(body).retrieve().body(JsonNode.class));
         } catch (RestClientException e) {
             log.error("[Claude] interpretRecipeMessage failed: {}", e.getMessage());
             throw RecipeChatPrompt.failed(e.getMessage());
@@ -293,7 +294,8 @@ public class ClaudeAIService implements AIService {
         long start = System.currentTimeMillis();
         JsonNode response;
         try {
-            response = restClient.post().uri("/v1/messages").body(body).retrieve().body(JsonNode.class);
+            response = ProviderRetry.once("Claude", BUSY,
+                    () -> restClient.post().uri("/v1/messages").body(body).retrieve().body(JsonNode.class));
         } catch (RestClientException e) {
             log.error("[Claude] interpretCatalogSpreadsheet failed: {}", e.getMessage());
             throw CatalogSpreadsheetPrompt.failed(e.getMessage());
