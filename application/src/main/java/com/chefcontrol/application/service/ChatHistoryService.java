@@ -133,13 +133,18 @@ public class ChatHistoryService {
     record Conversation(List<ChatExchange> exchanges, Map<UUID, ChatAction> actions) {
 
         /**
-         * Las alternativas de la pregunta pendiente: el último intercambio es un NEEDS_CONFIRMATION y no hay nada
-         * después. Cualquier otro intercambio (un mensaje que no la contesta, un "Cancelar") la deja atrás.
+         * Las alternativas de la pregunta pendiente: el último NEEDS_CONFIRMATION, si después solo hubo NOT_UNDERSTOOD
+         * (una falla del modelo o un mensaje sin sentido no la dejan atrás: pasó con un 503 justo antes de "es el
+         * total"). Cualquier otro intercambio (un mensaje que no la contesta, un "Cancelar") sí.
          */
         List<ChatService.Proposal> pendingProposals() {
-            ChatExchange last = exchanges.isEmpty() ? null : exchanges.getLast();
-            return last == null || last.status() != ChatService.ChatStatus.NEEDS_CONFIRMATION || last.reply() == null
-                    ? List.of() : last.reply().proposals();
+            for (int i = exchanges.size() - 1; i >= 0; i--) {
+                ChatExchange e = exchanges.get(i);
+                if (e.status() == ChatService.ChatStatus.NOT_UNDERSTOOD) continue;
+                return e.status() == ChatService.ChatStatus.NEEDS_CONFIRMATION && e.reply() != null
+                        ? e.reply().proposals() : List.of();
+            }
+            return List.of();
         }
 
         /**

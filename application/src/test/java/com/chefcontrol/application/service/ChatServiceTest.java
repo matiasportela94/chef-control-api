@@ -352,6 +352,43 @@ class ChatServiceTest {
     }
 
     @Test
+    void aNotUnderstoodDoesNotLeaveThePendingQuestionBehind() {
+        var failed = new ChatExchange(UUID.randomUUID(), R, USER, Kind.MESSAGE, "es el", ChatStatus.NOT_UNDERSTOOD,
+                new StoredReply("No registré nada: no pude interpretar el mensaje.", List.of(), List.of(), List.of(),
+                        List.of(), null), NOW.minusSeconds(10));
+        conversation(pending(), failed);
+        answer(95, false, new InterpretedOperation("purchase", List.of(item(comino, "5", "kg", "150000", null)),
+                "es por kilo"));
+
+        assertEquals(ChatStatus.REGISTERED, service.sendChatMessage("es por kilo", ALL).status());
+    }
+
+    @Test
+    void notUnderstoodAlwaysSaysNothingWasRegistered() {
+        // El modelo contestó "Registrado." sin ninguna operación: el texto no depende de él.
+        when(aiService.interpretChatMessage(any())).thenReturn(new ChatInterpretation(90, false, "Registrado.", List.of()));
+        assertEquals("No registré nada: no entendí qué registrar. Probá con algo como «compré 10 kg de harina a $2.000».",
+                service.sendChatMessage("sí", ALL).message());
+
+        when(aiService.interpretChatMessage(any())).thenReturn(new ChatInterpretation(90, false, "¿De qué plato hablás?",
+                List.of()));
+        assertEquals("No registré nada. ¿De qué plato hablás?", service.sendChatMessage("la de siempre", ALL).message());
+    }
+
+    @Test
+    void aPriceWithASaysPerUnitEvenIfTheModelDoubted() {
+        answer(95, false, new InterpretedOperation("purchase", List.of(new InterpretedItem(tomate.getId(), null, "tomate",
+                new BigDecimal("3"), "kg", new BigDecimal("1500"), "unclear", null, null, null)), "compré 3 kg de tomate a 1500"));
+
+        var result = service.sendChatMessage("compré 3 kg de tomate a 1500", ALL);
+
+        assertEquals(ChatStatus.REGISTERED, result.status(), result.message());
+        assertTrue(ChatService.saysPerUnit("5 kg a $ 25 mil"));
+        assertFalse(ChatService.saysPerUnit("5 kg, 25 mil"));
+        assertFalse(ChatService.saysPerUnit("lata 400 g"));
+    }
+
+    @Test
     void cancellingWithNothingPendingSavesNothing() {
         assertEquals("No había nada para cancelar.", history.cancelChatProposal().message());
         verify(chatExchangeRepository, never()).saveChatExchange(any());

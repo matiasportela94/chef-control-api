@@ -141,7 +141,8 @@ public class ChatService {
                     catalog.unitOptions(), history.turns()));
         } catch (AppException e) {
             if (e.getErrorCode() != ErrorCode.AI_INTERPRETATION_FAILED) throw e;
-            return ChatResult.of(ChatStatus.NOT_UNDERSTOOD, "No pude interpretar el mensaje. Probá de nuevo.");
+            return ChatResult.of(ChatStatus.NOT_UNDERSTOOD, NOTHING_REGISTERED + ": no pude interpretar el mensaje. "
+                    + "Probá de nuevo.");
         }
 
         Resolution resolution = new Resolution(products, menuItems, units, preparations);
@@ -607,6 +608,10 @@ public class ChatService {
                             item.price(), priceUnit.getId(), product.getDefaultUnitId()), 4);
                     BigDecimal ofTotal = convert(() -> item.price().divide(quantity, 6, RoundingMode.HALF_UP), 4);
                     PriceBasis basis = PriceBasis.of(item.priceBasis());
+                    // "3 kg de tomate a 1500" es por unidad (la regla del prompt): si el modelo dudó y el texto lo dice,
+                    // manda el texto (pasó en el e2e: preguntaba por algo ya dicho). Un "total" sin la palabra se sigue
+                    // preguntando: puede ser el modelo el que se equivocó, o el texto.
+                    if (basis == PriceBasis.UNCLEAR && !saysTotal(said) && saysPerUnit(said)) basis = PriceBasis.UNIT;
                     price = basis == PriceBasis.TOTAL ? ofTotal : perUnit;
                     if (basis.isAmbiguous(quantity, perUnit, said)) {
                         questions.add(priceQuestion(product, item.price(), priceUnit, quantity, perUnit, ofTotal));
@@ -704,6 +709,13 @@ public class ChatService {
     /** Lo que, dicho en el mensaje, respalda que un precio es el total. Comparado sin mayúsculas ni acentos. */
     static final List<String> TOTAL_WORDS = List.of("total", "todo", "me salio", "me costo", "pague", "la bolsa", "el lote");
 
+    /** "a 1500", "a $ 25 mil": un precio con "a" delante, que con una cantidad es por unidad. */
+    private static final java.util.regex.Pattern PER_UNIT = java.util.regex.Pattern.compile("(?<![a-z])a \\$? ?\\d");
+
+    static boolean saysPerUnit(String said) {
+        return said != null && PER_UNIT.matcher(CatalogImportService.key(said)).find();
+    }
+
     static boolean saysTotal(String said) {
         String words = " " + String.join(" ", CatalogImportService.key(said == null ? "" : said).split("[^a-z]+")) + " ";
         return TOTAL_WORDS.stream().anyMatch(w -> words.contains(" " + w + " "));
@@ -790,10 +802,15 @@ public class ChatService {
 
     // ── Textos ─────────────────────────────────────────────────────────────────
 
+    static final String NOTHING_REGISTERED = "No registré nada";
+
     private static ChatResult nothingToRegister(ChatInterpretation interpretation, List<Skipped> skipped) {
         if (skipped.isEmpty()) {
-            String text = interpretation.responseToUser() != null ? interpretation.responseToUser()
-                    : "No entendí qué registrar. Probá con algo como «compré 10 kg de harina a $2.000».";
+            // Siempre "No registré nada" primero: el modelo llegó a contestar "Registrado." sin haber nada. Después, su
+            // pregunta si hizo una; si no, el texto fijo.
+            String asked = interpretation.responseToUser();
+            String text = asked != null && asked.contains("?") ? NOTHING_REGISTERED + ". " + asked
+                    : NOTHING_REGISTERED + ": no entendí qué registrar. Probá con algo como «compré 10 kg de harina a $2.000».";
             return new ChatResult(ChatStatus.NOT_UNDERSTOOD, text, List.of(), List.of(), skipped);
         }
         boolean onlyUnsupported = skipped.stream().allMatch(s -> s.errorCode() == ErrorCode.CHAT_OPERATION_NOT_SUPPORTED);
