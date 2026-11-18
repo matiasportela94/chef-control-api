@@ -133,6 +133,26 @@ public class ChatHistoryService {
     record Conversation(List<ChatExchange> exchanges, Map<UUID, ChatAction> actions) {
 
         /**
+         * La acción viva más nueva de la conversación de ese tipo y de alguno de esos insumos o platos, o null. Por el
+         * nombre en su resumen ("Compra: 3 kg Tomate a $ 1.500"): la acción no guarda el insumo.
+         * ponytail: "Tomate" también encuentra "Tomate perita"; el error es preguntar de más, nunca registrar mal.
+         */
+        ChatAction latestLiveAction(com.chefcontrol.domain.chat.ChatOperationType type, List<String> names) {
+            for (int i = exchanges.size() - 1; i >= 0; i--) {
+                ChatExchange e = exchanges.get(i);
+                if (e.reply() == null) continue;
+                List<UUID> ids = e.reply().actionIds();
+                for (int j = ids.size() - 1; j >= 0; j--) {
+                    ChatAction a = actions.get(ids.get(j));
+                    if (a == null || a.isUndone() || a.getType() != type) continue;
+                    String summary = CatalogImportService.key(a.getSummary());
+                    if (names.stream().anyMatch(n -> n != null && summary.contains(CatalogImportService.key(n)))) return a;
+                }
+            }
+            return null;
+        }
+
+        /**
          * Las alternativas de la pregunta pendiente: el último NEEDS_CONFIRMATION, si después solo hubo NOT_UNDERSTOOD
          * (una falla del modelo o un mensaje sin sentido no la dejan atrás: pasó con un 503 justo antes de "es el
          * total"). Cualquier otro intercambio (un mensaje que no la contesta, un "Cancelar") sí.

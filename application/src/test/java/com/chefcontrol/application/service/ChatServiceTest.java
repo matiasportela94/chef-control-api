@@ -408,6 +408,82 @@ class ChatServiceTest {
         verify(purchaseService, never()).createPurchase(any());
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"no, eran 5 kg", "me equivoqué, eran 5 kg", "perdón, eran 5 kg", "eran 5 kg", "era 5 kg"})
+    void aCorrectionTheModelMissedIsAskedInsteadOfRegisteredTwice(String said) {
+        // Una por cada palabra de CORRECTION_WORDS. Pasó con gemini-3.1-flash-lite: sin corrects, quedaban las dos compras.
+        ChatAction bought = storedWithSummary(ChatOperationType.PURCHASE, "Compra: 3 kg Comino a $ 3.000");
+        conversation(exchange("compré 3 kg de comino a 3000", List.of(bought.getId())));
+        answer(95, false, new InterpretedOperation("purchase", List.of(item(comino, "5", "kg", "3000", null)), said));
+
+        var result = service.sendChatMessage(said, ALL);
+
+        assertEquals(ChatStatus.NEEDS_CONFIRMATION, result.status(), result.message());
+        assertEquals("¿Corrijo «Compra: 3 kg Comino a $ 3.000» o lo registro aparte?", result.message());
+        assertEquals(List.of("Corregir «Compra: 3 kg Comino a $ 3.000»", "Registrar otra"),
+                result.proposals().stream().map(ChatService.Proposal::label).toList());
+        assertEquals(bought.getId(), result.proposals().get(0).operations().getFirst().correctsActionId());
+        assertNull(result.proposals().get(1).operations().getFirst().correctsActionId());
+        verify(purchaseService, never()).createPurchase(any());
+    }
+
+    @Test
+    void everyCorrectionWordHasItsCase() {
+        assertEquals(5, ChatService.CORRECTION_WORDS.size(), "una palabra nueva necesita su caso en el test de arriba");
+    }
+
+    @Test
+    void noAloneCancelsThePendingQuestionButNoWithMoreIsACorrection() {
+        // Del lado de CANCEL_WORDS: "no" solo, con una pregunta pendiente, cancela sin llamar al modelo.
+        conversation(pending());
+        assertEquals("Listo, no registré nada.", service.sendChatMessage("no", ALL).message());
+        verify(aiService, never()).interpretChatMessage(any());
+        // Del lado del resguardo: "no, eran 5 kg" va al modelo y, si no marca la corrección, se pregunta.
+        ChatAction bought = storedWithSummary(ChatOperationType.PURCHASE, "Compra: 3 kg Comino a $ 3.000");
+        conversation(exchange("compré 3 kg de comino a 3000", List.of(bought.getId())));
+        answer(95, false, new InterpretedOperation("purchase", List.of(item(comino, "5", "kg", "3000", null)),
+                "no, eran 5 kg"));
+        assertEquals(ChatStatus.NEEDS_CONFIRMATION, service.sendChatMessage("no, eran 5 kg", ALL).status());
+    }
+
+    @Test
+    void aMessageThatStartsWithNoButIsAboutSomethingElseRegisters() {
+        // Sin una acción del mismo insumo en la conversación, no hay qué corregir.
+        ChatAction other = storedWithSummary(ChatOperationType.PURCHASE, "Compra: 3 kg Tomate a $ 1.500");
+        conversation(exchange("compré 3 kg de tomate a 1500", List.of(other.getId())));
+        answer(95, false, new InterpretedOperation("purchase", List.of(item(comino, "1", "kg", "3000", null)),
+                "no hay más comino, compré 1 kg a 3000"));
+
+        assertEquals(ChatStatus.REGISTERED, service.sendChatMessage("no hay más comino, compré 1 kg a 3000", ALL).status());
+    }
+
+    @Test
+    void answeringTheGuardByTextPicksTheRightAlternative() {
+        ChatAction bought = storedWithSummary(ChatOperationType.PURCHASE, "Compra: 3 kg Comino a $ 3.000");
+        conversation(exchange("compré 3 kg de comino a 3000", List.of(bought.getId())));
+        answer(95, false, new InterpretedOperation("purchase", List.of(item(comino, "5", "kg", "3000", null)),
+                "no, eran 5 kg"));
+        service.sendChatMessage("no, eran 5 kg", ALL);
+        var asked = ArgumentCaptor.forClass(ChatExchange.class);
+        verify(chatExchangeRepository).saveChatExchange(asked.capture());
+        conversation(exchange("compré 3 kg de comino a 3000", List.of(bought.getId())), asked.getValue());
+        // "Es otra": la misma operación sin corrects → "Registrar otra", sin deshacer nada.
+        answer(95, false, new InterpretedOperation("purchase", List.of(item(comino, "5", "kg", "3000", null)), "es otra"));
+
+        var result = service.sendChatMessage("es otra", ALL);
+
+        assertEquals(ChatStatus.REGISTERED, result.status(), result.message());
+        verify(purchaseService, never()).reversePurchase(any());
+        assertTrue(result.undone().isEmpty());
+    }
+
+    private ChatAction storedWithSummary(ChatOperationType type, String summary) {
+        ChatAction a = ChatAction.builder().id(UUID.randomUUID()).restaurantId(R).userId(USER).type(type)
+                .entityId(UUID.randomUUID()).summary(summary).createdAt(NOW.minusSeconds(60)).build();
+        when(chatActionRepository.findByIdAndRestaurantId(a.getId(), R)).thenReturn(Optional.of(a));
+        return a;
+    }
+
     @Test
     void onlyAnActionShownToTheModelCanBeCorrected() {
         answer(95, false, new InterpretedOperation("purchase", List.of(item(comino, "5", "kg", "3000", null)),

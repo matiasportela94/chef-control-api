@@ -200,6 +200,9 @@ public class ChatService {
         Proposal answered = answeredProposal(conversation.pendingProposals(), operations);
         if (answered != null) return finish(register(answered.operations(), skipped, permissions), answers, asked, recipe);
 
+        ChatResult guarded = correctionGuard(operations, message, conversation, skipped);
+        if (guarded != null) return finish(guarded, answers, asked, recipe);
+
         boolean doubtful = interpretation.needsConfirmation() || interpretation.confidence() < MIN_CONFIDENCE;
         if (doubtful || !resolution.questions.isEmpty()) {
             String question = !resolution.questions.isEmpty() ? String.join(" ", resolution.questions)
@@ -518,9 +521,43 @@ public class ChatService {
         return !words.isEmpty() && CANCEL_WORDS.containsAll(words);
     }
 
+    /** Con la acción que corrige: "corregila" y "es otra" contestan alternativas distintas del resguardo. */
     private static List<String> keys(List<Operation> operations) {
-        return operations.stream().flatMap(op -> op.items().stream().map(i -> op.type() + "|" + i.productId() + "|"
-                + i.menuItemId() + "|" + plain(i.quantity()) + "|" + plain(i.pricePerUnit()))).sorted().toList();
+        return operations.stream().flatMap(op -> op.items().stream().map(i -> op.type() + "|" + op.correctsActionId()
+                + "|" + i.productId() + "|" + i.menuItemId() + "|" + plain(i.quantity()) + "|" + plain(i.pricePerUnit())))
+                .sorted().toList();
+    }
+
+    /** Con lo que arranca una corrección ("no, eran 5 kg", "me equivoqué, era tomate"). Comparado sin acentos. */
+    static final List<String> CORRECTION_WORDS = List.of("no", "me equivoque", "perdon", "eran", "era");
+
+    static boolean soundsLikeCorrection(String message) {
+        String text = String.join(" ", java.util.Arrays.stream(CatalogImportService.key(message).split("[^a-z0-9]+"))
+                .filter(w -> !w.isEmpty()).toList());
+        return CORRECTION_WORDS.stream().anyMatch(w -> text.equals(w) || text.startsWith(w + " "));
+    }
+
+    /**
+     * El resguardo de corrección: el mensaje suena a corrección pero el modelo no la marcó. Pasó con
+     * gemini-3.1-flash-lite: "no, eran 5 kg" registraba una compra nueva y quedaban las dos. Si en la conversación hay
+     * una acción viva del mismo tipo y del mismo insumo o plato, no se registra nada: se pregunta, con un botón para
+     * corregirla y otro para registrar aparte. "No" solo contra una pregunta pendiente ya se canceló antes de llegar acá.
+     */
+    private ChatResult correctionGuard(List<Operation> operations, String message,
+                                       ChatHistoryService.Conversation conversation, List<Skipped> skipped) {
+        if (!soundsLikeCorrection(message)) return null;
+        List<Operation> corrected = new ArrayList<>();
+        List<ChatAction> targets = new ArrayList<>();
+        for (Operation op : operations) {
+            ChatAction target = op.correctsActionId() != null ? null
+                    : conversation.latestLiveAction(op.type(), op.items().stream().map(OperationItem::name).toList());
+            if (target != null) targets.add(target);
+            corrected.add(target == null ? op : new Operation(op.type(), op.items(), target.getId()));
+        }
+        if (targets.isEmpty()) return null;
+        String what = targets.stream().map(a -> "«" + a.getSummary() + "»").collect(Collectors.joining(", "));
+        return new ChatResult(ChatStatus.NEEDS_CONFIRMATION, "¿Corrijo " + what + " o lo registro aparte?", List.of(),
+                List.of(new Proposal("Corregir " + what, corrected), new Proposal("Registrar otra", operations)), skipped);
     }
 
     private static String plain(BigDecimal n) {
