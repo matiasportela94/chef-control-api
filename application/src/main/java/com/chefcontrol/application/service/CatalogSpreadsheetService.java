@@ -94,6 +94,9 @@ public class CatalogSpreadsheetService {
      * lo haya puesto en products: pasó en la prueba con "limon". Y un insumo propuesto que ya existe, ya viene en las
      * filas de insumos, ya se propuso o es un nombre que se acaba de reconocer se descarta: proponerlo crearía justo
      * el duplicado que la propuesta quiere evitar.
+     *
+     * <p>Lo mismo con un plural o singular que el modelo no marcó ("huevos" y "Huevo"): pasó en la prueba del 2026-11-18
+     * con una receta por chat, y el "huevos" propuesto se habría creado duplicado.
      */
     static CatalogSpreadsheetInterpretation applyMatches(CatalogSpreadsheetInterpretation r, List<String> catalog) {
         Set<Integer> recipeRows = new HashSet<>();
@@ -124,6 +127,21 @@ public class CatalogSpreadsheetService {
             warnings.add("Usé '" + target + "' " + (inCatalog.contains(CatalogImportService.key(target))
                     ? "del catálogo" : "de la hoja de insumos") + " para '" + m.writtenName() + "'."); // sin fila: el row es el ref del front, no la fila del Excel
         }
+        Map<Integer, String> ingredients = new HashMap<>();
+        r.recipes().forEach(x -> ingredients.put(x.row(), x.ingredient()));
+        r.preparations().forEach(x -> ingredients.put(x.row(), x.ingredient()));
+        Set<String> warned = new HashSet<>();
+        ingredients.forEach((row, written) -> {
+            if (written == null || renamed.containsKey(row) || known.containsKey(CatalogImportService.key(written))) return;
+            String target = singularMatch(written, known.values());
+            if (target == null) return;
+            renamed.put(row, target);
+            recognized.add(CatalogImportService.key(written));
+            if (warned.add(CatalogImportService.key(written))) {
+                warnings.add("Usé '" + target + "' " + (inCatalog.contains(CatalogImportService.key(target))
+                        ? "del catálogo" : "de la hoja de insumos") + " para '" + written + "'.");
+            }
+        });
         List<RecipeRow> recipes = r.recipes().stream()
                 .map(x -> renamed.containsKey(x.row()) ? new RecipeRow(x.row(), x.menuItem(), x.price(), x.section(),
                         renamed.get(x.row()), x.quantity(), x.unit()) : x)
@@ -139,9 +157,33 @@ public class CatalogSpreadsheetService {
         preparations.stream().filter(x -> x.preparation() != null)
                 .forEach(x -> taken.add(CatalogImportService.key(x.preparation())));
         List<ProductRow> proposed = candidates.stream()
-                .filter(p -> p.name() != null && taken.add(CatalogImportService.key(p.name())))
+                .filter(p -> p.name() != null && singularMatch(p.name(), known.values()) == null
+                        && taken.add(CatalogImportService.key(p.name())))
                 .toList();
         return new CatalogSpreadsheetInterpretation(products, preparations, recipes, proposed, List.of(), warnings);
+    }
+
+    /**
+     * El nombre que ya existe y es el mismo salvo un plural ("huevos" → "Huevo", "limones" → "Limón"); null si no hay
+     * uno solo. Con dos candidatos no se elige: es el nombre ambiguo que el import pide unificar.
+     */
+    static String singularMatch(String name, java.util.Collection<String> existing) {
+        List<String> found = existing.stream().filter(e -> samePlural(name, e)).distinct().toList();
+        return found.size() == 1 ? found.getFirst() : null;
+    }
+
+    /** ponytail: plural español simple, palabra por palabra (+s, +es). "Nuez" y "nueces" no los iguala. */
+    static boolean samePlural(String a, String b) {
+        String[] x = CatalogImportService.key(a).split(" ");
+        String[] y = CatalogImportService.key(b).split(" ");
+        if (x.length != y.length) return false;
+        for (int i = 0; i < x.length; i++) {
+            String p = x[i], q = y[i];
+            if (!(p.equals(q) || p.equals(q + "s") || p.equals(q + "es") || q.equals(p + "s") || q.equals(p + "es"))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static boolean hasData(SpreadsheetRow row) {

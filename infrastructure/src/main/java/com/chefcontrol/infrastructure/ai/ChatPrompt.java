@@ -67,7 +67,9 @@ final class ChatPrompt {
             3, "media docena" → 6 y unit null, "medio kilo" → 0.5 y kg).
             3. pricePerUnit, en pesos y como número (sin "$" ni separador de miles: "25 mil" → 25000). "a [precio]" \
             con una cantidad es SIEMPRE por unidad: "5 kg a 25 mil" → 25000. Es el total solo si lo dice ("en total", \
-            "todo", "me salió", "el lote"), y ahí dividilo por la cantidad: "5 kg, 25 mil en total" → 5000. \
+            "todo", "me salió", "el lote"), y ahí dividilo por la cantidad: "5 kg, 25 mil en total" → 5000. Si no lo \
+            dice, nunca lo dividas por tu cuenta, aunque te parezca caro: "5 kg de comino a 150 mil" → 150000 y \
+            needsConfirmation = true (regla 10); el sistema le pregunta al usuario. \
             priceUnit: la unidad a la que se refiere el precio si la dice ("500 g a 3000 el kilo" → kg); si no, null. \
             Sin precio, null.
             4. expirationDate: solo en compras y producciones, y si lo dice, como YYYY-MM-DD, contando desde HOY.
@@ -79,8 +81,8 @@ final class ChatPrompt {
             8. En una producción, productId es una preparación: un insumo marcado "preparación" en el catálogo. \
             quantity y unit, lo que salió de la tanda, como lo dijo el usuario ("hice 5 kilos de mayonesa" → 5 y kg).
             9. En una receta, un solo ítem: el plato (menuItemId, de PLATOS) o la preparación (productId, de \
-            CATÁLOGO DE INSUMOS) cuya receta se crea o cambia, y name; si es nueva, el id en null y name como nombre de \
-            plato ("Milanesa napolitana"). Sin cantidades: los ingredientes los lee otro paso. Un insumo del catálogo \
+            CATÁLOGO DE INSUMOS) cuya receta se crea o cambia, y name; si es nueva, el id en null y name tal cual lo \
+            dijo, sin el artículo ("la napolitana" → "napolitana"). Sin cantidades: los ingredientes los lee otro paso. Un insumo del catálogo \
             que pasa a tener receta de tanda es preparation_recipe.
             10. confidence: de 0 a 100, cuán seguro estás de haber entendido todo. needsConfirmation = true SOLO si \
             confidence < 80, si dudás entre dos insumos o platos, o si en una compra la cantidad es mayor a 1 y el \

@@ -170,6 +170,29 @@ class CatalogSpreadsheetServiceTest {
         assertEquals(List.of("limon", "Azúcar"), result.proposedProducts().stream().map(ProductRow::name).toList());
     }
 
+    @Test
+    void aPluralTheModelDidNotMarkIsStillTheExistingProduct() {
+        // Pasó en la prueba del 2026-11-18: "huevos" propuesto con "Huevo" en el catálogo; se habría creado duplicado.
+        ai.answer = interpretation(List.of(), List.of(recipe(1, "papas"), recipe(2, "Cebollas")),
+                List.of(new ProductRow(1, "papas", "kg", null, null, null),
+                        new ProductRow(2, "Cebollas", "kg", null, null, null)),
+                List.of(), List.of());
+
+        var result = service.interpretCatalogSpreadsheet(List.of(new SpreadsheetSheet("Recetas", List.of(row(1, "x")))));
+
+        assertEquals(List.of("Papa", "Cebollas"), result.recipes().stream().map(RecipeRow::ingredient).toList());
+        assertEquals(List.of("Cebollas"), result.proposedProducts().stream().map(ProductRow::name).toList());
+        assertEquals(List.of("Usé 'Papa' del catálogo para 'papas'."), result.warnings());
+    }
+
+    @Test
+    void pluralsAreComparedWordByWord() {
+        assertTrue(CatalogSpreadsheetService.samePlural("limones", "Limón"));
+        assertTrue(CatalogSpreadsheetService.samePlural("Papas fritas", "papa frita"));
+        assertFalse(CatalogSpreadsheetService.samePlural("Tomate", "Tomate perita"));
+        assertNull(CatalogSpreadsheetService.singularMatch("tomates", List.of("Tomate", "Tomates")));   // ambiguo: no elige
+    }
+
     private static RecipeRow recipe(int row, String ingredient) {
         return new RecipeRow(row, "Plato", null, null, ingredient, java.math.BigDecimal.ONE, "kg");
     }
