@@ -478,13 +478,28 @@ class ChatServiceTest {
     }
 
     @Test
-    void aSaleThatTheServiceRejectsIsSkippedWithItsCode() {
+    void aSaleThatTheServiceRejectsSaysWhyInSpanish() {
+        // El texto es lo único que se lee (y lo que va a leer WhatsApp): el motivo tiene que estar ahí.
         answer(95, false, op("sale", dish(milanesa, "1")));
-        when(saleService.recordSale(any())).thenThrow(AppException.badRequest(ErrorCode.MISSING_PURCHASE_COST, "no cost"));
+        when(saleService.recordSale(any())).thenThrow(AppException.badRequest(ErrorCode.MISSING_PURCHASE_COST,
+                "Sin historial de compras para: Queso, Harina"));
 
         var result = service.sendChatMessage("vendimos una milanesa", ALL);
 
         assertEquals(ErrorCode.MISSING_PURCHASE_COST, result.skipped().getFirst().errorCode());
+        assertEquals("No registré nada: «Queso, Harina» no tiene compras cargadas, así que la venta no tiene costo. "
+                + "Cargá una compra y probá de nuevo.", result.message());
+    }
+
+    @Test
+    void aProductionOutsideThePlanSaysSo() {
+        answer(95, false, op("production", item(mayonesa, "1", "kg", null, null)));
+        doThrow(AppException.forbidden(ErrorCode.PLAN_FEATURE_REQUIRED, "Your plan does not include RECIPES"))
+                .when(accountService).requireFeature(Feature.RECIPES_AND_FOOD_COST);
+
+        var result = service.sendChatMessage("hice 1 kg de mayonesa", ALL);
+
+        assertEquals("No registré nada: Tu plan no incluye producciones.", result.message());
     }
 
     @Test

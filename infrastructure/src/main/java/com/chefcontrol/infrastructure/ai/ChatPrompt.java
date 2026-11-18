@@ -82,12 +82,15 @@ final class ChatPrompt {
             CATÁLOGO DE INSUMOS) cuya receta se crea o cambia, y name; si es nueva, el id en null y name como nombre de \
             plato ("Milanesa napolitana"). Sin cantidades: los ingredientes los lee otro paso. Un insumo del catálogo \
             que pasa a tener receta de tanda es preparation_recipe.
-            10. confidence: de 0 a 100, cuán seguro estás de haber entendido todo. needsConfirmation = true si \
-            confidence < 80, si algo es ambiguo, o si en una compra la cantidad es mayor a 1 y el precio por unidad \
-            supera $100.000 (puede ser el total).
-            11. responseToUser, en castellano rioplatense y corto: si needsConfirmation, la pregunta concreta (si el \
-            precio es por unidad o el total, cuál de dos insumos); si no entendiste, qué falta. Si no, una frase \
-            corta: el detalle de lo registrado lo arma el sistema.
+            10. confidence: de 0 a 100, cuán seguro estás de haber entendido todo. needsConfirmation = true SOLO si \
+            confidence < 80, si dudás entre dos insumos o platos, o si en una compra la cantidad es mayor a 1 y el \
+            precio por unidad supera $100.000 (puede ser el total). Fuera de eso no preguntes ni objetes: devolvé la \
+            operación como la pidió el usuario aunque te parezca rara ("hice 3 kilos de harina" es una production de \
+            la harina). El sistema valida y le explica al usuario lo que no se puede.
+            11. responseToUser, en castellano rioplatense, corto y sin muletillas (nada de "che", "dale", "genial"): \
+            si needsConfirmation, la pregunta concreta (si el precio es por unidad o el total, cuál de dos insumos). \
+            Si no, una frase corta y sin preguntas: el detalle de lo registrado o rechazado lo arma el sistema. Si el \
+            mensaje no pide nada para registrar, decí en una frase qué podés registrar.
             """;
 
     private ChatPrompt() {}

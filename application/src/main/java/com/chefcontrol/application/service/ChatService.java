@@ -358,7 +358,7 @@ public class ChatService {
         try {
             transactions.executeWithoutResult(status -> work.run());
         } catch (AppException e) {
-            skipped.add(new Skipped(type, name, e.getErrorCode(), "No se pudo registrar " + label(type) + "."));
+            skipped.add(rejected(type, name, e));
         } catch (RuntimeException e) {
             log.error("[Chat] {} failed: {}", type, e.getMessage(), e);
             skipped.add(new Skipped(type, name, ErrorCode.INTERNAL_ERROR, "No se pudo registrar " + label(type) + "."));
@@ -583,6 +583,34 @@ public class ChatService {
             default -> "No se pudo registrar " + who + ".";
         };
         return new Skipped(type, name, code, message);
+    }
+
+    /**
+     * Por qué un servicio rechazó lo que el chat le pidió, en castellano: el texto del chat es lo único que se lee (y lo
+     * que va a leer WhatsApp, que no tiene front que traduzca el errorCode). Los mensajes de AppException van en inglés.
+     */
+    static Skipped rejected(ChatOperationType type, String name, AppException e) {
+        String who = "«" + (name == null ? "?" : name) + "»";
+        String message = switch (e.getErrorCode()) {
+            case MISSING_PURCHASE_COST -> {
+                // ponytail: los insumos salen del texto de SaleService/ProductionService ("…para: Queso, Harina").
+                // Si ese texto cambia, queda el nombre de la operación; un campo en AppException si hace falta más.
+                String m = e.getMessage() == null ? "" : e.getMessage();
+                String missing = m.contains(": ") ? m.substring(m.indexOf(": ") + 2) : name;
+                yield "«" + missing + "» no tiene compras cargadas, así que " + label(type) + " no tiene costo. "
+                        + "Cargá una compra y probá de nuevo.";
+            }
+            case UNIT_CONVERSION_NOT_FOUND -> "La receta de " + who
+                    + " usa una unidad que no se puede pasar a la del insumo: corregila y probá de nuevo.";
+            case PLAN_FEATURE_REQUIRED -> "Tu plan no incluye " + plural(type) + ".";
+            case PREPARATION_CYCLE -> "Las recetas de las preparaciones de " + who + " se usan entre sí en círculo.";
+            case PRODUCT_NOT_FOUND, MENU_ITEM_NOT_FOUND, UNIT_NOT_FOUND -> who + " ya no está en el catálogo.";
+            case INVALID_EXPIRATION_DATE -> "El vencimiento de " + who + " tiene que ser posterior a la fecha de la compra.";
+            case PRODUCT_NOT_A_PREPARATION, CHAT_INVALID_QUANTITY, CHAT_MISSING_PRICE ->
+                    skip(type, name, e.getErrorCode()).message();
+            default -> "No se pudo registrar " + label(type) + " de " + who + ".";
+        };
+        return new Skipped(type, name, e.getErrorCode(), message);
     }
 
     private static Skipped notSupported(ChatOperationType type) {
