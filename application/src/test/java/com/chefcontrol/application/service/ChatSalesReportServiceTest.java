@@ -187,6 +187,7 @@ class ChatSalesReportServiceTest {
         assertEquals("cubierto", learned.getAllValues().get(2).printedKey());
         assertTrue(result.message().contains("4 platos"), result.message());
         verify(saleService, never()).reverseSale(any());
+        assertNull(result.actions().getFirst().getUndoNote());
     }
 
     @Test
@@ -210,6 +211,9 @@ class ChatSalesReportServiceTest {
         assertEquals(ChatStatus.REGISTERED, replaced.status());
         verify(saleService).reverseSale(a.getId());
         verify(saleService).reverseSale(b.getId());
+        // Deshacer el cierre no las restaura: la acción lo dice.
+        assertEquals("Las 2 ventas que reemplazó siguen revertidas: cargalas de nuevo si hace falta.",
+                replaced.actions().getFirst().getUndoNote());
         assertEquals(Instant.parse("2026-11-18T15:00:00Z"), captured().soldAt());          // hoy, ya pasó el mediodía
     }
 

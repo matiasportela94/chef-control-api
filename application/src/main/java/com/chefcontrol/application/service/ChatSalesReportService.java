@@ -273,7 +273,11 @@ public class ChatSalesReportService {
                 + ChatService.money(sale.getTotalAmount());
         ChatAction action = chatActionRepository.save(ChatAction.builder().restaurantId(restaurantId)
                 .userId(currentUserProvider.currentUserId()).type(ChatOperationType.SALE).entityId(sale.getId())
-                .summary(summary.length() > 500 ? summary.substring(0, 499) + "…" : summary).createdAt(clock.instant()).build());
+                .summary(summary.length() > 500 ? summary.substring(0, 499) + "…" : summary)
+                .undoNote(toReverse.isEmpty() ? null : toReverse.size() == 1
+                        ? "La venta que reemplazó sigue revertida: cargala de nuevo si hace falta."
+                        : "Las " + toReverse.size() + " ventas que reemplazó siguen revertidas: cargalas de nuevo si hace falta.")
+                .createdAt(clock.instant()).build());
         String message = "Listo: " + summary + "." + (toReverse.isEmpty() ? "" : " Revertí "
                 + (toReverse.size() == 1 ? "la venta que ya había" : "las " + toReverse.size() + " ventas que ya había")
                 + " ese día.");

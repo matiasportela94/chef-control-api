@@ -35,6 +35,9 @@ public class ChatActionJpaEntity {
     @Column(nullable = false)
     private String summary;
 
+    @Column(name = "undo_note")
+    private String undoNote;
+
     @Column(name = "created_at", updatable = false, nullable = false)
     private Instant createdAt;
 
@@ -54,6 +57,7 @@ public class ChatActionJpaEntity {
         e.setType(d.getType());
         e.setEntityId(d.getEntityId());
         e.setSummary(d.getSummary());
+        e.setUndoNote(d.getUndoNote());
         e.setCreatedAt(d.getCreatedAt());
         e.setUndoneAt(d.getUndoneAt());
         return e;
@@ -61,6 +65,6 @@ public class ChatActionJpaEntity {
 
     public ChatAction toDomain() {
         return ChatAction.builder().id(id).restaurantId(restaurantId).userId(userId).type(type).entityId(entityId)
-                .summary(summary).createdAt(createdAt).undoneAt(undoneAt).build();
+                .summary(summary).undoNote(undoNote).createdAt(createdAt).undoneAt(undoneAt).build();
     }
 }

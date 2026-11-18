@@ -25,6 +25,8 @@ public class ChatAction {
     private ChatOperationType type;
     private UUID entityId;
     private String summary;
+    /** Lo que hay que avisar al deshacerla y que el deshacer no arregla solo; null casi siempre. */
+    private String undoNote;
     private Instant createdAt;
     private Instant undoneAt;
 
