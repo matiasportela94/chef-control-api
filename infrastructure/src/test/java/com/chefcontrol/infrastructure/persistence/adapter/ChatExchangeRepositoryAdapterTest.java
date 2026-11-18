@@ -43,7 +43,17 @@ class ChatExchangeRepositoryAdapterTest {
                 new RecipePreview("Napolitana", new CatalogSpreadsheetInterpretation(List.of(),
                         List.of(), List.of(new RecipeRow(1, "Napolitana", null, null, "Jamón", new BigDecimal("0.1"), "kg")),
                         List.of(new ProductRow(1, "Jamón", "kg", null, null, null)), List.of(), List.of("aviso")),
-                        List.of(), List.of()));
+                        List.of(), List.of()),
+                new com.chefcontrol.application.service.ChatInvoiceService.InvoicePreview(
+                        new com.chefcontrol.application.service.ChatInvoiceService.InvoiceSupplier(null, "Almacén", null, true),
+                        com.chefcontrol.domain.purchase.InvoiceType.A, "0001-00000001", LocalDate.of(2026, 11, 15), false,
+                        List.of(new com.chefcontrol.application.service.ChatInvoiceService.InvoicePreviewLine("TOMATE X KG",
+                                product, "Tomate", "CATALOG", null, new BigDecimal("5"), "kg", UUID.randomUUID(),
+                                new BigDecimal("2000"), new BigDecimal("21"), new BigDecimal("10000"), new BigDecimal("5"),
+                                "kg", List.of())),
+                        new BigDecimal("12100"), new BigDecimal("12100"),
+                        List.of(new com.chefcontrol.application.service.ChatInvoiceService.InvoiceWarning("ALREADY_LOADED",
+                                "Ya está.", UUID.randomUUID()))));
 
         assertEquals(reply, adapter.read(adapter.write(reply)));
     }

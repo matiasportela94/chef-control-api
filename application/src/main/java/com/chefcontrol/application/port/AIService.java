@@ -37,6 +37,36 @@ public interface AIService {
     CatalogSpreadsheetInterpretation interpretRecipeMessage(RecipeMessageRequest request);
 
     /**
+     * Una factura o un remito (fotos de sus hojas o un PDF) → lo que tiene impreso, tal cual: el modelo no hace cuentas
+     * ni elige el insumo (sugiere uno del catálogo, que el back valida). Con el modelo de imágenes, que se configura
+     * aparte del de texto. Lanza {@code AI_INTERPRETATION_FAILED} si el modelo no responde o no se le entiende.
+     */
+    InvoiceReading interpretInvoiceDocument(InvoiceDocumentRequest request);
+
+    record DocumentPage(byte[] bytes, String mediaType) {}
+
+    /** @param message lo que escribió el usuario junto con el archivo; puede ser null */
+    record InvoiceDocumentRequest(List<DocumentPage> pages, String message, List<ChatCatalogProduct> products,
+                                  List<UnitOption> units) {}
+
+    /**
+     * @param invoice     false si el archivo no es una factura, un ticket de compra o un remito
+     * @param invoiceType A, B, C o REMITO, como está impreso; null si no se ve
+     */
+    record InvoiceReading(boolean invoice, String supplierName, String supplierCuit, String invoiceType,
+                          String invoiceNumber, LocalDate issuedOn, BigDecimal printedTotal, List<InvoiceLineReading> lines) {}
+
+    /**
+     * Un renglón tal como está impreso.
+     *
+     * @param unit          una abreviatura de la lista de unidades si el renglón la dice; null si no
+     * @param catalogName   el insumo del catálogo que el modelo reconoce; el back verifica que exista
+     * @param suggestedName un nombre limpio, para proponer el insumo si no está en el catálogo
+     */
+    record InvoiceLineReading(String printedText, BigDecimal quantity, String unit, BigDecimal unitPrice,
+                              BigDecimal lineTotal, BigDecimal ivaPercentage, String catalogName, String suggestedName) {}
+
+    /**
      * @param today     la fecha argentina, para "vence el viernes"
      * @param products  los insumos activos del restaurante
      * @param menuItems los platos activos, para las ventas

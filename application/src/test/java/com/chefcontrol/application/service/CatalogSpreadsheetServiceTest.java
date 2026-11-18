@@ -230,6 +230,11 @@ class CatalogSpreadsheetServiceTest {
         }
 
         @Override
+        public InvoiceReading interpretInvoiceDocument(InvoiceDocumentRequest request) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
         public CatalogSpreadsheetInterpretation interpretRecipeMessage(RecipeMessageRequest request) {
             throw new UnsupportedOperationException();
         }

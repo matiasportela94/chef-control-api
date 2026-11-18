@@ -1061,12 +1061,19 @@ public class ChatService {
      * @param undone    lo que deshizo una corrección en este mensaje
      * @param proposals las alternativas de un NEEDS_CONFIRMATION, cada una con su botón
      * @param recipe    la receta para la vista previa del import; null si el mensaje no trae receta
+     * @param invoice   la vista previa de una factura o un remito (POST /ai/chat/documents); null si no
      */
     public record ChatResult(ChatStatus status, String message, List<ChatAction> actions, List<ChatAction> undone,
-                             List<Proposal> proposals, List<Skipped> skipped, RecipePreview recipe) {
+                             List<Proposal> proposals, List<Skipped> skipped, RecipePreview recipe,
+                             ChatInvoiceService.InvoicePreview invoice) {
+        public ChatResult(ChatStatus status, String message, List<ChatAction> actions, List<ChatAction> undone,
+                          List<Proposal> proposals, List<Skipped> skipped, RecipePreview recipe) {
+            this(status, message, actions, undone, proposals, skipped, recipe, null);
+        }
+
         public ChatResult(ChatStatus status, String message, List<ChatAction> actions, List<Proposal> proposals,
                           List<Skipped> skipped) {
-            this(status, message, actions, List.of(), proposals, skipped, null);
+            this(status, message, actions, List.of(), proposals, skipped, null, null);
         }
 
         static ChatResult of(ChatStatus status, String message) {

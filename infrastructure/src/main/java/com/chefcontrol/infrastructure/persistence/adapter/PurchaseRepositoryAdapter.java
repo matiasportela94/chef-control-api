@@ -38,6 +38,12 @@ public class PurchaseRepositoryAdapter implements PurchaseRepository {
     }
 
     @Override
+    public Optional<Purchase> findActiveBySupplierIdAndInvoiceNumber(UUID restaurantId, UUID supplierId, String number) {
+        return jpa.findFirstByRestaurantIdAndSupplierIdAndInvoiceNumberAndStatus(restaurantId, supplierId, number,
+                com.chefcontrol.domain.purchase.PurchaseStatus.ACTIVE).map(PurchaseJpaEntity::toDomain);
+    }
+
+    @Override
     public Purchase save(Purchase purchase) {
         PurchaseJpaEntity saved = jpa.save(PurchaseJpaEntity.from(purchase));
         return jpa.findByIdAndRestaurantId(saved.getId(), saved.getRestaurantId())

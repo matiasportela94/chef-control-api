@@ -16,6 +16,9 @@ public interface PurchaseRepository {
 
     Optional<Purchase> findByIdAndRestaurantId(UUID id, UUID restaurantId);
 
+    /** La compra viva de ese proveedor con ese comprobante: para avisar que esa factura ya está cargada. */
+    Optional<Purchase> findActiveBySupplierIdAndInvoiceNumber(UUID restaurantId, UUID supplierId, String invoiceNumber);
+
     Purchase save(Purchase purchase);
 
     /** Las compras no revertidas del período, con su proveedor, de la más vieja a la más nueva. */
