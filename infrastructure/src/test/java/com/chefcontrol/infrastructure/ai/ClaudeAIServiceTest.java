@@ -3,6 +3,7 @@ package com.chefcontrol.infrastructure.ai;
 import com.chefcontrol.application.exception.AppException;
 import com.chefcontrol.application.exception.ErrorCode;
 import com.chefcontrol.application.port.AIService.CatalogSpreadsheetRequest;
+import com.chefcontrol.application.port.AIService.ChatCatalogMenuItem;
 import com.chefcontrol.application.port.AIService.ChatCatalogProduct;
 import com.chefcontrol.application.port.AIService.ChatMessageRequest;
 import com.chefcontrol.application.port.AIService.SpreadsheetRow;
@@ -85,8 +86,10 @@ class ClaudeAIServiceTest {
     // ── Chat ──
 
     private static final UUID COMINO = UUID.fromString("0b6c1c3e-6f3a-4d43-9a39-4c7f6d1c2a10");
+    private static final UUID MILANESA = UUID.fromString("5d1f2a3b-0c4e-4f6a-8b7c-9d0e1f2a3b4c");
     private static final ChatMessageRequest CHAT = new ChatMessageRequest("compré 500 g de comino a 3000 el kilo",
             LocalDate.of(2026, 11, 17), List.of(new ChatCatalogProduct(COMINO, "Comino", "kg")),
+            List.of(new ChatCatalogMenuItem(MILANESA, "Milanesa", new BigDecimal("12000"))),
             List.of(new UnitOption("Kilogramo", "kg"), new UnitOption("Gramo", "g")));
 
     @Test
@@ -95,6 +98,7 @@ class ClaudeAIServiceTest {
         f.server.expect(requestTo("https://api.anthropic.com/v1/messages"))
                 .andExpect(jsonPath("$.system[0].cache_control.type").value("ephemeral"))
                 .andExpect(jsonPath("$.system[0].text").value(org.hamcrest.Matchers.containsString(COMINO + " | Comino | kg")))
+                .andExpect(jsonPath("$.system[0].text").value(org.hamcrest.Matchers.containsString(MILANESA + " | Milanesa | 12000")))
                 .andExpect(jsonPath("$.system[0].text").value(org.hamcrest.Matchers.not(
                         org.hamcrest.Matchers.containsString("2026-11-17"))))
                 .andExpect(jsonPath("$.tool_choice.name").value("record_operations"))

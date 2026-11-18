@@ -74,6 +74,7 @@ public enum ErrorCode {
     // Motivos de lo que el chat no registró (ChatResponse.skipped): nunca salen como error HTTP.
     CHAT_PERMISSION_MISSING     (Category.FORBIDDEN),
     CHAT_PRODUCT_NOT_IN_CATALOG (Category.BAD_REQUEST),
+    CHAT_MENU_ITEM_NOT_IN_CATALOG (Category.BAD_REQUEST),
     CHAT_MISSING_PRICE          (Category.BAD_REQUEST),
     CHAT_INVALID_QUANTITY       (Category.BAD_REQUEST),
     CHAT_OPERATION_NOT_SUPPORTED (Category.BAD_REQUEST),

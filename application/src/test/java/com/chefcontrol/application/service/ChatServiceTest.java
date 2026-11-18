@@ -14,14 +14,18 @@ import com.chefcontrol.domain.chat.ChatAction;
 import com.chefcontrol.domain.chat.ChatActionRepository;
 import com.chefcontrol.domain.chat.ChatOperationType;
 import com.chefcontrol.domain.context.TenantContext;
+import com.chefcontrol.domain.menu.MenuItem;
 import com.chefcontrol.domain.product.Product;
 import com.chefcontrol.domain.product.Unit;
 import com.chefcontrol.domain.purchase.Purchase;
+import com.chefcontrol.domain.repository.MenuItemRepository;
 import com.chefcontrol.domain.repository.ProductRepository;
 import com.chefcontrol.domain.repository.StockMovementRepository;
 import com.chefcontrol.domain.repository.UnitRepository;
 import com.chefcontrol.domain.shared.Page;
+import com.chefcontrol.domain.sale.Sale;
 import com.chefcontrol.domain.stock.MovementType;
+import com.chefcontrol.domain.stock.StockCount;
 import com.chefcontrol.domain.stock.StockMovement;
 import com.chefcontrol.domain.user.Permission;
 import com.chefcontrol.domain.waste.WasteEvent;
@@ -60,8 +64,11 @@ class ChatServiceTest {
     @Mock ProductRepository productRepository;
     @Mock UnitRepository unitRepository;
     @Mock UnitConversionService unitConversionService;
+    @Mock MenuItemRepository menuItemRepository;
     @Mock PurchaseService purchaseService;
     @Mock WasteService wasteService;
+    @Mock SaleService saleService;
+    @Mock StockCountService stockCountService;
     @Mock StockService stockService;
     @Mock StockMovementRepository stockMovementRepository;
     @Mock ChatActionRepository chatActionRepository;
@@ -77,6 +84,8 @@ class ChatServiceTest {
     private final Unit l = unit("Litro", "l");
     private final Product comino = product("Comino", kg);
     private final Product tomate = product("Tomate", kg);
+    private final MenuItem milanesa = MenuItem.builder().id(UUID.randomUUID()).restaurantId(R).name("Milanesa")
+            .price(new BigDecimal("12000")).active(true).build();
     private ChatService service;
 
     @BeforeEach
@@ -104,8 +113,16 @@ class ChatServiceTest {
             e.setId(UUID.randomUUID());
             return e;
         });
-        service = new ChatService(aiService, productRepository, unitRepository, unitConversionService, purchaseService,
-                wasteService, stockService, stockMovementRepository, chatActionRepository, currentUserProvider,
+        when(menuItemRepository.findByRestaurantIdAndActive(eq(R), eq(true), any()))
+                .thenReturn(new Page<>(List.of(milanesa), 0, 1, 1));
+        when(menuItemRepository.findByIdAndRestaurantId(milanesa.getId(), R)).thenReturn(Optional.of(milanesa));
+        when(saleService.recordSale(any())).thenReturn(Sale.builder().id(UUID.randomUUID()).build());
+        StockCount count = new StockCount();
+        count.setId(UUID.randomUUID());
+        when(stockCountService.createStockCount(any())).thenReturn(new StockCountService.StockCountResult(count, List.of()));
+        service = new ChatService(aiService, productRepository, menuItemRepository, unitRepository,
+                unitConversionService, purchaseService, wasteService, saleService, stockCountService, stockService,
+                stockMovementRepository, chatActionRepository, currentUserProvider,
                 TransactionOperations.withoutTransaction(), Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
@@ -172,7 +189,7 @@ class ChatServiceTest {
 
     @Test
     void aProductOutsideTheCatalogIsNeverRegistered() {
-        answer(95, false, op("purchase", new InterpretedItem(null, "tomate cherry", BigDecimal.ONE, "kg",
+        answer(95, false, op("purchase", new InterpretedItem(null, null, "tomate cherry", BigDecimal.ONE, "kg",
                 new BigDecimal("4000"), null, null, null)));
 
         var result = service.sendChatMessage("1 kg de tomate cherry a 4000", ALL);
@@ -206,12 +223,91 @@ class ChatServiceTest {
 
     @Test
     void operationsWithoutExecutionYetAreNotSupported() {
-        answer(95, false, op("sale", List.of()), op("query", List.of()));
+        answer(95, false, op("production", List.of()), op("query", List.of()));
 
-        var result = service.sendChatMessage("vendimos 5 milanesas, ¿cuánta harina queda?", ALL);
+        var result = service.sendChatMessage("hice 5 kg de mayonesa, ¿cuánta harina queda?", ALL);
 
         assertEquals(ChatStatus.NOT_SUPPORTED, result.status());
         assertEquals(2, result.skipped().size());
+    }
+
+    // ── Ventas y ajustes ──
+
+    @Test
+    void aSaleIsRegisteredWithTheDishesAndItsPortions() {
+        answer(95, false, op("sale", dish(milanesa, "5")));
+
+        var result = service.sendChatMessage("vendimos 5 milanesas", ALL);
+
+        assertEquals(ChatStatus.REGISTERED, result.status());
+        var cmd = ArgumentCaptor.forClass(SaleService.CreateSaleCommand.class);
+        verify(saleService).recordSale(cmd.capture());
+        assertEquals(new SaleService.SaleItemCommand(milanesa.getId(), 5), cmd.getValue().items().getFirst());
+        assertEquals("Venta: 5 Milanesa", result.actions().getFirst().getSummary());
+    }
+
+    @Test
+    void aSaleNeedsPortionsAndADishOfTheMenu() {
+        answer(95, false, op("sale", dish(milanesa, "2.5"),
+                new InterpretedItem(null, null, "pizza", BigDecimal.ONE, null, null, null, null, null)));
+
+        var result = service.sendChatMessage("vendimos dos milanesas y media y una pizza", ALL);
+
+        assertEquals(ChatStatus.NOT_REGISTERED, result.status());
+        assertEquals(List.of(ErrorCode.CHAT_INVALID_QUANTITY, ErrorCode.CHAT_MENU_ITEM_NOT_IN_CATALOG),
+                result.skipped().stream().map(ChatService.Skipped::errorCode).toList());
+        verify(saleService, never()).recordSale(any());
+    }
+
+    @Test
+    void aSaleThatTheServiceRejectsIsSkippedWithItsCode() {
+        answer(95, false, op("sale", dish(milanesa, "1")));
+        when(saleService.recordSale(any())).thenThrow(AppException.badRequest(ErrorCode.MISSING_PURCHASE_COST, "no cost"));
+
+        var result = service.sendChatMessage("vendimos una milanesa", ALL);
+
+        assertEquals(ErrorCode.MISSING_PURCHASE_COST, result.skipped().getFirst().errorCode());
+    }
+
+    @Test
+    void anAdjustmentIsACountOfOnlyThoseProductsInTheirUnit() {
+        // "quedan 800 g de comino y no queda tomate": lo contado, convertido; 0 vale.
+        answer(95, false, op("stock_adjustment", item(comino, "800", "g", null, null), item(tomate, "0", "kg", null, null)));
+        when(unitConversionService.convert(new BigDecimal("800"), g.getId(), kg.getId())).thenReturn(new BigDecimal("0.8"));
+
+        var result = service.sendChatMessage("quedan 800 g de comino y no queda tomate", ALL);
+
+        assertEquals(ChatStatus.REGISTERED, result.status());
+        var cmd = ArgumentCaptor.forClass(StockCountService.CreateStockCountCommand.class);
+        verify(stockCountService).createStockCount(cmd.capture());
+        assertEquals(List.of(new StockCountService.StockCountItemCommand(comino.getId(), kg.getId(), new BigDecimal("0.8")),
+                        new StockCountService.StockCountItemCommand(tomate.getId(), kg.getId(), BigDecimal.ZERO)),
+                cmd.getValue().items());
+        assertEquals("Ajuste: hay 0,8 kg Comino, 0 kg Tomate", result.actions().getFirst().getSummary());
+    }
+
+    @Test
+    void undoingASaleReversesIt() {
+        ChatAction action = stored(ChatOperationType.SALE, USER, NOW);
+
+        service.undoChatAction(action.getId(), Set.of());
+
+        verify(saleService).reverseSale(action.getEntityId());
+    }
+
+    @Test
+    void undoingAnAdjustmentReversesEachMovementOfTheCountThatIsStillThere() {
+        ChatAction action = stored(ChatOperationType.STOCK_ADJUSTMENT, USER, NOW);
+        StockMovement live = StockMovement.builder().id(UUID.randomUUID()).type(MovementType.COUNT).build();
+        StockMovement reversedElsewhere = StockMovement.builder().id(UUID.randomUUID()).type(MovementType.COUNT)
+                .reversedBy(UUID.randomUUID()).build();
+        when(stockMovementRepository.findByReferenceIdAndReferenceType(action.getEntityId(), "stock_count"))
+                .thenReturn(List.of(live, reversedElsewhere));
+
+        service.undoChatAction(action.getId(), Set.of());
+
+        verify(stockService).reverseMovement(live.getId());
+        verify(stockService, never()).reverseMovement(reversedElsewhere.getId());
     }
 
     @Test
@@ -333,9 +429,14 @@ class ChatServiceTest {
 
     private static InterpretedItem item(Product p, String qty, String unit, String price, String reasonOrPriceUnit) {
         boolean isReason = reasonOrPriceUnit != null && reasonOrPriceUnit.equals(reasonOrPriceUnit.toUpperCase());
-        return new InterpretedItem(p.getId(), p.getName().toLowerCase(), new BigDecimal(qty), unit,
+        return new InterpretedItem(p.getId(), null, p.getName().toLowerCase(), new BigDecimal(qty), unit,
                 price == null ? null : new BigDecimal(price), isReason ? null : reasonOrPriceUnit, null,
                 isReason ? reasonOrPriceUnit : null);
+    }
+
+    private static InterpretedItem dish(MenuItem m, String portions) {
+        return new InterpretedItem(null, m.getId(), m.getName().toLowerCase(), new BigDecimal(portions), null, null, null,
+                null, null);
     }
 
     private static Unit unit(String name, String abbreviation) {

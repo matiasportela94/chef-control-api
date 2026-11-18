@@ -3,6 +3,7 @@ package com.chefcontrol.application.service;
 import com.chefcontrol.application.exception.AppException;
 import com.chefcontrol.application.exception.ErrorCode;
 import com.chefcontrol.application.port.AIService;
+import com.chefcontrol.application.port.AIService.ChatCatalogMenuItem;
 import com.chefcontrol.application.port.AIService.ChatCatalogProduct;
 import com.chefcontrol.application.port.AIService.ChatInterpretation;
 import com.chefcontrol.application.port.AIService.InterpretedItem;
@@ -13,8 +14,10 @@ import com.chefcontrol.domain.chat.ChatAction;
 import com.chefcontrol.domain.chat.ChatActionRepository;
 import com.chefcontrol.domain.chat.ChatOperationType;
 import com.chefcontrol.domain.context.TenantContext;
+import com.chefcontrol.domain.menu.MenuItem;
 import com.chefcontrol.domain.product.Product;
 import com.chefcontrol.domain.product.Unit;
+import com.chefcontrol.domain.repository.MenuItemRepository;
 import com.chefcontrol.domain.repository.ProductRepository;
 import com.chefcontrol.domain.repository.StockMovementRepository;
 import com.chefcontrol.domain.repository.UnitRepository;
@@ -68,8 +71,9 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ChatService {
 
-    /** Hoy: compras y mermas. Ventas, ajustes y producción llegan en las tandas siguientes. */
-    static final Set<ChatOperationType> SUPPORTED = EnumSet.of(ChatOperationType.PURCHASE, ChatOperationType.WASTE);
+    /** La producción llega en la tanda siguiente. */
+    static final Set<ChatOperationType> SUPPORTED = EnumSet.of(ChatOperationType.PURCHASE, ChatOperationType.WASTE,
+            ChatOperationType.SALE, ChatOperationType.STOCK_ADJUSTMENT);
 
     static final int MIN_CONFIDENCE = 80;
     /** La regla de la confirmación por precio alto: cantidad mayor a 1 y precio unitario mayor a esto. */
@@ -79,10 +83,13 @@ public class ChatService {
 
     private final AIService aiService;
     private final ProductRepository productRepository;
+    private final MenuItemRepository menuItemRepository;
     private final UnitRepository unitRepository;
     private final UnitConversionService unitConversionService;
     private final PurchaseService purchaseService;
     private final WasteService wasteService;
+    private final SaleService saleService;
+    private final StockCountService stockCountService;
     private final StockService stockService;
     private final StockMovementRepository stockMovementRepository;
     private final ChatActionRepository chatActionRepository;
@@ -97,6 +104,8 @@ public class ChatService {
         UUID restaurantId = TenantContext.require();
         List<Product> products = productRepository
                 .findByRestaurantIdAndIsActiveTrue(restaurantId, PageRequest.of(0, MAX_CATALOG)).content();
+        List<MenuItem> menuItems = menuItemRepository
+                .findByRestaurantIdAndActive(restaurantId, true, PageRequest.of(0, MAX_CATALOG)).content();
         List<Unit> units = unitRepository.findAll();
 
         ChatInterpretation interpretation;
@@ -104,13 +113,14 @@ public class ChatService {
             interpretation = aiService.interpretChatMessage(new AIService.ChatMessageRequest(message,
                     LocalDate.now(clock.withZone(ChefControlTime.DEFAULT_ZONE)),
                     products.stream().map(p -> new ChatCatalogProduct(p.getId(), p.getName(), unitLabel(p))).toList(),
+                    menuItems.stream().map(m -> new ChatCatalogMenuItem(m.getId(), m.getName(), m.getPrice())).toList(),
                     units.stream().map(u -> new UnitOption(u.getName(), u.getAbbreviation())).toList()));
         } catch (AppException e) {
             if (e.getErrorCode() != ErrorCode.AI_INTERPRETATION_FAILED) throw e;
             return ChatResult.of(ChatStatus.NOT_UNDERSTOOD, "No pude interpretar el mensaje. Probá de nuevo.");
         }
 
-        Resolution resolution = new Resolution(products, units);
+        Resolution resolution = new Resolution(products, menuItems, units);
         List<Skipped> skipped = new ArrayList<>();
         List<Operation> operations = new ArrayList<>();
         boolean highPrice = false;
@@ -168,20 +178,10 @@ public class ChatService {
             }
             List<OperationItem> items = new ArrayList<>();
             for (OperationItem item : op.items()) {
-                Product product = item.productId() == null ? null : productRepository
-                        .findByIdAndRestaurantId(item.productId(), restaurantId).filter(Product::isActive).orElse(null);
-                if (product == null) {
-                    skipped.add(skip(op.type(), item.name(), ErrorCode.CHAT_PRODUCT_NOT_IN_CATALOG));
-                } else if (!positive(item.quantity())) {
-                    skipped.add(skip(op.type(), product.getName(), ErrorCode.CHAT_INVALID_QUANTITY));
-                } else if (op.type() == ChatOperationType.PURCHASE && !positive(item.pricePerUnit())) {
-                    skipped.add(skip(op.type(), product.getName(), ErrorCode.CHAT_MISSING_PRICE));
-                } else {
-                    items.add(new OperationItem(product.getId(), null, product.getName(), item.quantity(),
-                            unitLabel(product), op.type() == ChatOperationType.PURCHASE ? item.pricePerUnit() : null,
-                            op.type() == ChatOperationType.PURCHASE ? item.expirationDate() : null,
-                            op.type() == ChatOperationType.WASTE ? orOther(item.wasteReason()) : null));
-                }
+                OperationItem checked = op.type() == ChatOperationType.SALE
+                        ? confirmedSaleItem(item, restaurantId, skipped)
+                        : confirmedProductItem(op.type(), item, restaurantId, skipped);
+                if (checked != null) items.add(checked);
             }
             if (!items.isEmpty()) valid.add(new Operation(op.type(), items));
         }
@@ -189,6 +189,39 @@ public class ChatService {
             return new ChatResult(ChatStatus.NOT_REGISTERED, nothingRegistered(skipped), List.of(), List.of(), skipped);
         }
         return register(valid, skipped);
+    }
+
+    private OperationItem confirmedSaleItem(OperationItem item, UUID restaurantId, List<Skipped> skipped) {
+        MenuItem dish = item.menuItemId() == null ? null : menuItemRepository
+                .findByIdAndRestaurantId(item.menuItemId(), restaurantId).filter(MenuItem::isActive).orElse(null);
+        if (dish == null) {
+            skipped.add(skip(ChatOperationType.SALE, item.name(), ErrorCode.CHAT_MENU_ITEM_NOT_IN_CATALOG));
+            return null;
+        }
+        if (!isPortions(item.quantity())) {
+            skipped.add(skip(ChatOperationType.SALE, dish.getName(), ErrorCode.CHAT_INVALID_QUANTITY));
+            return null;
+        }
+        return saleItem(dish, item.quantity());
+    }
+
+    private OperationItem confirmedProductItem(ChatOperationType type, OperationItem item, UUID restaurantId,
+                                               List<Skipped> skipped) {
+        Product product = item.productId() == null ? null : productRepository
+                .findByIdAndRestaurantId(item.productId(), restaurantId).filter(Product::isActive).orElse(null);
+        if (product == null) {
+            skipped.add(skip(type, item.name(), ErrorCode.CHAT_PRODUCT_NOT_IN_CATALOG));
+        } else if (!validQuantity(type, item.quantity())) {
+            skipped.add(skip(type, product.getName(), ErrorCode.CHAT_INVALID_QUANTITY));
+        } else if (type == ChatOperationType.PURCHASE && !positive(item.pricePerUnit())) {
+            skipped.add(skip(type, product.getName(), ErrorCode.CHAT_MISSING_PRICE));
+        } else {
+            return new OperationItem(product.getId(), null, product.getName(), item.quantity(), unitLabel(product),
+                    type == ChatOperationType.PURCHASE ? item.pricePerUnit() : null,
+                    type == ChatOperationType.PURCHASE ? item.expirationDate() : null,
+                    type == ChatOperationType.WASTE ? orOther(item.wasteReason()) : null);
+        }
+        return null;
     }
 
     // ── Deshacer ───────────────────────────────────────────────────────────────
@@ -214,6 +247,12 @@ public class ChatService {
             switch (action.getType()) {
                 case PURCHASE -> purchaseService.reversePurchase(action.getEntityId());
                 case WASTE -> stockService.reverseMovement(wasteMovementOf(action.getEntityId()).getId());
+                case SALE -> saleService.reverseSale(action.getEntityId());
+                // Un conteo sin diferencias no movió nada: no hay qué revertir, pero queda deshecho igual.
+                case STOCK_ADJUSTMENT -> stockMovementRepository
+                        .findByReferenceIdAndReferenceType(action.getEntityId(), "stock_count").stream()
+                        .filter(m -> m.getType() != MovementType.REVERSAL && m.getReversedBy() == null)
+                        .forEach(m -> stockService.reverseMovement(m.getId()));
                 default -> throw AppException.badRequest(ErrorCode.CHAT_OPERATION_NOT_SUPPORTED,
                         "Undo of " + action.getType() + " is not supported yet");
             }
@@ -246,6 +285,21 @@ public class ChatService {
                             item.productId(), defaultUnitOf(item.productId()), item.quantity(), item.wasteReason()));
                     actions.add(saveAction(ChatOperationType.WASTE, event.getId(), wasteSummary(item)));
                 }));
+                // Una venta con todos los platos, como el formulario. Descuenta con la receta (y produce lo que falte).
+                case SALE -> inOwnTransaction(op.type(), names(op.items()), skipped, () -> {
+                    var sale = saleService.recordSale(new SaleService.CreateSaleCommand(null, clock.instant(),
+                            op.items().stream().map(i -> new SaleService.SaleItemCommand(
+                                    i.menuItemId(), i.quantity().intValueExact())).toList()));
+                    actions.add(saveAction(ChatOperationType.SALE, sale.getId(), saleSummary(op.items())));
+                });
+                // Un conteo de solo esos insumos: "quedan 8 kg de harina" ajusta la harina y nada más.
+                case STOCK_ADJUSTMENT -> inOwnTransaction(op.type(), names(op.items()), skipped, () -> {
+                    var count = stockCountService.createStockCount(new StockCountService.CreateStockCountCommand(null,
+                            op.items().stream().map(i -> new StockCountService.StockCountItemCommand(
+                                    i.productId(), defaultUnitOf(i.productId()), i.quantity())).toList()));
+                    actions.add(saveAction(ChatOperationType.STOCK_ADJUSTMENT, count.count().getId(),
+                            adjustmentSummary(op.items())));
+                });
                 default -> skipped.add(notSupported(op.type()));
             }
         }
@@ -293,14 +347,16 @@ public class ChatService {
 
     // ── Lo que dijo la IA → lo que se registra ─────────────────────────────────
 
-    /** Los insumos y unidades de un mensaje: lo que la IA nombra se busca acá, nunca se cree. */
+    /** Los insumos, platos y unidades de un mensaje: lo que la IA nombra se busca acá, nunca se cree. */
     private class Resolution {
         final Map<UUID, Product> products = new HashMap<>();
+        final Map<UUID, MenuItem> menuItems = new HashMap<>();
         final Map<String, Unit> units = new HashMap<>();
         final Map<UUID, Unit> unitsById = new HashMap<>();
 
-        Resolution(List<Product> catalog, List<Unit> all) {
+        Resolution(List<Product> catalog, List<MenuItem> dishes, List<Unit> all) {
             catalog.forEach(p -> products.put(p.getId(), p));
+            dishes.forEach(m -> menuItems.put(m.getId(), m));
             all.forEach(u -> {
                 unitsById.put(u.getId(), u);
                 units.putIfAbsent(CatalogImportService.key(u.getName()), u);
@@ -311,12 +367,13 @@ public class ChatService {
 
         /** null (y su motivo en skipped) si el ítem no se puede registrar. */
         OperationItem resolve(ChatOperationType type, InterpretedItem item, List<Skipped> skipped) {
+            if (type == ChatOperationType.SALE) return resolveSale(item, skipped);
             Product product = item.productId() == null ? null : products.get(item.productId());
             if (product == null) {
                 skipped.add(skip(type, item.name(), ErrorCode.CHAT_PRODUCT_NOT_IN_CATALOG));
                 return null;
             }
-            if (!positive(item.quantity())) {
+            if (!validQuantity(type, item.quantity())) {
                 skipped.add(skip(type, product.getName(), ErrorCode.CHAT_INVALID_QUANTITY));
                 return null;
             }
@@ -342,7 +399,7 @@ public class ChatService {
                     price = convert(() -> unitConversionService.convertPrice(
                             item.pricePerUnit(), priceUnit.getId(), product.getDefaultUnitId()), 4);
                 }
-                if (!positive(quantity)) {   // 0,0001 g de algo en kg: redondeado no queda nada
+                if (!validQuantity(type, quantity)) {   // 0,0001 g de algo en kg: redondeado no queda nada
                     skipped.add(skip(type, product.getName(), ErrorCode.CHAT_INVALID_QUANTITY));
                     return null;
                 }
@@ -357,9 +414,36 @@ public class ChatService {
             }
         }
 
+        private OperationItem resolveSale(InterpretedItem item, List<Skipped> skipped) {
+            MenuItem dish = item.menuItemId() == null ? null : menuItems.get(item.menuItemId());
+            if (dish == null) {
+                skipped.add(skip(ChatOperationType.SALE, item.name(), ErrorCode.CHAT_MENU_ITEM_NOT_IN_CATALOG));
+                return null;
+            }
+            if (!isPortions(item.quantity())) {   // "2,5 pizzas": una venta son porciones enteras
+                skipped.add(skip(ChatOperationType.SALE, dish.getName(), ErrorCode.CHAT_INVALID_QUANTITY));
+                return null;
+            }
+            return saleItem(dish, item.quantity());
+        }
+
         private Unit unitNamed(String name) {
             return units.get(CatalogImportService.key(name));
         }
+    }
+
+    private static OperationItem saleItem(MenuItem dish, BigDecimal portions) {
+        return new OperationItem(null, dish.getId(), dish.getName(), portions.stripTrailingZeros().setScale(0),
+                null, null, null, null);
+    }
+
+    private static boolean isPortions(BigDecimal n) {
+        return positive(n) && n.stripTrailingZeros().scale() <= 0;
+    }
+
+    /** Un ajuste puede ser 0 ("no queda más aceite"); lo demás, más de 0. */
+    private static boolean validQuantity(ChatOperationType type, BigDecimal n) {
+        return type == ChatOperationType.STOCK_ADJUSTMENT ? n != null && n.signum() >= 0 : positive(n);
     }
 
     private static BigDecimal convert(Supplier<BigDecimal> conversion, int scale) {
@@ -431,7 +515,10 @@ public class ChatService {
         String who = "«" + (name == null ? "?" : name) + "»";
         String message = switch (code) {
             case CHAT_PRODUCT_NOT_IN_CATALOG -> who + " no está en el catálogo.";
-            case CHAT_INVALID_QUANTITY -> "Falta la cantidad de " + who + ".";
+            case CHAT_MENU_ITEM_NOT_IN_CATALOG -> who + " no es un plato del menú.";
+            case CHAT_INVALID_QUANTITY -> type == ChatOperationType.SALE
+                    ? "La venta de " + who + " tiene que ser en porciones enteras."
+                    : "Falta la cantidad de " + who + ".";
             case CHAT_MISSING_PRICE -> "Falta el precio de " + who + ".";
             case UNIT_NOT_FOUND -> "No reconozco la unidad de " + who + ".";
             default -> "No se pudo registrar " + who + ".";
@@ -441,7 +528,7 @@ public class ChatService {
 
     private static Skipped notSupported(ChatOperationType type) {
         String message = type == null
-                ? "Por ahora no respondo consultas: solo registro compras y mermas."
+                ? "Por ahora no respondo consultas: solo registro compras, mermas, ventas y ajustes de stock."
                 : "Todavía no registro " + plural(type) + " por acá: usá el formulario.";
         return new Skipped(type, null, ErrorCode.CHAT_OPERATION_NOT_SUPPORTED, message);
     }
@@ -490,6 +577,14 @@ public class ChatService {
             default -> "";
         };
         return "Merma: " + quantity(item) + reason;
+    }
+
+    static String saleSummary(List<OperationItem> items) {
+        return "Venta: " + items.stream().map(ChatService::quantity).collect(Collectors.joining(", "));
+    }
+
+    static String adjustmentSummary(List<OperationItem> items) {
+        return "Ajuste: hay " + items.stream().map(ChatService::quantity).collect(Collectors.joining(", "));
     }
 
     private static String quantity(OperationItem i) {
