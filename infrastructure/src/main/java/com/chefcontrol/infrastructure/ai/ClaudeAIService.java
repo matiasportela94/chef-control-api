@@ -3,6 +3,9 @@ package com.chefcontrol.infrastructure.ai;
 import com.chefcontrol.application.port.AIService;
 import com.chefcontrol.application.port.AIService.CatalogSpreadsheetInterpretation;
 import com.chefcontrol.application.port.AIService.CatalogSpreadsheetRequest;
+import com.chefcontrol.application.port.AIService.ChatInterpretation;
+import com.chefcontrol.application.port.AIService.ChatMessageRequest;
+import com.chefcontrol.application.port.AIService.RecipeMessageRequest;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -24,6 +27,10 @@ public class ClaudeAIService implements AIService {
 
     private static final String TOOL_NAME = "interpret_inventory";
     private static final String CATALOG_TOOL = "import_catalog";
+    private static final String CHAT_TOOL = "record_operations";
+    /** "Ocupado" en Anthropic: límite (429), no disponible (503) y sobrecargado (529). */
+    private static final java.util.Set<Integer> BUSY = java.util.Set.of(429, 503, 529);
+    private static final String RECIPE_TOOL = "write_recipe";
 
     private final RestClient restClient;
     private final String model;
@@ -54,11 +61,8 @@ public class ClaudeAIService implements AIService {
     public AIInterpretation interpret(InterpretRequest request) {
         try {
             Map<String, Object> body = buildRequestBody(request);
-            JsonNode response = restClient.post()
-                    .uri("/v1/messages")
-                    .body(body)
-                    .retrieve()
-                    .body(JsonNode.class);
+            JsonNode response = ProviderRetry.once("Claude", BUSY,
+                    () -> restClient.post().uri("/v1/messages").body(body).retrieve().body(JsonNode.class));
             return parseResponse(response);
         } catch (Exception e) {
             log.error("[Claude] interpret failed: {}", e.getMessage());
@@ -185,6 +189,93 @@ public class ClaudeAIService implements AIService {
         return new AIInterpretation("unknown", 0, true, null, "No pude interpretar el mensaje.");
     }
 
+    /**
+     * El system prompt (reglas + catálogo) va con cache_control: es casi todo el pedido y se repite en cada mensaje.
+     * Las herramientas van antes del system, así que el corte cachea las dos. Con Haiku 4.5 Anthropic no cachea menos
+     * de 4096 tokens: un catálogo chico no llega y cache_read_input_tokens queda en 0, sin error.
+     */
+    @Override
+    public ChatInterpretation interpretChatMessage(ChatMessageRequest request) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("model", model);
+        body.put("max_tokens", ChatPrompt.MAX_OUTPUT_TOKENS);
+        body.put("temperature", 0);
+        body.put("system", List.of(Map.of("type", "text",
+                "text", ChatPrompt.systemPrompt(request, "Devolvé el resultado con la herramienta " + CHAT_TOOL + "."),
+                "cache_control", Map.of("type", "ephemeral"))));
+        body.put("tools", List.of(Map.of(
+                "name", CHAT_TOOL,
+                "description", "Devuelve las operaciones de stock que pide el mensaje",
+                "input_schema", ChatPrompt.jsonSchema())));
+        body.put("tool_choice", Map.of("type", "tool", "name", CHAT_TOOL));
+        body.put("messages", List.of(Map.of("role", "user", "content", ChatPrompt.userMessage(request))));
+
+        long start = System.currentTimeMillis();
+        JsonNode response;
+        try {
+            response = ProviderRetry.once("Claude", BUSY,
+                    () -> restClient.post().uri("/v1/messages").body(body).retrieve().body(JsonNode.class));
+        } catch (RestClientException e) {
+            log.error("[Claude] interpretChatMessage failed: {}", e.getMessage());
+            throw ChatPrompt.failed(e.getMessage());
+        }
+        JsonNode usage = response.path("usage");
+        log.info("[Claude] interpretChatMessage model={} products={} input_tokens={} output_tokens={} "
+                        + "cache_read_input_tokens={} cache_creation_input_tokens={} ms={}", model,
+                request.products().size(), usage.path("input_tokens").asInt(), usage.path("output_tokens").asInt(),
+                usage.path("cache_read_input_tokens").asInt(), usage.path("cache_creation_input_tokens").asInt(),
+                System.currentTimeMillis() - start);
+
+        for (JsonNode block : response.path("content")) {
+            if ("tool_use".equals(block.path("type").asText()) && CHAT_TOOL.equals(block.path("name").asText())) {
+                return ChatPrompt.parse(block.path("input"));
+            }
+        }
+        throw ChatPrompt.failed("no " + CHAT_TOOL + " block in the answer (stop_reason "
+                + response.path("stop_reason").asText() + ")");
+    }
+
+    @Override
+    public CatalogSpreadsheetInterpretation interpretRecipeMessage(RecipeMessageRequest request) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("model", model);
+        body.put("max_tokens", RecipeChatPrompt.MAX_OUTPUT_TOKENS);
+        body.put("temperature", 0);
+        body.put("system", List.of(Map.of("type", "text",
+                "text", RecipeChatPrompt.systemPrompt(request, "Devolvé el resultado con la herramienta " + RECIPE_TOOL + "."),
+                "cache_control", Map.of("type", "ephemeral"))));
+        body.put("tools", List.of(Map.of(
+                "name", RECIPE_TOOL,
+                "description", "Devuelve la receta completa como queda con el cambio del mensaje",
+                "input_schema", RecipeChatPrompt.jsonSchema())));
+        body.put("tool_choice", Map.of("type", "tool", "name", RECIPE_TOOL));
+        body.put("messages", List.of(Map.of("role", "user", "content", RecipeChatPrompt.userMessage(request))));
+
+        long start = System.currentTimeMillis();
+        JsonNode response;
+        try {
+            response = ProviderRetry.once("Claude", BUSY,
+                    () -> restClient.post().uri("/v1/messages").body(body).retrieve().body(JsonNode.class));
+        } catch (RestClientException e) {
+            log.error("[Claude] interpretRecipeMessage failed: {}", e.getMessage());
+            throw RecipeChatPrompt.failed(e.getMessage());
+        }
+        JsonNode usage = response.path("usage");
+        log.info("[Claude] interpretRecipeMessage model={} products={} input_tokens={} output_tokens={} "
+                        + "cache_read_input_tokens={} cache_creation_input_tokens={} ms={}", model,
+                request.products().size(), usage.path("input_tokens").asInt(), usage.path("output_tokens").asInt(),
+                usage.path("cache_read_input_tokens").asInt(), usage.path("cache_creation_input_tokens").asInt(),
+                System.currentTimeMillis() - start);
+
+        for (JsonNode block : response.path("content")) {
+            if ("tool_use".equals(block.path("type").asText()) && RECIPE_TOOL.equals(block.path("name").asText())) {
+                return RecipeChatPrompt.parse(block.path("input"), request);
+            }
+        }
+        throw RecipeChatPrompt.failed("no " + RECIPE_TOOL + " block in the answer (stop_reason "
+                + response.path("stop_reason").asText() + ")");
+    }
+
     @Override
     public CatalogSpreadsheetInterpretation interpretCatalogSpreadsheet(CatalogSpreadsheetRequest request) {
         Map<String, Object> body = new LinkedHashMap<>();
@@ -203,7 +294,8 @@ public class ClaudeAIService implements AIService {
         long start = System.currentTimeMillis();
         JsonNode response;
         try {
-            response = restClient.post().uri("/v1/messages").body(body).retrieve().body(JsonNode.class);
+            response = ProviderRetry.once("Claude", BUSY,
+                    () -> restClient.post().uri("/v1/messages").body(body).retrieve().body(JsonNode.class));
         } catch (RestClientException e) {
             log.error("[Claude] interpretCatalogSpreadsheet failed: {}", e.getMessage());
             throw CatalogSpreadsheetPrompt.failed(e.getMessage());

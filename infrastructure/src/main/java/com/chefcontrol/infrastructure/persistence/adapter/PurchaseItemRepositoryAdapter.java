@@ -30,6 +30,14 @@ public class PurchaseItemRepositoryAdapter implements PurchaseItemRepository {
     }
 
     @Override
+    public java.util.Optional<LastPurchaseLine> findLastActiveLineOfProduct(UUID productId, UUID restaurantId) {
+        return jpa.findActiveLinesOfProduct(productId, restaurantId, org.springframework.data.domain.PageRequest.of(0, 1))
+                .stream().findFirst()
+                .map(r -> new LastPurchaseLine((java.math.BigDecimal) r[0], (UUID) r[1], (java.math.BigDecimal) r[2],
+                        (java.time.Instant) r[3], (Boolean) r[4]));
+    }
+
+    @Override
     public List<PurchaseItem> findByPurchaseIdIn(java.util.Collection<UUID> purchaseIds) {
         if (purchaseIds.isEmpty()) return List.of();
         return jpa.findByPurchaseIdIn(purchaseIds).stream().map(PurchaseItemJpaEntity::toDomain).toList();

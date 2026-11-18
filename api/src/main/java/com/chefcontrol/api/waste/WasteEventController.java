@@ -27,15 +27,17 @@ public class WasteEventController {
     public ResponseEntity<PagedResponse<WasteEventResponse>> listWasteEvents(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        return ResponseEntity.ok(
-                PagedResponse.from(wasteService.listWasteEvents(PageRequest.of(page, size)),
-                        WasteEventResponse::from));
+        var events = wasteService.listWasteEvents(PageRequest.of(page, size));
+        var undone = wasteService.findUndoneWasteEventIds(events.content().stream().map(e -> e.getId()).toList());
+        return ResponseEntity.ok(PagedResponse.from(events, e -> WasteEventResponse.from(e, undone.contains(e.getId()))));
     }
 
     @GetMapping("/{id}")
     @PreAuthorize("hasAuthority('PERM_WASTE_VIEW')")
     public ResponseEntity<WasteEventResponse> getWasteEvent(@PathVariable UUID id) {
-        return ResponseEntity.ok(WasteEventResponse.from(wasteService.getWasteEvent(id)));
+        var event = wasteService.getWasteEvent(id);
+        return ResponseEntity.ok(WasteEventResponse.from(event,
+                !wasteService.findUndoneWasteEventIds(java.util.List.of(event.getId())).isEmpty()));
     }
 
     @PostMapping

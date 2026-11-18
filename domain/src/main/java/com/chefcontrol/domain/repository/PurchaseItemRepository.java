@@ -16,4 +16,11 @@ public interface PurchaseItemRepository {
     PurchaseItem save(PurchaseItem item);
 
     List<PurchaseItem> findByPurchaseIdIn(Collection<UUID> purchaseIds);
+
+    /** La línea de la última compra no revertida de ese insumo (por fecha de la compra), tal como se cargó. */
+    Optional<LastPurchaseLine> findLastActiveLineOfProduct(UUID productId, UUID restaurantId);
+
+    /** @param pricesIncludeIva null en una compra vieja, de antes del IVA */
+    record LastPurchaseLine(java.math.BigDecimal quantity, UUID unitId, java.math.BigDecimal pricePerUnit,
+                            java.time.Instant purchasedAt, Boolean pricesIncludeIva) {}
 }

@@ -1,12 +1,11 @@
 package com.chefcontrol.api.ai;
 
-import com.chefcontrol.api.catalog.dto.CatalogImportRequest.PreparationImportRow;
-import com.chefcontrol.api.catalog.dto.CatalogImportRequest.ProductImportRow;
-import com.chefcontrol.api.catalog.dto.CatalogImportRequest.RecipeImportRow;
+import com.chefcontrol.api.ai.dto.InterpretCatalogResult;
 import com.chefcontrol.api.plan.RequiresFeature;
+import com.chefcontrol.application.exception.AppException;
+import com.chefcontrol.application.exception.ErrorCode;
 import com.chefcontrol.application.port.AIService.SpreadsheetRow;
 import com.chefcontrol.application.port.AIService.SpreadsheetSheet;
-import com.chefcontrol.application.service.CatalogImportService.ProductRow;
 import com.chefcontrol.application.service.CatalogSpreadsheetService;
 import com.chefcontrol.domain.plan.Feature;
 import com.chefcontrol.application.service.AIExecuteService;
@@ -22,6 +21,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -29,6 +29,8 @@ import java.io.IOException;
 
 import java.util.List;
 import java.util.Map;
+
+import static com.chefcontrol.api.shared.Authorities.hasAuthority;
 
 @RestController
 @RequestMapping("/ai")
@@ -49,9 +51,22 @@ public class AIController {
                 r.intent(), r.confidence(), r.needsConfirmation(), r.extractedData(), r.responseToUser()));
     }
 
+    /**
+     * Deprecado: lo reemplaza /ai/chat, se borra cuando el front migre. Hasta entonces pide además el permiso de la
+     * pantalla de esa operación (antes solo AI_USE: alguien sin PURCHASES_CREATE cargaba compras por acá).
+     */
     @PostMapping("/execute")
     @PreAuthorize("hasAuthority('PERM_AI_USE')")
-    public ResponseEntity<ExecuteResponse> execute(@Valid @RequestBody ExecuteRequest request) {
+    public ResponseEntity<ExecuteResponse> execute(@Valid @RequestBody ExecuteRequest request,
+                                                   Authentication authentication) {
+        String needed = switch (request.intent()) {
+            case "purchase" -> "PERM_PURCHASES_CREATE";
+            case "waste" -> "PERM_WASTE_CREATE";
+            default -> null;   // el resto no ejecuta nada
+        };
+        if (needed != null && !hasAuthority(authentication, needed)) {
+            throw AppException.forbidden(ErrorCode.FORBIDDEN, "Missing " + needed);
+        }
         var result = aiExecuteService.execute(request.intent(), request.data());
         return ResponseEntity.ok(new ExecuteResponse(result.success(), result.message(), result.created(), result.skipped()));
     }
@@ -70,14 +85,7 @@ public class AIController {
                         .map(row -> new SpreadsheetRow(row.ref(), row.cells() == null ? List.of() : row.cells()))
                         .toList()))
                 .toList());
-        return ResponseEntity.ok(new InterpretCatalogResult(
-                r.products().stream().map(AIController::toImportRow).toList(),
-                r.preparations().stream().map(x -> new PreparationImportRow(x.row(), x.preparation(), x.yieldQuantity(),
-                        x.yieldUnit(), x.ingredient(), x.quantity(), x.unit())).toList(),
-                r.recipes().stream().map(x -> new RecipeImportRow(
-                        x.row(), x.menuItem(), x.price(), x.section(), x.ingredient(), x.quantity(), x.unit())).toList(),
-                r.proposedProducts().stream().map(AIController::toImportRow).toList(),
-                r.warnings()));
+        return ResponseEntity.ok(InterpretCatalogResult.from(r));
     }
 
     /**
@@ -92,11 +100,6 @@ public class AIController {
     }
 
     record TranscriptionResponse(String text) {}
-
-    private static ProductImportRow toImportRow(ProductRow p) {
-        return new ProductImportRow(p.row(), p.name(), p.unit(), p.category(), p.minStock(), p.yieldPercentage(),
-                p.ivaPercentage());
-    }
 
     record InterpretRequest(@NotBlank @Size(max = 500) String message) {}
 
@@ -118,13 +121,4 @@ public class AIController {
                                  // nullable: el back acepta null (celda vacía) y sin esto el cliente generado no.
                                  @ArraySchema(schema = @Schema(nullable = true))
                                  List<Object> cells) {}
-
-    /**
-     * {@code row} de cada fila = el ref de la fila de origen. Las filas son las de /catalog-import, tal cual.
-     * {@code proposedProducts}: insumos que arma la IA porque una receta los usa y no existen; {@code row} = la primera
-     * fila de receta que los usa. El front los muestra como propuestos y los suma a products para la vista previa.
-     */
-    record InterpretCatalogResult(List<ProductImportRow> products, List<PreparationImportRow> preparations,
-                                  List<RecipeImportRow> recipes,
-                                  List<ProductImportRow> proposedProducts, List<String> warnings) {}
 }

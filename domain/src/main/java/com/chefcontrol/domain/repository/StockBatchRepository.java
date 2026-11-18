@@ -38,4 +38,7 @@ public interface StockBatchRepository {
      * (includes already-expired batches), across all restaurants — for the nightly alert sweep.
      */
     List<StockBatch> findExpiringSoon(LocalDate maxDate);
+
+    /** Los lotes con stock de ese local que vencen hasta {@code maxDate} (los vencidos también), del más próximo. */
+    List<StockBatch> findExpiringByRestaurant(UUID restaurantId, LocalDate maxDate);
 }
