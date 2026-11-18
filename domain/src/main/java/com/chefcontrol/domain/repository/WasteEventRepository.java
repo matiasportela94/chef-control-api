@@ -17,6 +17,9 @@ public interface WasteEventRepository {
 
     WasteEvent save(WasteEvent event);
 
+    /** De esos eventos, los deshechos: su movimiento WASTE está revertido (el waste_event queda igual). */
+    java.util.Set<UUID> findUndoneIds(java.util.Collection<UUID> ids);
+
     /** Las tres sin las mermas deshechas (como las ventas y compras revertidas): ver JpaWasteEventRepository. */
     long countByRestaurantIdAndCreatedAtGreaterThanEqual(UUID restaurantId, Instant since);
 

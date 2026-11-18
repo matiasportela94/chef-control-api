@@ -19,9 +19,15 @@ public record WasteEventResponse(
         WasteReason reason,
         BigDecimal cost,
         UUID userId,
-        Instant createdAt
+        Instant createdAt,
+        /** Deshecha: su movimiento se revirtió (desde el chat o /stock-movements). Sigue en la lista; no suma en el tablero. */
+        boolean reversed
 ) {
     public static WasteEventResponse from(WasteEvent event) {
+        return from(event, false);
+    }
+
+    public static WasteEventResponse from(WasteEvent event, boolean reversed) {
         return new WasteEventResponse(
                 event.getId(),
                 event.getProductId(),
@@ -34,6 +40,7 @@ public record WasteEventResponse(
                 event.getReason(),
                 event.getCost(),
                 event.getUserId(),
-                event.getCreatedAt());
+                event.getCreatedAt(),
+                reversed);
     }
 }

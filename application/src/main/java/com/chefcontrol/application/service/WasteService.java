@@ -44,6 +44,11 @@ public class WasteService {
         return wasteEventRepository.findByRestaurantIdOrderByCreatedAtDesc(TenantContext.require(), pageRequest);
     }
 
+    /** De esos eventos, los deshechos (para que /waste los marque: el evento sigue en la lista). */
+    public java.util.Set<UUID> findUndoneWasteEventIds(java.util.Collection<UUID> ids) {
+        return wasteEventRepository.findUndoneIds(ids);
+    }
+
     public WasteEvent getWasteEvent(UUID id) {
         return wasteEventRepository.findByIdAndRestaurantId(id, TenantContext.require())
                 .orElseThrow(() -> AppException.notFound(ErrorCode.WASTE_EVENT_NOT_FOUND, "Waste event not found"));

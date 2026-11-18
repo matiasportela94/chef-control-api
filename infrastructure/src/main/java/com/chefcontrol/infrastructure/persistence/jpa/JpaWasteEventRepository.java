@@ -29,6 +29,10 @@ public interface JpaWasteEventRepository extends JpaRepository<WasteEventJpaEnti
     String NOT_UNDONE = " AND EXISTS (SELECT 1 FROM stock_movements m WHERE m.reference_id = w.id"
             + " AND m.reference_type = 'waste_event' AND m.type = 'WASTE' AND m.reversed_by IS NULL)";
 
+    @Query(value = "SELECT DISTINCT m.reference_id FROM stock_movements m WHERE m.reference_type = 'waste_event'"
+            + " AND m.type = 'WASTE' AND m.reversed_by IS NOT NULL AND m.reference_id IN (:ids)", nativeQuery = true)
+    java.util.List<UUID> findUndoneIds(@Param("ids") java.util.Collection<UUID> ids);
+
     @Query(value = "SELECT COUNT(*) FROM waste_events w WHERE w.restaurant_id = :restaurantId AND w.created_at >= :since"
             + NOT_UNDONE, nativeQuery = true)
     long countNotUndoneSince(@Param("restaurantId") UUID restaurantId, @Param("since") Instant since);
