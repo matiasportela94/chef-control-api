@@ -882,7 +882,8 @@ public class ChatService {
             // pregunta si hizo una; si no, el texto fijo.
             String asked = interpretation.responseToUser();
             String text = asked != null && asked.contains("?") ? NOTHING_REGISTERED + ". " + asked
-                    : NOTHING_REGISTERED + ": no entendí qué registrar. Probá con algo como «compré 10 kg de harina a $2.000».";
+                    : NOTHING_REGISTERED + ": no entendí el mensaje. Podés registrar algo («compré 10 kg de harina a "
+                            + "$2.000») o preguntar («¿cuánto vendimos ayer?»).";
             return new ChatResult(ChatStatus.NOT_UNDERSTOOD, text, List.of(), List.of(), skipped);
         }
         boolean onlyUnsupported = skipped.stream().allMatch(s -> s.errorCode() == ErrorCode.CHAT_OPERATION_NOT_SUPPORTED);

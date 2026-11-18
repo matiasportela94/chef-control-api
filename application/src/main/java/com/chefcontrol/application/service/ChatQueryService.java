@@ -315,6 +315,13 @@ public class ChatQueryService {
             case "this_week" -> new Period(monday, today, "Esta semana");
             case "last_week" -> new Period(monday.minusWeeks(1), monday.minusDays(1), "La semana pasada");
             case "this_month" -> new Period(today.withDayOfMonth(1), today, "Este mes");
+            // Para adelante: el modelo los nombra y la validación de abajo los rechaza ("¿cuánto vendimos mañana?").
+            case "tomorrow" -> new Period(today.plusDays(1), today.plusDays(1), "Mañana");
+            case "next_week" -> new Period(monday.plusWeeks(1), monday.plusWeeks(1).plusDays(6), "La semana que viene");
+            case "next_month" -> {
+                LocalDate first = today.withDayOfMonth(1).plusMonths(1);
+                yield new Period(first, first.with(TemporalAdjusters.lastDayOfMonth()), "El mes que viene");
+            }
             case "last_month" -> {
                 LocalDate first = today.withDayOfMonth(1).minusMonths(1);
                 yield new Period(first, first.with(TemporalAdjusters.lastDayOfMonth()), "El mes pasado");
@@ -347,7 +354,10 @@ public class ChatQueryService {
         String name = q.period() == null ? "" : q.period().trim().toLowerCase(Locale.ROOT);
         return switch (name) {
             case "today" -> today;
+            case "tomorrow" -> today.plusDays(1);
             case "this_week" -> today.with(TemporalAdjusters.nextOrSame(DayOfWeek.SUNDAY));
+            case "next_week" -> today.with(TemporalAdjusters.nextOrSame(DayOfWeek.SUNDAY)).plusWeeks(1);
+            case "next_month" -> today.plusMonths(1).with(TemporalAdjusters.lastDayOfMonth());
             case "this_month" -> today.with(TemporalAdjusters.lastDayOfMonth());
             case "last_n_days" -> q.days() == null || q.days() < 1 ? today.plusDays(EXPIRATIONS_DEFAULT_DAYS)
                     : today.plusDays(Math.min(q.days(), MAX_PERIOD_DAYS));

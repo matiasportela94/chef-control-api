@@ -103,7 +103,8 @@ final class ChatPrompt {
             compró), waste (cuánta merma hubo), last_purchase_price (a cuánto se compró por última vez un insumo: el \
             insumo en items), food_cost (de un plato: el plato en items, con menuItemId; o del período, sin items) u \
             open_alerts (alertas abiertas). Si pregunta otra cosa, query null. period, si dice uno: today, yesterday, \
-            this_week, last_week, this_month, last_month, last_n_days (con days: "los últimos 10 días" → 10) o range \
+            this_week, last_week, this_month, last_month, last_n_days (con days: "los últimos 10 días" → 10), para \
+            adelante tomorrow, next_week o next_month ("¿qué vence mañana?", "¿cuánto vendimos mañana?"), o range \
             (solo si dice fechas: "del 1 al 15 de noviembre" → from y to, YYYY-MM-DD). NUNCA calcules fechas: "ayer" es \
             yesterday, "la semana pasada" es last_week; el sistema cuenta los días. Sin período dicho, period null. No \
             respondas la consulta ni des números: los pone el sistema. Con la CONVERSACIÓN, "¿y ayer?" después de \
@@ -175,7 +176,7 @@ final class ChatPrompt {
                 "query", Map.of("type", "string", "enum", List.of("stock", "expirations", "sales", "purchases", "waste",
                         "last_purchase_price", "food_cost", "open_alerts")),
                 "period", Map.of("type", "string", "enum", List.of("today", "yesterday", "this_week", "last_week",
-                        "this_month", "last_month", "last_n_days", "range")),
+                        "this_month", "last_month", "last_n_days", "tomorrow", "next_week", "next_month", "range")),
                 "days", type("integer"), "from", type("string"), "to", type("string")),
                 "required", List.of("type", "items"));
         return Map.of("type", "object", "properties", Map.of(

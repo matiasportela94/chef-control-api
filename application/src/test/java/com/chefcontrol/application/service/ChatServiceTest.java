@@ -270,6 +270,14 @@ class ChatServiceTest {
                 "range", null, LocalDate.of(2025, 1, 1), wednesday), wednesday));                 // más de un año
         assertThrows(ChatQueryService.InvalidPeriod.class, () -> ChatQueryService.period(new InterpretedQuery("sales",
                 "range", null, wednesday, wednesday.minusDays(3)), wednesday));                   // desde > hasta
+        for (String future : List.of("tomorrow", "next_week", "next_month")) {   // "¿cuánto vendimos mañana?"
+            assertThrows(ChatQueryService.InvalidPeriod.class, () -> ChatQueryService.period(
+                    new InterpretedQuery("sales", future, null, null, null), wednesday), future);
+        }
+        assertEquals(wednesday.plusDays(1), ChatQueryService.expirationLimit(
+                new InterpretedQuery("expirations", "tomorrow", null, null, null), wednesday));     // "¿qué vence mañana?"
+        assertEquals(LocalDate.of(2026, 11, 29), ChatQueryService.expirationLimit(
+                new InterpretedQuery("expirations", "next_week", null, null, null), wednesday));
         assertEquals(wednesday.plusDays(7), ChatQueryService.expirationLimit(
                 new InterpretedQuery("expirations", null, null, null, null), wednesday));
         assertEquals(LocalDate.of(2026, 11, 22), ChatQueryService.expirationLimit(
@@ -576,8 +584,8 @@ class ChatServiceTest {
     void notUnderstoodAlwaysSaysNothingWasRegistered() {
         // El modelo contestó "Registrado." sin ninguna operación: el texto no depende de él.
         when(aiService.interpretChatMessage(any())).thenReturn(new ChatInterpretation(90, false, "Registrado.", List.of()));
-        assertEquals("No registré nada: no entendí qué registrar. Probá con algo como «compré 10 kg de harina a $2.000».",
-                service.sendChatMessage("sí", ALL).message());
+        assertEquals("No registré nada: no entendí el mensaje. Podés registrar algo («compré 10 kg de harina a $2.000») "
+                + "o preguntar («¿cuánto vendimos ayer?»).", service.sendChatMessage("sí", ALL).message());
 
         when(aiService.interpretChatMessage(any())).thenReturn(new ChatInterpretation(90, false, "¿De qué plato hablás?",
                 List.of()));
