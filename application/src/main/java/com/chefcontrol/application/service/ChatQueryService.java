@@ -218,8 +218,7 @@ public class ChatQueryService {
         return period.label() + " compraste " + ChatService.money(total) + " en " + count + (count == 1 ? " compra." : " compras.");
     }
 
-    // ponytail: la misma suma del tablero, que cuenta también las mermas deshechas (el waste_event queda aunque se
-    // revierta su movimiento). Avisado; se arregla en las dos a la vez.
+    /** La misma suma del tablero: sin las mermas deshechas. */
     private String waste(Period period) {
         UUID restaurantId = TenantContext.require();
         long count = wasteEventRepository.countByRestaurantIdAndCreatedAtBetween(restaurantId, period.start(), period.end());

@@ -17,6 +17,7 @@ public interface WasteEventRepository {
 
     WasteEvent save(WasteEvent event);
 
+    /** Las tres sin las mermas deshechas (como las ventas y compras revertidas): ver JpaWasteEventRepository. */
     long countByRestaurantIdAndCreatedAtGreaterThanEqual(UUID restaurantId, Instant since);
 
     long countByRestaurantIdAndCreatedAtBetween(UUID restaurantId, Instant from, Instant to);
