@@ -132,7 +132,8 @@ public class ChatSalesReportService {
                 + (ignored == 0 ? "" : " (" + ignored + " que no " + (ignored == 1 ? "es un plato" : "son platos") + ", ignorados)")
                 + ". Revisalo y confirmalo."
                 + (existing == null ? "" : " Ese día ya tiene " + existing.count() + (existing.count() == 1 ? " venta" : " ventas")
-                        + " por " + ChatService.money(existing.total()) + ": elegí si las reemplazo o le sumo el cierre.")
+                        + " por " + ChatService.money(existing.total()) + ": elegí si " + (existing.count() == 1 ? "la" : "las")
+                        + " reemplazo o le sumo el cierre.")
                 + (warnings.isEmpty() ? "" : " Ojo: " + String.join(" ", warnings.stream().map(SalesReportWarning::message).toList()));
         return new ChatResult(ChatStatus.NEEDS_CONFIRMATION, message, List.of(), List.of(), List.of(), List.of(), null,
                 null, preview);
