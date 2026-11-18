@@ -16,7 +16,7 @@ spring:
     multipart:
       # El audio de /ai/transcribe (TranscriptionService.MAX_BYTES). Las fotos validan sus 2 MB en su servicio.
       max-file-size: 4MB
-      max-request-size: 5MB
+      max-request-size: 12MB   # cinco fotos de una factura (F19, tanda 7); cada archivo, 4 MB
 
   # Obligatorio con app.mail.provider=smtp (el default): sin usuario/clave la app no arranca. Gmail: puerto 587 + STARTTLS + contraseña de aplicación.
   mail:

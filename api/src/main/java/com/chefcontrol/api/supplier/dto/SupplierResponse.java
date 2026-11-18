@@ -12,6 +12,7 @@ public record SupplierResponse(
         String email,
         String address,
         String notes,
+        String cuit,
         boolean isActive
 ) {
     public static SupplierResponse from(Supplier supplier) {
@@ -25,6 +26,7 @@ public record SupplierResponse(
                 contact.email(),
                 contact.address(),
                 contact.notes(),
+                supplier.getCuit(),
                 supplier.isActive());
     }
 }

@@ -26,6 +26,11 @@ public class SupplierRepositoryAdapter implements SupplierRepository {
     }
 
     @Override
+    public Optional<Supplier> findActiveByRestaurantIdAndCuit(UUID restaurantId, String cuit) {
+        return jpa.findFirstByRestaurantIdAndCuitAndIsActiveTrue(restaurantId, cuit).map(SupplierJpaEntity::toDomain);
+    }
+
+    @Override
     public Optional<Supplier> findByIdAndRestaurantId(UUID id, UUID restaurantId) {
         return jpa.findByIdAndRestaurantId(id, restaurantId).map(SupplierJpaEntity::toDomain);
     }

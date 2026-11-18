@@ -15,5 +15,9 @@ public record CreatePurchaseRequest(
         /** Si los precios traen el IVA adentro (Factura B). Null = el default del restaurante: false si es
          *  responsable inscripto, true si es monotributo o no tiene condición cargada. */
         Boolean pricesIncludeIva,
-        @NotEmpty @Valid List<PurchaseItemRequest> items
+        @NotEmpty @Valid List<PurchaseItemRequest> items,
+        com.chefcontrol.domain.purchase.InvoiceType invoiceType,
+        @Size(max = 30) String invoiceNumber,
+        /** "Corregir": la compra revertida cuya factura pasa a esta (CONFLICT ATTACHMENTS_NOT_MOVABLE si no lo está). */
+        UUID attachmentsFromPurchaseId
 ) {}

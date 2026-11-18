@@ -54,10 +54,10 @@ public class SupplierController {
     }
 
     private SupplierCommand toCommand(CreateSupplierRequest r) {
-        return new SupplierCommand(r.name(), r.phone(), r.email(), r.address(), r.notes());
+        return new SupplierCommand(r.name(), r.phone(), r.email(), r.address(), r.notes(), r.cuit());
     }
 
     private SupplierCommand toCommand(UpdateSupplierRequest r) {
-        return new SupplierCommand(r.name(), r.phone(), r.email(), r.address(), r.notes());
+        return new SupplierCommand(r.name(), r.phone(), r.email(), r.address(), r.notes(), r.cuit());
     }
 }

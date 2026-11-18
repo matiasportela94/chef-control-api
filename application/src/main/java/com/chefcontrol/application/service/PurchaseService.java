@@ -56,6 +56,7 @@ public class PurchaseService {
     private final UnitConversionService unitConversionService;
     private final AlertEvaluationService alertEvaluationService;
     private final AuditService auditService;
+    private final PurchaseAttachmentRepository purchaseAttachmentRepository;
     private final CurrentUserProvider currentUserProvider;
 
     public Page<Purchase> listPurchases(PageRequest pageRequest) {
@@ -128,9 +129,20 @@ public class PurchaseService {
                 .notes(cmd.notes())
                 .purchasedAt(purchasedAt)
                 .pricesIncludeIva(pricesIncludeIva)
+                .invoiceType(cmd.invoiceType())
+                .invoiceNumber(cmd.invoiceNumber() == null || cmd.invoiceNumber().isBlank() ? null
+                        : cmd.invoiceNumber().trim())
                 .build();
         purchase.totalize(lines);
         purchase = purchaseRepository.save(purchase);
+        if (cmd.attachmentsFromPurchaseId() != null) {
+            // Solo desde una compra revertida del mismo local: "Corregir" no le saca la factura a una compra viva.
+            purchaseRepository.findByIdAndRestaurantId(cmd.attachmentsFromPurchaseId(), restaurantId)
+                    .filter(old -> old.getStatus() == com.chefcontrol.domain.purchase.PurchaseStatus.REVERSED)
+                    .orElseThrow(() -> AppException.conflict(ErrorCode.ATTACHMENTS_NOT_MOVABLE,
+                            "Attachments move only from a reversed purchase of this restaurant"));
+            purchaseAttachmentRepository.moveAll(cmd.attachmentsFromPurchaseId(), purchase.getId());
+        }
 
         for (int i = 0; i < lines.size(); i++) {
             ResolvedItem item = resolvedItems.get(i);
@@ -328,14 +340,26 @@ public class PurchaseService {
 
     // ── Commands ─────────────────────────────────────────────────────────────
 
-    /** {@code pricesIncludeIva} null = el default de la condición del restaurante. */
+    /**
+     * {@code pricesIncludeIva} null = el default de la condición del restaurante.
+     *
+     * @param attachmentsFromPurchaseId "Corregir" (revertir y recrear): la factura de esa compra revertida pasa a esta
+     */
     public record CreatePurchaseCommand(
             UUID supplierId,
             String notes,
             Instant purchasedAt,
             Boolean pricesIncludeIva,
-            List<PurchaseItemCommand> items
-    ) {}
+            List<PurchaseItemCommand> items,
+            com.chefcontrol.domain.purchase.InvoiceType invoiceType,
+            String invoiceNumber,
+            UUID attachmentsFromPurchaseId
+    ) {
+        public CreatePurchaseCommand(UUID supplierId, String notes, Instant purchasedAt, Boolean pricesIncludeIva,
+                                     List<PurchaseItemCommand> items) {
+            this(supplierId, notes, purchasedAt, pricesIncludeIva, items, null, null, null);
+        }
+    }
 
     /** {@code ivaPercentage} null = la del insumo, y si no tiene, 0. */
     public record PurchaseItemCommand(

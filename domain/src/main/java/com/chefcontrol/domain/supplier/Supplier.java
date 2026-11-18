@@ -14,6 +14,8 @@ public class Supplier {
     private UUID restaurantId;
     private String name;
     private ContactInfo contactInfo;
+    /** 11 dígitos, sin guiones (ver {@link Cuit}); null si no se cargó. */
+    private String cuit;
     private boolean isActive = true;
     private Instant createdAt;
 
