@@ -58,8 +58,12 @@ public class ChatRecipeService {
     public record RecipePreview(String name, CatalogSpreadsheetInterpretation catalogImport,
                                 List<UUID> replaceRecipeMenuItemIds, List<UUID> replacePreparationProductIds) {}
 
-    /** Una receta tal como la detectó la primera llamada: el ítem trae el plato o la preparación y su nombre. */
-    record RecipeRequest(boolean preparation, InterpretedItem item) {}
+    /**
+     * Una receta tal como la detectó la primera llamada: el ítem trae el plato o la preparación y su nombre.
+     *
+     * @param text el pedazo del mensaje que es de esta receta; null = el mensaje entero
+     */
+    record RecipeRequest(boolean preparation, InterpretedItem item, String text) {}
 
     /**
      * Una receta por mensaje: las demás van a {@code skipped}. Sin permiso o sin el plan, tampoco se llama al modelo.
@@ -97,6 +101,9 @@ public class ChatRecipeService {
             return null;
         }
 
+        // Solo lo que es de la receta: con el mensaje entero, "compré 2 kg de tomate y la napolitana lleva jamón" armó
+        // la napolitana con tomate.
+        String said = request.text() == null || request.text().isBlank() ? message : request.text();
         UUID restaurantId = TenantContext.require();
         Recipe recipe = dish != null ? recipeRepository.findByMenuItemIdAndRestaurantId(dish.getId(), restaurantId).orElse(null)
                 : product != null ? recipeRepository.findByProductIdAndRestaurantId(product.getId(), restaurantId).orElse(null)
@@ -105,7 +112,7 @@ public class ChatRecipeService {
 
         CatalogSpreadsheetInterpretation answer;
         try {
-            answer = aiService.interpretRecipeMessage(new RecipeMessageRequest(message, name, preparation, current,
+            answer = aiService.interpretRecipeMessage(new RecipeMessageRequest(said, name, preparation, current,
                     catalog.chatProducts(), catalog.unitOptions()));
         } catch (AppException e) {
             if (e.getErrorCode() != ErrorCode.AI_INTERPRETATION_FAILED) throw e;
@@ -119,6 +126,7 @@ public class ChatRecipeService {
             return null;
         }
         if (preparation && current != null) answer = keepYield(answer, current);
+        answer = checkUnits(said, answer, current, catalog);
         return new RecipePreview(name, answer,
                 dish != null ? List.of(dish.getId()) : List.of(),
                 product != null ? List.of(product.getId()) : List.of());
@@ -179,8 +187,42 @@ public class ChatRecipeService {
     }
 
     private static String capitalized(String name) {
-        if (name == null || name.isBlank()) return null;
-        String n = name.trim().replaceAll("\\s+", " ");
-        return Character.toUpperCase(n.charAt(0)) + n.substring(1);
+        return CatalogSpreadsheetService.capitalized(name);
+    }
+
+    /**
+     * Una unidad que el usuario no dijo y que no estaba en la receta se avisa en la vista previa: el modelo a veces la
+     * cambia ("100 g de harina" → 100 kg) y entre veinte ingredientes no se ve.
+     */
+    private static CatalogSpreadsheetInterpretation checkUnits(String message, CatalogSpreadsheetInterpretation r,
+                                                               CurrentRecipe current, ChatCatalog catalog) {
+        List<String> warnings = new ArrayList<>(r.warnings());
+        List<RecipeLine> lines = new ArrayList<>();
+        r.recipes().forEach(x -> lines.add(new RecipeLine(x.ingredient(), x.quantity(), x.unit())));
+        r.preparations().forEach(x -> lines.add(new RecipeLine(x.ingredient(), x.quantity(), x.unit())));
+        for (RecipeLine l : lines) {
+            Unit u = l.unit() == null || l.ingredient() == null ? null : catalog.unitNamed(l.unit());
+            if (u == null || ChatService.unitSaid(message, u) || wasThere(current, l.ingredient(), u)) continue;
+            warnings.add("Revisá la unidad de «" + l.ingredient() + "»: entendí "
+                    + (l.quantity() == null ? "" : ChatService.num(l.quantity()) + " ") + u.getAbbreviation()
+                    + " y en el mensaje no dijiste " + u.getAbbreviation() + ".");
+        }
+        if (!r.preparations().isEmpty() && r.preparations().getFirst().yieldUnit() != null) {
+            Unit y = catalog.unitNamed(r.preparations().getFirst().yieldUnit());
+            boolean same = current != null && current.yieldUnit() != null && y != null
+                    && CatalogImportService.key(current.yieldUnit()).equals(CatalogImportService.key(y.getAbbreviation()));
+            if (y != null && !same && !ChatService.unitSaid(message, y)) {
+                warnings.add("Revisá cuánto rinde: entendí " + y.getAbbreviation() + " y en el mensaje no lo dijiste.");
+            }
+        }
+        return warnings.size() == r.warnings().size() ? r : new CatalogSpreadsheetInterpretation(r.products(),
+                r.preparations(), r.recipes(), r.proposedProducts(), r.ingredientMatches(), warnings);
+    }
+
+    /** Un ingrediente que ya estaba en la receta con esa unidad: el modelo lo copió, no lo dijo el usuario. */
+    private static boolean wasThere(CurrentRecipe current, String ingredient, Unit unit) {
+        return current != null && current.ingredients().stream().anyMatch(c -> c.ingredient() != null && c.unit() != null
+                && CatalogImportService.key(c.ingredient()).equals(CatalogImportService.key(ingredient))
+                && CatalogImportService.key(c.unit()).equals(CatalogImportService.key(unit.getAbbreviation())));
     }
 }

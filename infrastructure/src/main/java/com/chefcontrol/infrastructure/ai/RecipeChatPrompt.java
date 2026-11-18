@@ -53,7 +53,8 @@ final class RecipeChatPrompt {
             de queso" → la actual más el queso. Lo que el mensaje no cambia va exactamente como en la RECETA ACTUAL \
             (mismo nombre, cantidad y unidad). Si no hay receta actual, o el mensaje da la receta entera, solo lo que \
             dice el mensaje.
-            2. quantity y unit: en un plato, para UNA porción (si dice "para 4 porciones", dividí cada cantidad y \
+            2. quantity y unit: los que dijo para ese ingrediente, nunca los de otro ni los del catálogo ("200 g de \
+            acelga y 100 g de harina" → harina 100 y g). En un plato, para UNA porción (si dice "para 4 porciones", dividí cada cantidad y \
             avisalo en warnings); en una preparación, para la tanda que rinde yieldQuantity. unit es una abreviatura \
             de la lista de UNIDADES ("gramos" → g, "kilos" → kg, "litros" → l, "unidades" → u). Números como números, \
             con punto decimal ("medio kilo" → 0.5 y kg; "tres" → 3).

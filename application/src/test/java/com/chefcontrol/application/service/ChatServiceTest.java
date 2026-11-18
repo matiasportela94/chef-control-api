@@ -202,6 +202,27 @@ class ChatServiceTest {
     }
 
     @Test
+    void aUnitNobodySaidIsAskedBeforeRegistering() {
+        // Pasó con la IA real: "100 g de harina" volvió como 100 kg una vez de tres.
+        answer(95, false, op("purchase", item(comino, "100", "kg", "3000", null)));
+
+        var result = service.sendChatMessage("compré 200 g de tomate y 100 g de comino a 3000", ALL);
+
+        assertEquals(ChatStatus.NEEDS_CONFIRMATION, result.status());
+        assertTrue(result.message().contains("«Comino»: entendí 100 kg, ¿es así?"), result.message());
+        verify(purchaseService, never()).createPurchase(any());
+    }
+
+    @Test
+    void unitsAreRecognizedTheWayTheyAreSaid() {
+        assertTrue(ChatService.unitSaid("medio kilo de comino", kg));
+        assertTrue(ChatService.unitSaid("500g de comino", g));
+        assertTrue(ChatService.unitSaid("2 litros de leche", l));
+        assertTrue(ChatService.unitSaid("3 huevos", unit("Unidad", "u")));
+        assertFalse(ChatService.unitSaid("100 g de harina", kg));
+    }
+
+    @Test
     void aTotalIsDividedByTheBackNeverByTheModelAndAsked() {
         // "5 kg de comino, 150 mil en total": el modelo dice "total" y devuelve 150000 tal cual.
         answer(95, false, op("purchase", new InterpretedItem(comino.getId(), null, "comino", new BigDecimal("5"), "kg",
@@ -437,6 +458,27 @@ class ChatServiceTest {
     }
 
     @Test
+    void theRecipeCallGetsOnlyItsPartOfTheMessageAndAWrongUnitIsWarned() {
+        // En un mensaje mixto, la compra se colaba como ingrediente de la receta.
+        answer(95, false, op("purchase", item(comino, "2", "kg", "1500", null)),
+                new InterpretedOperation("recipe", List.of(dish(milanesa, "1")), "la milanesa lleva 100 g de tomate"));
+        when(aiService.interpretRecipeMessage(any())).thenReturn(new CatalogSpreadsheetInterpretation(List.of(),
+                List.of(), List.of(new RecipeRow(1, "Milanesa", null, null, "tomate", new BigDecimal("100"), "kg")),
+                List.of(), List.of(), List.of()));
+
+        var result = service.sendChatMessage("compré 2 kg de comino a 1500 y la milanesa lleva 100 g de tomate", ALL);
+
+        var request = ArgumentCaptor.forClass(RecipeMessageRequest.class);
+        verify(aiService).interpretRecipeMessage(request.capture());
+        assertEquals("la milanesa lleva 100 g de tomate", request.getValue().message());
+        var catalogImport = result.recipe().catalogImport();
+        assertEquals("Tomate", catalogImport.recipes().getFirst().ingredient());   // como en el catálogo
+        // "kg" está en el mensaje entero (la compra), pero no en el pedazo de la receta: se avisa.
+        assertTrue(catalogImport.warnings().contains(
+                "Revisá la unidad de «Tomate»: entendí 100 kg y en el mensaje no dijiste kg."), catalogImport.warnings().toString());
+    }
+
+    @Test
     void aRecipeTheModelCannotWriteIsSkippedAndTheRestStillRuns() {
         answer(95, false, op("waste", item(tomate, "1", "kg", null, "DAMAGED")), op("recipe", dish(milanesa, "1")));
         when(aiService.interpretRecipeMessage(any()))
@@ -570,7 +612,7 @@ class ChatServiceTest {
     @Test
     void anAdjustmentIsACountOfOnlyThoseProductsInTheirUnit() {
         // "quedan 800 g de comino y no queda tomate": lo contado, convertido; 0 vale.
-        answer(95, false, op("stock_adjustment", item(comino, "800", "g", null, null), item(tomate, "0", "kg", null, null)));
+        answer(95, false, op("stock_adjustment", item(comino, "800", "g", null, null), item(tomate, "0", null, null, null)));
         when(unitConversionService.convert(new BigDecimal("800"), g.getId(), kg.getId())).thenReturn(new BigDecimal("0.8"));
 
         var result = service.sendChatMessage("quedan 800 g de comino y no queda tomate", ALL);
@@ -621,7 +663,7 @@ class ChatServiceTest {
                 op("waste", item(tomate, "2", "kg", null, null)));
         when(wasteService.createWasteEvent(any())).thenThrow(AppException.notFound(ErrorCode.PRODUCT_NOT_FOUND, "gone"));
 
-        var result = service.sendChatMessage("compré comino y tiré tomate", ALL);
+        var result = service.sendChatMessage("compré 1 kg de comino a 3000 y tiré 2 kg de tomate", ALL);
 
         assertEquals(ChatStatus.REGISTERED, result.status());
         assertEquals(1, result.actions().size());

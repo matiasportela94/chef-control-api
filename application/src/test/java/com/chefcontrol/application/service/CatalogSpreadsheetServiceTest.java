@@ -140,13 +140,13 @@ class CatalogSpreadsheetServiceTest {
                         new ProductRow(8, "Tomates", "kg", null, null, null)),
                 List.of(new IngredientMatch(5, "Papas", "papa"),        // existe en el catálogo como "Papa"
                         new IngredientMatch(6, "cebollas", "Cebolla"),  // existe en la hoja de insumos
-                        new IngredientMatch(7, "PAPA", "Papa"),         // solo mayúsculas: no hace falta tocarlo
+                        new IngredientMatch(7, "PAPA", "Papa"),         // solo mayúsculas: como el catálogo, sin aviso
                         new IngredientMatch(8, "Tomates", "Tomate")),   // no existe: queda como vino
                 List.of());
 
         var result = service.interpretCatalogSpreadsheet(List.of(new SpreadsheetSheet("Recetas", List.of(row(1, "x")))));
 
-        assertEquals(List.of("Papa", "Cebolla", "PAPA", "Tomates"),
+        assertEquals(List.of("Papa", "Cebolla", "Papa", "Tomates"),
                 result.recipes().stream().map(RecipeRow::ingredient).toList());
         assertEquals(List.of(
                 "Usé 'Papa' del catálogo para 'Papas'.",
@@ -167,7 +167,8 @@ class CatalogSpreadsheetServiceTest {
         var result = service.interpretCatalogSpreadsheet(List.of(new SpreadsheetSheet("Recetas", List.of(row(1, "x")))));
 
         assertEquals(List.of("Harina"), result.products().stream().map(ProductRow::name).toList());
-        assertEquals(List.of("limon", "Azúcar"), result.proposedProducts().stream().map(ProductRow::name).toList());
+        // Un propuesto sale con mayúscula: "limon" se habría creado así.
+        assertEquals(List.of("Limon", "Azúcar"), result.proposedProducts().stream().map(ProductRow::name).toList());
     }
 
     @Test

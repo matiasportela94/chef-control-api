@@ -127,14 +127,14 @@ public class ChatService {
             return ChatResult.of(ChatStatus.NOT_UNDERSTOOD, "No pude interpretar el mensaje. Probá de nuevo.");
         }
 
-        Resolution resolution = new Resolution(products, menuItems, units, preparations);
+        Resolution resolution = new Resolution(message, products, menuItems, units, preparations);
         List<Skipped> skipped = new ArrayList<>();
         List<Operation> operations = new ArrayList<>();
         List<ChatRecipeService.RecipeRequest> recipes = new ArrayList<>();
         for (InterpretedOperation op : interpretation.operations()) {
             if (isRecipe(op.type())) {
                 boolean preparation = "preparation_recipe".equalsIgnoreCase(op.type().trim());
-                op.items().forEach(i -> recipes.add(new ChatRecipeService.RecipeRequest(preparation, i)));
+                op.items().forEach(i -> recipes.add(new ChatRecipeService.RecipeRequest(preparation, i, op.text())));
                 continue;
             }
             ChatOperationType type = typeOf(op.type());
@@ -161,8 +161,8 @@ public class ChatService {
         if (operations.isEmpty()) return withRecipe(nothingToRegister(interpretation, skipped), recipe);
 
         boolean doubtful = interpretation.needsConfirmation() || interpretation.confidence() < MIN_CONFIDENCE;
-        if (doubtful || !resolution.priceQuestions.isEmpty()) {
-            String question = !resolution.priceQuestions.isEmpty() ? String.join(" ", resolution.priceQuestions)
+        if (doubtful || !resolution.questions.isEmpty()) {
+            String question = !resolution.questions.isEmpty() ? String.join(" ", resolution.questions)
                     : interpretation.needsConfirmation() && interpretation.responseToUser() != null
                     ? interpretation.responseToUser()
                     : "No estoy seguro de haber entendido. ¿Lo registro así?";
@@ -395,10 +395,12 @@ public class ChatService {
         final Map<UUID, Unit> unitsById = new HashMap<>();
 
         final Set<UUID> preparations;
-        /** Las compras cuyo precio puede leerse de dos formas: se pregunta antes de registrar nada. */
-        final List<String> priceQuestions = new ArrayList<>();
+        /** Lo que hay que preguntar antes de registrar nada: un precio con dos lecturas, una unidad que nadie dijo. */
+        final List<String> questions = new ArrayList<>();
+        final String message;
 
-        Resolution(List<Product> catalog, List<MenuItem> dishes, List<Unit> all, Set<UUID> preparations) {
+        Resolution(String message, List<Product> catalog, List<MenuItem> dishes, List<Unit> all, Set<UUID> preparations) {
+            this.message = message;
             this.preparations = preparations;
             catalog.forEach(p -> products.put(p.getId(), p));
             dishes.forEach(m -> menuItems.put(m.getId(), m));
@@ -431,6 +433,10 @@ public class ChatService {
                 skipped.add(skip(type, product.getName(), ErrorCode.UNIT_NOT_FOUND));
                 return null;
             }
+            if (item.unit() != null && !unitSaid(message, unit)) {
+                questions.add("«" + product.getName() + "»: entendí " + num(item.quantity()) + " " + unit.getAbbreviation()
+                        + ", ¿es así?");
+            }
             try {
                 BigDecimal quantity = convert(() -> unitConversionService.convert(
                         item.quantity(), unit.getId(), product.getDefaultUnitId()), 3);
@@ -449,6 +455,10 @@ public class ChatService {
                         skipped.add(skip(type, product.getName(), ErrorCode.UNIT_NOT_FOUND));
                         return null;
                     }
+                    if (item.priceUnit() != null && !unitSaid(message, priceUnit)) {
+                        questions.add("«" + product.getName() + "»: ¿" + money(item.price()) + " por "
+                                + priceUnit.getAbbreviation() + "?");
+                    }
                     // Las dos lecturas del número, calculadas acá: el modelo solo dice cuál le parece.
                     BigDecimal perUnit = convert(() -> unitConversionService.convertPrice(
                             item.price(), priceUnit.getId(), product.getDefaultUnitId()), 4);
@@ -456,7 +466,7 @@ public class ChatService {
                     PriceBasis basis = PriceBasis.of(item.priceBasis());
                     price = basis == PriceBasis.TOTAL ? ofTotal : perUnit;
                     if (basis.isAmbiguous(quantity, perUnit)) {
-                        priceQuestions.add(priceQuestion(product, item.price(), priceUnit, quantity, perUnit, ofTotal));
+                        questions.add(priceQuestion(product, item.price(), priceUnit, quantity, perUnit, ofTotal));
                     }
                 }
                 return new OperationItem(product.getId(), null, product.getName(), quantity, unitLabel(product),
@@ -552,7 +562,34 @@ public class ChatService {
                 + money(perUnit.multiply(quantity)) + "; si es el total, " + money(ofTotal) + " por " + u + ".";
     }
 
-    private static String num(BigDecimal n) {
+    /**
+     * Si el usuario nombró la unidad en el mensaje ("100 g", "medio kilo", "2 litros", "3 bolsas"). El modelo a veces la
+     * cambia: con "200 g de acelga y 100 g de harina" devolvió 100 kg de harina una vez de tres. Una unidad que nadie
+     * dijo se pregunta (o se avisa, en una receta). "u" no hace falta decirla ("3 huevos").
+     */
+    static boolean unitSaid(String message, Unit unit) {
+        if (unit == null || "u".equalsIgnoreCase(unit.getAbbreviation())) return true;
+        Set<String> words = Set.copyOf(List.of(CatalogImportService.key(message).split("[^a-z]+")));   // "500g": el número separa
+        Set<String> spellings = new java.util.HashSet<>(UNIT_SYNONYMS.getOrDefault(
+                unit.getAbbreviation() == null ? "" : CatalogImportService.key(unit.getAbbreviation()), Set.of()));
+        for (String n : new String[] {unit.getAbbreviation(), unit.getName()}) {
+            if (n == null) continue;
+            String k = CatalogImportService.key(n);
+            spellings.addAll(List.of(k, k + "s", k + "es"));
+        }
+        return spellings.stream().anyMatch(words::contains);
+    }
+
+    /** Cómo se dicen las unidades del seed además de su nombre y abreviatura. */
+    private static final Map<String, Set<String>> UNIT_SYNONYMS = Map.of(
+            "kg", Set.of("kilo", "kilos", "kgs"),
+            "g", Set.of("gr", "grs", "gramo", "gramos"),
+            "l", Set.of("lt", "lts", "litro", "litros"),
+            "ml", Set.of("mililitro", "mililitros", "cc"),
+            "cc", Set.of("ml"),
+            "doc", Set.of("docena", "docenas"));
+
+    static String num(BigDecimal n) {
         NumberFormat f = NumberFormat.getNumberInstance(ES_AR);
         f.setMaximumFractionDigits(3);
         return f.format(n);
@@ -782,6 +819,13 @@ public class ChatService {
 
         Unit unit(UUID id) {
             return units.stream().filter(u -> u.getId().equals(id)).findFirst().orElse(null);
+        }
+
+        /** Por abreviatura o nombre, como el import. */
+        Unit unitNamed(String name) {
+            String k = CatalogImportService.key(name);
+            return units.stream().filter(u -> (u.getAbbreviation() != null && CatalogImportService.key(u.getAbbreviation()).equals(k))
+                    || (u.getName() != null && CatalogImportService.key(u.getName()).equals(k))).findFirst().orElse(null);
         }
 
         /** Con la comparación del import (sin mayúsculas, acentos ni espacios de más); null si no hay uno solo. */

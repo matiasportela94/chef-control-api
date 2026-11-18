@@ -74,8 +74,17 @@ public interface AIService {
     record ChatInterpretation(int confidence, boolean needsConfirmation, String responseToUser,
                               List<InterpretedOperation> operations) {}
 
-    /** @param type purchase, waste, sale, stock_adjustment, production o query: viene aunque no tenga ejecución */
-    record InterpretedOperation(String type, List<InterpretedItem> items) {}
+    /**
+     * @param type purchase, waste, sale, stock_adjustment, production, recipe, preparation_recipe o query: viene aunque
+     *             no tenga ejecución
+     * @param text el pedazo del mensaje que pide esta operación. Una receta recibe solo el suyo: con el mensaje entero,
+     *             la compra de un mensaje mixto se colaba como ingrediente
+     */
+    record InterpretedOperation(String type, List<InterpretedItem> items, String text) {
+        public InterpretedOperation(String type, List<InterpretedItem> items) {
+            this(type, items, null);
+        }
+    }
 
     /**
      * Cantidad, unidad y precio tal como los dijo el usuario: las cuentas las hace el back, no la IA. Con "500 g de

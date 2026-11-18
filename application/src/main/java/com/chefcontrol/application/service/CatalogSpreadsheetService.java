@@ -122,8 +122,9 @@ public class CatalogSpreadsheetService {
             String target = known.get(CatalogImportService.key(m.catalogName()));
             if (target == null) continue;   // el modelo nombró algo que no existe: queda como vino
             recognized.add(CatalogImportService.key(m.writtenName()));
-            if (CatalogImportService.key(target).equals(CatalogImportService.key(m.writtenName()))) continue; // solo mayúsculas o acentos: el import ya los iguala
             renamed.put(m.row(), target);
+            // Solo mayúsculas o acentos: se escribe como en el catálogo, sin aviso (el import ya los igualaba).
+            if (CatalogImportService.key(target).equals(CatalogImportService.key(m.writtenName()))) continue;
             warnings.add("Usé '" + target + "' " + (inCatalog.contains(CatalogImportService.key(target))
                     ? "del catálogo" : "de la hoja de insumos") + " para '" + m.writtenName() + "'."); // sin fila: el row es el ref del front, no la fila del Excel
         }
@@ -132,7 +133,12 @@ public class CatalogSpreadsheetService {
         r.preparations().forEach(x -> ingredients.put(x.row(), x.ingredient()));
         Set<String> warned = new HashSet<>();
         ingredients.forEach((row, written) -> {
-            if (written == null || renamed.containsKey(row) || known.containsKey(CatalogImportService.key(written))) return;
+            if (written == null || renamed.containsKey(row)) return;
+            String exact = known.get(CatalogImportService.key(written));
+            if (exact != null) {   // "harina" y el catálogo dice "Harina": la escritura del catálogo, sin aviso
+                renamed.put(row, exact);
+                return;
+            }
             String target = singularMatch(written, known.values());
             if (target == null) return;
             renamed.put(row, target);
@@ -142,23 +148,31 @@ public class CatalogSpreadsheetService {
                         ? "del catálogo" : "de la hoja de insumos") + " para '" + written + "'.");
             }
         });
-        List<RecipeRow> recipes = r.recipes().stream()
-                .map(x -> renamed.containsKey(x.row()) ? new RecipeRow(x.row(), x.menuItem(), x.price(), x.section(),
-                        renamed.get(x.row()), x.quantity(), x.unit()) : x)
-                .toList();
-        List<PreparationRow> preparations = r.preparations().stream()
-                .map(x -> renamed.containsKey(x.row()) ? new PreparationRow(x.row(), x.preparation(), x.yieldQuantity(),
-                        x.yieldUnit(), renamed.get(x.row()), x.quantity(), x.unit()) : x)
-                .toList();
-
         Set<String> taken = new HashSet<>(known.keySet());
         taken.addAll(recognized);
         // Una preparación de la planilla se crea desde su hoja: proponerla además como insumo la duplicaría.
-        preparations.stream().filter(x -> x.preparation() != null)
+        r.preparations().stream().filter(x -> x.preparation() != null)
                 .forEach(x -> taken.add(CatalogImportService.key(x.preparation())));
+        // Un insumo nuevo sale con mayúscula ("acelga" → "Acelga"), y las filas que lo usan, escritas igual.
         List<ProductRow> proposed = candidates.stream()
                 .filter(p -> p.name() != null && singularMatch(p.name(), known.values()) == null
                         && taken.add(CatalogImportService.key(p.name())))
+                .map(p -> new ProductRow(p.row(), capitalized(p.name()), p.unit(), p.category(), p.minStock(),
+                        p.yieldPercentage(), p.ivaPercentage()))
+                .toList();
+        Map<String, String> proposedNames = new HashMap<>();
+        proposed.forEach(p -> proposedNames.put(CatalogImportService.key(p.name()), p.name()));
+        java.util.function.BiFunction<Integer, String, String> spelled = (row, written) -> renamed.containsKey(row)
+                ? renamed.get(row)
+                : written == null ? null : proposedNames.getOrDefault(CatalogImportService.key(written), written);
+
+        List<RecipeRow> recipes = r.recipes().stream()
+                .map(x -> new RecipeRow(x.row(), x.menuItem(), x.price(), x.section(),
+                        spelled.apply(x.row(), x.ingredient()), x.quantity(), x.unit()))
+                .toList();
+        List<PreparationRow> preparations = r.preparations().stream()
+                .map(x -> new PreparationRow(x.row(), x.preparation(), x.yieldQuantity(), x.yieldUnit(),
+                        spelled.apply(x.row(), x.ingredient()), x.quantity(), x.unit()))
                 .toList();
         return new CatalogSpreadsheetInterpretation(products, preparations, recipes, proposed, List.of(), warnings);
     }
@@ -170,6 +184,13 @@ public class CatalogSpreadsheetService {
     static String singularMatch(String name, java.util.Collection<String> existing) {
         List<String> found = existing.stream().filter(e -> samePlural(name, e)).distinct().toList();
         return found.size() == 1 ? found.getFirst() : null;
+    }
+
+    /** "acelga" → "Acelga": solo la primera letra, el resto como vino. */
+    static String capitalized(String name) {
+        if (name == null || name.isBlank()) return null;
+        String n = name.trim().replaceAll("\\s+", " ");
+        return Character.toUpperCase(n.charAt(0)) + n.substring(1);
     }
 
     /** ponytail: plural español simple, palabra por palabra (+s, +es). "Nuez" y "nueces" no los iguala. */

@@ -39,7 +39,7 @@ final class ChatPrompt {
                            {"type":"sale","items":[{"menuItemId":"<id>","name":"milanesa","quantity":5}]},
                            {"type":"stock_adjustment","items":[{"productId":"<id>","name":"harina","quantity":8,"unit":"kg"}]},
                            {"type":"production","items":[{"productId":"<id>","name":"mayonesa","quantity":5,"unit":"kg","expirationDate":"2026-12-01"}]},
-                           {"type":"recipe","items":[{"menuItemId":"<id>","name":"milanesa napolitana"}]}]}
+                           {"type":"recipe","text":"la napolitana lleva 200 g de jamón","items":[{"menuItemId":"<id>","name":"napolitana"}]}]}
 
             TIPOS DE OPERACIÓN (type):
             - purchase: compra de insumos ("compramos 10 kg de harina a $2000").
@@ -62,7 +62,8 @@ final class ChatPrompt {
             "Tomate perita"). Aunque no esté, devolvé el ítem con el id en null: el sistema le avisa al usuario qué no \
             encontró. name: el insumo o el plato como lo dijo el usuario.
             2. quantity y unit: tal como los dijo el usuario, SIN convertir: "500 g" es quantity 500 y unit "g" aunque \
-            el insumo vaya en kg; el sistema convierte. unit es una abreviatura de la lista de UNIDADES ("kilos" → kg, \
+            el insumo vaya en kg; el sistema convierte. Cada ítem lleva la unidad que dijo para ese ítem, nunca la de \
+            otro ni la del catálogo ("200 g de acelga y 100 g de harina" → harina 100 y g). unit es una abreviatura de la lista de UNIDADES ("kilos" → kg, \
             "gramos" → g, "litros" → l, "unidades" → u). Si no dijo unidad, null. Números escritos a número ("tres" → \
             3, "media docena" → 6 y unit null, "medio kilo" → 0.5 y kg).
             3. price: el precio tal como lo dijo, en pesos y como número (sin "$" ni separador de miles: "25 mil" → \
@@ -82,7 +83,9 @@ final class ChatPrompt {
             quantity y unit, lo que salió de la tanda, como lo dijo el usuario ("hice 5 kilos de mayonesa" → 5 y kg).
             9. En una receta, un solo ítem: el plato (menuItemId, de PLATOS) o la preparación (productId, de \
             CATÁLOGO DE INSUMOS) cuya receta se crea o cambia, y name; si es nueva, el id en null y name tal cual lo \
-            dijo, sin el artículo ("la napolitana" → "napolitana"). Sin cantidades: los ingredientes los lee otro paso. Un insumo del catálogo \
+            dijo, sin el artículo ("la napolitana" → "napolitana"). Sin cantidades: los ingredientes los lee otro paso, \
+            con text: el pedazo del mensaje que habla de esa receta, copiado tal cual y sin lo demás ("compré tomate y \
+            la napolitana lleva 200 g de jamón" → "la napolitana lleva 200 g de jamón"). Un insumo del catálogo \
             que pasa a tener receta de tanda es preparation_recipe.
             10. confidence: de 0 a 100, cuán seguro estás de haber entendido todo. needsConfirmation = true SOLO si \
             confidence < 80 o si dudás entre dos insumos o platos. Por el precio no: si puede ser el total, el sistema \
@@ -132,7 +135,7 @@ final class ChatPrompt {
                 "type", Map.of("type", "string",
                         "enum", List.of("purchase", "waste", "sale", "stock_adjustment", "production", "recipe",
                                 "preparation_recipe", "query")),
-                "items", Map.of("type", "array", "items", item)),
+                "items", Map.of("type", "array", "items", item), "text", type("string")),
                 "required", List.of("type", "items"));
         return Map.of("type", "object", "properties", Map.of(
                 "confidence", Map.of("type", "integer", "minimum", 0, "maximum", 100),
@@ -155,7 +158,7 @@ final class ChatPrompt {
                         number(i, "quantity"), text(i, "unit"), number(i, "price"), text(i, "priceBasis"), text(i, "priceUnit"),
                         date(text(i, "expirationDate")), text(i, "reason")));
             }
-            operations.add(new InterpretedOperation(text(op, "type"), items));
+            operations.add(new InterpretedOperation(text(op, "type"), items, text(op, "text")));
         }
         return new ChatInterpretation(root.path("confidence").asInt(0),
                 root.path("needsConfirmation").asBoolean(true), text(root, "responseToUser"), operations);
