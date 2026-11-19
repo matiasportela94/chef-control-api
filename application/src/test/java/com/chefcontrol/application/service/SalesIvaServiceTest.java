@@ -113,6 +113,16 @@ class SalesIvaServiceTest {
     }
 
     @Test
+    void aTicketPriceIsChargedInsteadOfTheMenuOne() {
+        // El cierre de caja registra lo que se cobró, no el precio de la carta.
+        Sale sale = saleService().recordSale(new SaleService.CreateSaleCommand("Cierre Z 12", null,
+                List.of(new SaleService.SaleItemCommand(menuItemId, 2, new BigDecimal("9000"))), "12"));
+
+        assertThat(sale.getTotalAmount()).isEqualByComparingTo("18000");
+        assertThat(sale.getReportNumber()).isEqualTo("12");
+    }
+
+    @Test
     void theReportGroupsByRateAndKeepsLegacySalesApart() {
         Sale ri21 = Sale.builder().id(UUID.randomUUID()).totalAmount(new BigDecimal("2420.00"))
                 .ivaPercentage(new BigDecimal("21")).netTotal(new BigDecimal("2000.00")).build();

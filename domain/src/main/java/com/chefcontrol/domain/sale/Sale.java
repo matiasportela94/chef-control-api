@@ -17,6 +17,8 @@ public class Sale {
     private BigDecimal totalAmount;
     private String source;
     private String notes;
+    /** El número del ticket Z, si se cargó desde un cierre de caja: para avisar si ya está cargado. */
+    private String reportNumber;
     private Instant soldAt;
     private Instant createdAt;
     private SaleStatus status;

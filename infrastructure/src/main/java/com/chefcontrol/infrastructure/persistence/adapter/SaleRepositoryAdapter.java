@@ -53,6 +53,12 @@ public class SaleRepositoryAdapter implements SaleRepository {
     }
 
     @Override
+    public Optional<Sale> findActiveByReportNumber(UUID restaurantId, String reportNumber) {
+        return jpa.findFirstByRestaurantIdAndReportNumberAndStatus(restaurantId, reportNumber,
+                com.chefcontrol.domain.sale.SaleStatus.ACTIVE).map(SaleJpaEntity::toDomain);
+    }
+
+    @Override
     public List<Sale> findActiveByRestaurantIdAndSoldAtBetween(UUID restaurantId, Instant from, Instant to) {
         return jpa.findActiveByRestaurantIdAndSoldAtBetween(restaurantId, from, to).stream()
                 .map(SaleJpaEntity::toDomain).toList();

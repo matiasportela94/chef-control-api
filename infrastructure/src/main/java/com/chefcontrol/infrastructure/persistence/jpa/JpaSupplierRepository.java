@@ -12,4 +12,6 @@ public interface JpaSupplierRepository extends JpaRepository<SupplierJpaEntity, 
     List<SupplierJpaEntity> findAllByRestaurantIdAndIsActiveTrueOrderByName(UUID restaurantId);
 
     Optional<SupplierJpaEntity> findByIdAndRestaurantId(UUID id, UUID restaurantId);
+
+    Optional<SupplierJpaEntity> findFirstByRestaurantIdAndCuitAndIsActiveTrue(UUID restaurantId, String cuit);
 }

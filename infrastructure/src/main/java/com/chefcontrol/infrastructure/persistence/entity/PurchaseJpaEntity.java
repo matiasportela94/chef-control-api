@@ -49,6 +49,13 @@ public class PurchaseJpaEntity {
     @Column(name = "prices_include_iva")
     private Boolean pricesIncludeIva;
 
+    @jakarta.persistence.Enumerated(jakarta.persistence.EnumType.STRING)
+    @Column(name = "invoice_type")
+    private com.chefcontrol.domain.purchase.InvoiceType invoiceType;
+
+    @Column(name = "invoice_number")
+    private String invoiceNumber;
+
     @Column(name = "net_total", precision = 12, scale = 2)
     private BigDecimal netTotal;
 
@@ -72,6 +79,8 @@ public class PurchaseJpaEntity {
                 .createdAt(domain.getCreatedAt())
                 .status(domain.getStatus() != null ? domain.getStatus() : PurchaseStatus.ACTIVE)
                 .pricesIncludeIva(domain.getPricesIncludeIva())
+                .invoiceType(domain.getInvoiceType())
+                .invoiceNumber(domain.getInvoiceNumber())
                 .netTotal(domain.getNetTotal())
                 .ivaTotal(domain.getIvaTotal())
                 .build();
@@ -90,6 +99,8 @@ public class PurchaseJpaEntity {
                 .createdAt(createdAt)
                 .status(status)
                 .pricesIncludeIva(pricesIncludeIva)
+                .invoiceType(invoiceType)
+                .invoiceNumber(invoiceNumber)
                 .netTotal(netTotal)
                 .ivaTotal(ivaTotal)
                 .build();
