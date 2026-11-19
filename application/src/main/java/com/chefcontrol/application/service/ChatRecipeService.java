@@ -119,7 +119,9 @@ public class ChatRecipeService {
             skipped.add(new Skipped(null, name, e.getErrorCode(), "No pude armar la receta de «" + name + "». Probá de nuevo."));
             return null;
         }
-        answer = CatalogSpreadsheetService.applyMatches(answer, catalog.products().stream().map(Product::getName).toList());
+        answer = CatalogSpreadsheetService.applyMatches(answer, catalog.products().stream().map(Product::getName).toList(),
+                catalog.units());
+        answer = keepWhatTheMessageSays(answer, said);
         if (answer.recipes().isEmpty() && answer.preparations().isEmpty()) {
             skipped.add(new Skipped(null, name, ErrorCode.AI_INTERPRETATION_FAILED,
                     "No entendí los ingredientes de «" + name + "»."));
@@ -133,6 +135,171 @@ public class ChatRecipeService {
     }
 
     private record Target(boolean preparation, MenuItem dish, Product product) {}
+
+    /**
+     * El precio de venta y el paso del menú que devolvió el modelo, solo si el mensaje los dice; si no, null. El precio,
+     * si es positivo y ese número está en el mensaje ("9.500", "$9500", "9 mil"); el paso, si el mensaje lo nombra. En la
+     * prueba del 2026-11-18 inventó un $ 0 para "subile el tomate a 300 gramos" (el import rechazó la fila y la receta no
+     * se pisó) y un paso "Principales" para una receta nueva, que el import creó.
+     */
+    static CatalogSpreadsheetInterpretation keepWhatTheMessageSays(CatalogSpreadsheetInterpretation r, String said) {
+        String digits = said == null ? "" : said.replaceAll("[^0-9]", "");
+        String words = said == null ? "" : " " + CatalogImportService.key(said) + " ";
+        boolean thousands = said != null && said.toLowerCase(java.util.Locale.ROOT).matches("(?s).*\\bmil\\b.*");
+        List<CatalogImportService.RecipeRow> recipes = r.recipes().stream().map(x -> {
+            BigDecimal p = x.price();
+            boolean priceSaid = p != null && p.signum() > 0 && (digits.contains(p.toBigInteger().toString()) || thousands
+                    && p.remainder(BigDecimal.valueOf(1000)).signum() == 0
+                    && digits.contains(p.toBigInteger().divide(java.math.BigInteger.valueOf(1000)).toString()));
+            boolean sectionSaid = x.section() != null && !CatalogImportService.key(x.section()).isBlank()
+                    && words.contains(" " + CatalogImportService.key(x.section()) + " ");
+            if ((p == null || priceSaid) && (x.section() == null || sectionSaid)) return x;
+            return new CatalogImportService.RecipeRow(x.row(), x.menuItem(), priceSaid ? p : null,
+                    sectionSaid ? x.section() : null, x.ingredient(), x.quantity(), x.unit());
+        }).toList();
+        return new CatalogSpreadsheetInterpretation(r.products(), r.preparations(), recipes, r.proposedProducts(),
+                r.ingredientMatches(), r.warnings(), r.dishServings());
+    }
+
+    /**
+     * La abreviatura de una unidad de la lista (por abreviatura o nombre, también en plural: "gramos"); null si no está
+     * (taza, cucharada): no se convierte, porque cuántos gramos tiene una taza depende de qué se mide.
+     */
+    private static String knownUnit(String written, ChatCatalog catalog) {
+        if (written == null) return null;
+        var unit = catalog.unitNamed(written);
+        if (unit == null) {
+            for (var u : catalog.units()) {
+                if (u.getName() != null && CatalogSpreadsheetService.samePlural(written, u.getName())
+                        || u.getAbbreviation() != null && CatalogSpreadsheetService.samePlural(written, u.getAbbreviation())) {
+                    unit = u;
+                    break;
+                }
+            }
+        }
+        return unit == null ? null : unit.getAbbreviation();
+    }
+
+    /** "«Harina» de «Ñoquis»: 2 tazas no es una unidad que maneje; la dejé afuera, agregala a mano." */
+    private static String unknownUnitWarning(String ingredient, String recipe, BigDecimal quantity, String unit) {
+        return "«" + ingredient + "»" + (recipe == null ? "" : " de «" + recipe + "»") + ": "
+                + (quantity == null ? "" : quantity.stripTrailingZeros().toPlainString() + " ") + unit
+                + " no es una unidad que maneje; la dejé afuera, agregala a mano.";
+    }
+
+    /**
+     * La foto de una o varias recetas (F19, tanda 9): lo que leyó el modelo, con el post-proceso del Excel con IA
+     * (escritura del catálogo, plural, propuestos, porciones). Qué es cada receta lo decide el catálogo, no el tipo que
+     * eligió el modelo: un plato que ya es una preparación va como preparación, y al revés. Las que ya tienen receta van
+     * marcadas para pisar (mandar la foto es la intención); el front las muestra para destildar.
+     */
+    ChatService.ChatResult previewDocumentRecipes(CatalogSpreadsheetInterpretation reading, ChatCatalog catalog,
+                                                  Set<Permission> permissions) {
+        CatalogSpreadsheetInterpretation r = CatalogSpreadsheetService.applyMatches(reading,
+                catalog.products().stream().map(Product::getName).toList(), catalog.units());
+        List<String> warnings = new ArrayList<>(r.warnings());
+        // Una taza o una cucharada no se convierten: el ingrediente queda afuera y se avisa que la receta queda
+        // incompleta. Si no, se guardaría una receta con food cost de menos y nadie se enteraría.
+        List<CatalogImportService.RecipeRow> dishRows = new ArrayList<>();
+        for (CatalogImportService.RecipeRow x : r.recipes()) {
+            String unit = x.unit() == null ? null : knownUnit(x.unit(), catalog);
+            if (x.unit() != null && unit == null) {
+                warnings.add(unknownUnitWarning(x.ingredient(), x.menuItem(), x.quantity(), x.unit()));
+                continue;
+            }
+            dishRows.add(unit == null ? x : new CatalogImportService.RecipeRow(x.row(), x.menuItem(), x.price(),
+                    x.section(), x.ingredient(), x.quantity(), unit));
+        }
+        List<PreparationRow> prepRows = new ArrayList<>();
+        for (PreparationRow x : r.preparations()) {
+            String unit = x.unit() == null ? null : knownUnit(x.unit(), catalog);
+            if (x.unit() != null && unit == null) {
+                warnings.add(unknownUnitWarning(x.ingredient(), x.preparation(), x.quantity(), x.unit()));
+                continue;
+            }
+            prepRows.add(unit == null ? x : new PreparationRow(x.row(), x.preparation(), x.yieldQuantity(), x.yieldUnit(),
+                    x.ingredient(), x.quantity(), unit));
+        }
+        r = new CatalogSpreadsheetInterpretation(r.products(), prepRows, dishRows, r.proposedProducts(),
+                r.ingredientMatches(), r.warnings(), r.dishServings());
+        List<CatalogImportService.RecipeRow> recipes = new ArrayList<>();
+        List<PreparationRow> preparations = new ArrayList<>();
+        List<UUID> dishIds = new ArrayList<>();
+        List<UUID> preparationIds = new ArrayList<>();
+        UUID restaurantId = TenantContext.require();
+
+        for (CatalogImportService.RecipeRow x : r.recipes()) {
+            MenuItem dish = x.menuItem() == null ? null : catalog.menuItemNamed(x.menuItem());
+            Product prep = dish != null || x.menuItem() == null ? null : catalog.productNamed(x.menuItem());
+            if (prep != null && catalog.preparations().contains(prep.getId())) {
+                if (!preparationIds.contains(prep.getId())) {
+                    preparationIds.add(prep.getId());
+                    warnings.add("«" + prep.getName() + "» es una preparación: la cargué como preparación, con lo que rinde hoy.");
+                }
+                BigDecimal yield = recipeRepository.findByProductIdAndRestaurantId(prep.getId(), restaurantId)
+                        .map(Recipe::getYieldQuantity).orElse(null);
+                boolean first = preparations.stream().noneMatch(p -> p.preparation().equals(prep.getName()));
+                preparations.add(new PreparationRow(x.row(), prep.getName(), first ? yield : null, null, x.ingredient(),
+                        x.quantity(), x.unit()));
+                continue;
+            }
+            if (dish != null && !dishIds.contains(dish.getId())) dishIds.add(dish.getId());
+            recipes.add(dish == null ? x : new CatalogImportService.RecipeRow(x.row(), dish.getName(), x.price(),
+                    x.section(), x.ingredient(), x.quantity(), x.unit()));
+        }
+        for (PreparationRow x : r.preparations()) {
+            Product prep = x.preparation() == null ? null : catalog.productNamed(x.preparation());
+            MenuItem dish = prep != null || x.preparation() == null ? null : catalog.menuItemNamed(x.preparation());
+            if (dish != null) {
+                if (!dishIds.contains(dish.getId())) {
+                    dishIds.add(dish.getId());
+                    warnings.add("«" + dish.getName() + "» es un plato del menú: la cargué como su receta; revisá que las "
+                            + "cantidades sean para un plato.");
+                }
+                recipes.add(new CatalogImportService.RecipeRow(x.row(), dish.getName(), null, null, x.ingredient(),
+                        x.quantity(), x.unit()));
+                continue;
+            }
+            if (prep != null && !preparationIds.contains(prep.getId())) preparationIds.add(prep.getId());
+            preparations.add(prep == null ? x : new PreparationRow(x.row(), prep.getName(), x.yieldQuantity(),
+                    x.yieldUnit(), x.ingredient(), x.quantity(), x.unit()));
+        }
+
+        if (recipes.isEmpty() && preparations.isEmpty()) {
+            String why = "No entendí los ingredientes de la receta.";
+            return new ChatService.ChatResult(ChatService.ChatStatus.NOT_UNDERSTOOD, ChatService.NOTHING_REGISTERED
+                    + ": " + why.substring(0, 1).toLowerCase() + why.substring(1), List.of(), List.of(),
+                    List.of(new Skipped(null, null, ErrorCode.AI_INTERPRETATION_FAILED, why)));
+        }
+        Set<Permission> needed = EnumSet.noneOf(Permission.class);
+        if (!recipes.isEmpty()) needed.addAll(DISH_RECIPE);
+        if (!preparations.isEmpty()) needed.addAll(PREPARATION_RECIPE);
+        if (!permissions.containsAll(needed)) {
+            return notPreviewed(ErrorCode.CHAT_PERMISSION_MISSING, "No tenés permiso para cargar recetas.");
+        }
+        try {
+            accountService.requireFeature(Feature.RECIPES_AND_FOOD_COST);
+        } catch (AppException e) {
+            return notPreviewed(e.getErrorCode(), "Las recetas no están incluidas en tu plan.");
+        }
+
+        CatalogSpreadsheetInterpretation answer = new CatalogSpreadsheetInterpretation(List.of(), preparations, recipes,
+                r.proposedProducts(), List.of(), warnings);
+        List<String> names = new ArrayList<>();
+        recipes.forEach(x -> { if (x.menuItem() != null && !names.contains(x.menuItem())) names.add(x.menuItem()); });
+        preparations.forEach(x -> { if (x.preparation() != null && !names.contains(x.preparation())) names.add(x.preparation()); });
+        String message = (names.size() == 1 ? "Leí la receta de «" + names.getFirst() + "»"
+                : "Leí " + names.size() + " recetas: " + String.join(", ", names.stream().map(n -> "«" + n + "»").toList()))
+                + ". Revisala" + (names.size() == 1 ? "" : "s") + " y confirmala" + (names.size() == 1 ? "." : "s.");
+        return new ChatService.ChatResult(ChatService.ChatStatus.RECIPE_PREVIEW, message, List.of(), List.of(), List.of(),
+                List.of(), new RecipePreview(names.size() == 1 ? names.getFirst() : null, answer, dishIds, preparationIds));
+    }
+
+    private static ChatService.ChatResult notPreviewed(ErrorCode code, String why) {
+        return new ChatService.ChatResult(ChatService.ChatStatus.NOT_REGISTERED, ChatService.NOTHING_REGISTERED + ": "
+                + why.substring(0, 1).toLowerCase() + why.substring(1), List.of(), List.of(),
+                List.of(new Skipped(null, null, code, why)));
+    }
 
     /**
      * De qué receta se trata. Deciden lo que la IA reconoció del catálogo, no el tipo que eligió: en la prueba del

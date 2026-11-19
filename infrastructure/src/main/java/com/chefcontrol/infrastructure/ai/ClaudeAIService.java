@@ -6,6 +6,9 @@ import com.chefcontrol.application.port.AIService.CatalogSpreadsheetRequest;
 import com.chefcontrol.application.port.AIService.ChatInterpretation;
 import com.chefcontrol.application.port.AIService.ChatMessageRequest;
 import com.chefcontrol.application.port.AIService.RecipeMessageRequest;
+import com.chefcontrol.application.port.AIService.DocumentPage;
+import com.chefcontrol.application.port.AIService.ChatDocumentRequest;
+import com.chefcontrol.application.port.AIService.DocumentReading;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -31,10 +34,15 @@ public class ClaudeAIService implements AIService {
     /** "Ocupado" en Anthropic: límite (429), no disponible (503) y sobrecargado (529). */
     private static final java.util.Set<Integer> BUSY = java.util.Set.of(429, 503, 529);
     private static final String RECIPE_TOOL = "write_recipe";
+    private static final String DOCUMENT_TOOL = "read_document";
 
     private final RestClient restClient;
     private final String model;
     private final ObjectMapper objectMapper;
+
+    /** El de las fotos y PDF de facturas; vacío = el de texto. Se cambia sin deploy si Haiku no lee bien. */
+    @Value("${app.anthropic.vision-model:}")
+    private String visionModel;
 
     // Dos constructores: sin @Autowired Spring busca uno sin argumentos y no arranca (staging, 2026-11-16).
     @Autowired
@@ -232,6 +240,53 @@ public class ClaudeAIService implements AIService {
             }
         }
         throw ChatPrompt.failed("no " + CHAT_TOOL + " block in the answer (stop_reason "
+                + response.path("stop_reason").asText() + ")");
+    }
+
+    @Override
+    public DocumentReading interpretChatDocument(ChatDocumentRequest request) {
+        String vision = visionModel == null || visionModel.isBlank() ? model : visionModel;
+        List<Map<String, Object>> content = new java.util.ArrayList<>();
+        for (DocumentPage page : request.pages()) {
+            Map<String, Object> source = Map.of("type", "base64", "media_type", page.mediaType(),
+                    "data", java.util.Base64.getEncoder().encodeToString(page.bytes()));
+            content.add(Map.of("type", "application/pdf".equals(page.mediaType()) ? "document" : "image", "source", source));
+        }
+        content.add(Map.of("type", "text", "text", DocumentPrompt.userText(request)));
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("model", vision);
+        body.put("max_tokens", DocumentPrompt.MAX_OUTPUT_TOKENS);
+        body.put("temperature", 0);
+        body.put("system", List.of(Map.of("type", "text",
+                "text", DocumentPrompt.systemPrompt(request, "Devolvé el resultado con la herramienta " + DOCUMENT_TOOL + "."),
+                "cache_control", Map.of("type", "ephemeral"))));
+        body.put("tools", List.of(Map.of(
+                "name", DOCUMENT_TOOL,
+                "description", "Devuelve lo impreso en la factura o el remito",
+                "input_schema", DocumentPrompt.jsonSchema())));
+        body.put("tool_choice", Map.of("type", "tool", "name", DOCUMENT_TOOL));
+        body.put("messages", List.of(Map.of("role", "user", "content", content)));
+
+        long start = System.currentTimeMillis();
+        JsonNode response;
+        try {
+            response = ProviderRetry.once("Claude", BUSY,
+                    () -> restClient.post().uri("/v1/messages").body(body).retrieve().body(JsonNode.class));
+        } catch (RestClientException e) {
+            log.error("[Claude] interpretChatDocument failed: {}", e.getMessage());
+            throw DocumentPrompt.failed(e.getMessage());
+        }
+        JsonNode usage = response.path("usage");
+        log.info("[Claude] interpretChatDocument model={} pages={} input_tokens={} output_tokens={} "
+                        + "cache_read_input_tokens={} ms={}", vision, request.pages().size(),
+                usage.path("input_tokens").asInt(), usage.path("output_tokens").asInt(),
+                usage.path("cache_read_input_tokens").asInt(), System.currentTimeMillis() - start);
+        for (JsonNode block : response.path("content")) {
+            if ("tool_use".equals(block.path("type").asText()) && DOCUMENT_TOOL.equals(block.path("name").asText())) {
+                return DocumentPrompt.parse(block.path("input"));
+            }
+        }
+        throw DocumentPrompt.failed("no " + DOCUMENT_TOOL + " block in the answer (stop_reason "
                 + response.path("stop_reason").asText() + ")");
     }
 

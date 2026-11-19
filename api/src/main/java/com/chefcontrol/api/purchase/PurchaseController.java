@@ -30,15 +30,18 @@ import java.util.UUID;
 public class PurchaseController {
 
     private final PurchaseService purchaseService;
+    private final com.chefcontrol.application.service.PurchaseAttachmentService purchaseAttachmentService;
 
     @GetMapping
     @PreAuthorize("hasAuthority('PERM_PURCHASES_VIEW')")
     public ResponseEntity<PagedResponse<PurchaseResponse>> listPurchases(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        return ResponseEntity.ok(
-                PagedResponse.from(purchaseService.listPurchases(PageRequest.of(page, size)),
-                        PurchaseResponse::from));
+        var purchases = purchaseService.listPurchases(PageRequest.of(page, size));
+        var attachments = purchaseAttachmentService.countPurchaseAttachments(
+                purchases.content().stream().map(Purchase::getId).toList());
+        return ResponseEntity.ok(PagedResponse.from(purchases,
+                p -> PurchaseResponse.from(p, attachments.getOrDefault(p.getId(), 0))));
     }
 
     /** IVA de las compras del período. Mismo criterio de fechas que /food-cost: instantes, extremos incluidos. */
@@ -72,7 +75,8 @@ public class PurchaseController {
                         .map(i -> new PurchaseItemCommand(
                                 i.productId(), i.unitId(), i.quantity(), i.pricePerUnit(), i.expirationDate(),
                                 i.ivaPercentage()))
-                        .toList());
+                        .toList(),
+                request.invoiceType(), request.invoiceNumber(), request.attachmentsFromPurchaseId());
 
         Purchase purchase = purchaseService.createPurchase(command);
         return ResponseEntity.status(HttpStatus.CREATED).body(

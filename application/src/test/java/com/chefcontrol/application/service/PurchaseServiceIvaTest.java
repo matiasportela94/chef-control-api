@@ -57,6 +57,7 @@ class PurchaseServiceIvaTest {
     @Mock AlertEvaluationService alertEvaluationService;
     @Mock AuditService auditService;
     @Mock CurrentUserProvider currentUserProvider;
+    @Mock com.chefcontrol.domain.repository.PurchaseAttachmentRepository purchaseAttachmentRepository;
     @InjectMocks PurchaseService service;
 
     private final UUID restaurantId = UUID.randomUUID();
@@ -235,6 +236,29 @@ class PurchaseServiceIvaTest {
         p.setDefaultUnitId(unitId);
         p.setIvaPercentage(new BigDecimal(ivaPercentage));
         return p;
+    }
+
+    // ── Factura (F19, tanda 7) ──
+
+    @org.junit.jupiter.api.Test
+    void correctingAPurchaseMovesTheInvoiceOnlyFromAReversedOne() {
+        java.util.UUID old = java.util.UUID.randomUUID();
+        Purchase reversed = Purchase.builder().id(old).restaurantId(restaurantId)
+                .status(com.chefcontrol.domain.purchase.PurchaseStatus.REVERSED).build();
+        when(purchaseRepository.findByIdAndRestaurantId(old, restaurantId)).thenReturn(java.util.Optional.of(reversed));
+
+        Purchase created = service.createPurchase(new CreatePurchaseCommand(null, null, Instant.parse("2026-11-16T12:00:00Z"),
+                false, List.of(item("1000", null)), com.chefcontrol.domain.purchase.InvoiceType.A, " 0001-00001234 ", old));
+
+        assertThat(created.getInvoiceType()).isEqualTo(com.chefcontrol.domain.purchase.InvoiceType.A);
+        assertThat(created.getInvoiceNumber()).isEqualTo("0001-00001234");
+        org.mockito.Mockito.verify(purchaseAttachmentRepository).moveAll(old, created.getId());
+
+        reversed.setStatus(com.chefcontrol.domain.purchase.PurchaseStatus.ACTIVE);   // una compra viva no se queda sin factura
+        assertThatThrownBy(() -> service.createPurchase(new CreatePurchaseCommand(null, null,
+                Instant.parse("2026-11-16T12:00:00Z"), false, List.of(item("1000", null)), null, null, old)))
+                .isInstanceOf(com.chefcontrol.application.exception.AppException.class)
+                .extracting("errorCode").isEqualTo(com.chefcontrol.application.exception.ErrorCode.ATTACHMENTS_NOT_MOVABLE);
     }
 
     private PurchaseItemCommand item(String price, BigDecimal ivaPercentage) {

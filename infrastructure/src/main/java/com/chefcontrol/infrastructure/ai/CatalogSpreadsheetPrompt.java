@@ -39,14 +39,15 @@ final class CatalogSpreadsheetPrompt {
 
             SALIDA, con esta forma:
             {"products":[{"row":ref,"name":"...","unit":"kg","category":"...","minStock":10,"yieldPercentage":90}],
-             "dishes":[{"menuItem":"...","price":9500,"section":"...","ingredients":[{"row":ref,"ingredient":"...","quantity":0.25,"unit":"kg","catalogName":"..."}]}],
+             "dishes":[{"menuItem":"...","price":9500,"section":"...","servings":4,"ingredients":[{"row":ref,"ingredient":"...","quantity":0.25,"unit":"kg","catalogName":"..."}]}],
              "preparations":[{"preparation":"...","yieldQuantity":1.2,"yieldUnit":"kg","ingredients":[{"row":ref,"ingredient":"...","quantity":0.5,"unit":"l","catalogName":"..."}]}],
              "proposedProducts":[{"row":ref,"name":"...","unit":"kg"}],
              "warnings":["..."]}
             - products: los insumos (lo que el restaurante compra). category, minStock y yieldPercentage solo si la \
             planilla los trae.
             - dishes: los platos con su receta. price (precio de venta) y section (paso del menú: entradas, \
-            principales…) solo si la planilla los trae.
+            principales…) solo si la planilla los trae. servings: para cuántas porciones son las cantidades, solo si \
+            la receta lo dice.
             - preparations: las recetas intermedias que el restaurante hace y usa como ingrediente (ver regla 9), \
             con cuánto rinde la tanda.
             - proposedProducts: insumos que proponés vos porque una receta los usa y no están ni en el CATÁLOGO ni \
@@ -60,10 +61,10 @@ final class CatalogSpreadsheetPrompt {
             completes y no inventes nada que no esté en la planilla.
             2. unit es siempre una abreviatura de la lista de UNIDADES. Mapeá lo que escribió el cliente: "kilos", \
             "Kg.", "kgs" → kg; "gr", "grs", "gramos" → g; "lts", "litro" → l; "unid", "u.", "c/u" → u. Si la \
-            cantidad viene como texto, con fracción o en otra unidad ("½ kg", "medio kilo", "1/4 l"), pasala a un \
-            número en una unidad de la lista ("½ kg" → 500 g). Si no hay unidad, no la adivines: dejala afuera.
-            3. Las cantidades de una receta son para UN plato. Si la receta dice que rinde N porciones, dividí cada \
-            cantidad por N y avisalo en warnings.
+            cantidad viene como texto o con fracción ("½ kg", "medio kilo", "1/4 l"), pasala a número en la misma \
+            unidad ("½ kg" → 0.5 y kg), sin convertirla a otra. Si no hay unidad, no la adivines: dejala afuera.
+            3. Copiá las cantidades como están, SIN hacer cuentas. Si la receta dice que rinde N porciones, poné \
+            servings: N en el plato y NO dividas: el sistema divide y avisa.
             4. Ignorá títulos, encabezados, totales, subtotales, costos, notas y filas vacías. No avises por títulos \
             ni encabezados; sí por los totales, costos y notas que ignores, en un solo warning.
             5. Usá las listas del CATÁLOGO para reconocer qué es cada cosa (un insumo, un plato, un paso). Si el \
@@ -185,7 +186,9 @@ final class CatalogSpreadsheetPrompt {
         List<ProductRow> products = productRows(root.path("products"));
         List<RecipeRow> recipes = new ArrayList<>();
         List<IngredientMatch> matches = new ArrayList<>();
+        List<com.chefcontrol.application.port.AIService.DishServings> servings = new ArrayList<>();
         for (JsonNode d : root.path("dishes")) {
+            if (number(d, "servings") != null) servings.add(new com.chefcontrol.application.port.AIService.DishServings(text(d, "menuItem"), number(d, "servings")));
             boolean first = true;
             for (JsonNode i : d.path("ingredients")) {
                 // Precio y paso en la primera fila del plato: el import toma los de la primera fila que los traiga.
@@ -215,7 +218,7 @@ final class CatalogSpreadsheetPrompt {
         List<String> warnings = new ArrayList<>();
         root.path("warnings").forEach(w -> warnings.add(w.asText()));
         return new CatalogSpreadsheetInterpretation(products, preparations, recipes,
-                productRows(root.path("proposedProducts")), matches, warnings);
+                productRows(root.path("proposedProducts")), matches, warnings, servings);
     }
 
     private static List<ProductRow> productRows(JsonNode array) {

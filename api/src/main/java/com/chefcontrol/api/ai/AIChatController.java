@@ -36,6 +36,9 @@ public class AIChatController {
 
     private final ChatService chatService;
     private final ChatHistoryService chatHistoryService;
+    private final com.chefcontrol.application.service.ChatInvoiceService chatInvoiceService;
+    private final com.chefcontrol.application.service.ChatDocumentService chatDocumentService;
+    private final com.chefcontrol.application.service.ChatSalesReportService chatSalesReportService;
 
     /** Interpreta y resuelve: registra en el acto (con deshacer), pide confirmación o dice por qué no. */
     @PostMapping
@@ -94,6 +97,92 @@ public class AIChatController {
         return ResponseEntity.ok(ChatActionResponse.from(
                 chatService.undoChatAction(actionId, permissionsOf(authentication))));
     }
+
+    /**
+     * Una factura o un remito, un cierre de caja o una o varias recetas: hasta 5 fotos (sus hojas) o un PDF, por magic bytes. El modelo dice
+     * qué es. Siempre vuelve como vista previa (NEEDS_CONFIRMATION con {@code invoice} o {@code salesReport}): nada se
+     * registra en el acto. Los archivos los guarda el front y los sube a /purchases/{id}/attachments o
+     * /sales/{id}/attachments después de confirmar. La factura pide PURCHASES_CREATE y el cierre SALES_CREATE: sin el
+     * que corresponde, NOT_REGISTERED con CHAT_PERMISSION_MISSING.
+     */
+    @PostMapping(value = "/documents", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasAuthority('PERM_AI_USE') and (hasAuthority('PERM_PURCHASES_CREATE') or hasAuthority('PERM_SALES_CREATE')"
+            + " or hasAuthority('PERM_MENU_CREATE') or hasAuthority('PERM_PRODUCTS_CREATE'))")
+    public ResponseEntity<ChatResponse> sendChatDocument(
+            @RequestParam("files") List<org.springframework.web.multipart.MultipartFile> files,
+            @RequestParam(value = "message", required = false) @Size(max = 2000) String message,
+            Authentication authentication) throws java.io.IOException {
+        List<byte[]> bytes = new java.util.ArrayList<>();
+        for (var f : files) bytes.add(f.getBytes());
+        return ResponseEntity.ok(ChatResponse.from(chatDocumentService.sendChatDocument(bytes, message,
+                permissionsOf(authentication))));
+    }
+
+    /**
+     * La vista previa de un cierre de caja, tal cual o editada: revierte las ventas que ya tenía ese día si
+     * {@code existingSales} es REVERSE (con SALES_DELETE; todo o nada), registra una venta con todos los platos al precio
+     * del ticket y aprende lo que imprime el POS ({@code ignore: true} = no es un plato). La venta es
+     * {@code actions[0].entityId}.
+     */
+    @PostMapping("/sales-report/confirm")
+    @PreAuthorize("hasAuthority('PERM_AI_USE') and hasAuthority('PERM_SALES_CREATE')")
+    public ResponseEntity<ChatResponse> confirmChatSalesReport(@Valid @RequestBody ConfirmChatSalesReportRequest r,
+                                                               Authentication authentication) {
+        return ResponseEntity.ok(ChatResponse.from(chatSalesReportService.confirmChatSalesReport(
+                new com.chefcontrol.application.service.ChatSalesReportService.SalesReportConfirmation(r.reportNumber(),
+                        r.soldOn(), r.existingSales(), r.lines().stream().map(l ->
+                        new com.chefcontrol.application.service.ChatSalesReportService.ConfirmedSalesLine(l.printedText(),
+                                l.menuItemId(), l.quantity(), l.unitPrice(), Boolean.TRUE.equals(l.ignore()))).toList()),
+                permissionsOf(authentication))));
+    }
+
+    record ConfirmChatSalesReportRequest(@Size(max = 30) String reportNumber, java.time.LocalDate soldOn,
+                                         com.chefcontrol.application.service.ChatSalesReportService.ExistingSalesChoice existingSales,
+                                         @NotNull @Size(min = 1, max = 200) List<@Valid @NotNull ConfirmedSalesReportLine> lines) {}
+
+    /** Un plato ({@code menuItemId} + {@code quantity} + {@code unitPrice}) o {@code ignore: true}. */
+    record ConfirmedSalesReportLine(@Size(max = 300) String printedText, UUID menuItemId,
+                                    @jakarta.validation.constraints.Positive Integer quantity,
+                                    @jakarta.validation.constraints.Positive java.math.BigDecimal unitPrice, Boolean ignore) {}
+
+    /**
+     * La vista previa de una factura, tal cual o editada: da de alta el proveedor y los insumos nuevos (con sus permisos),
+     * aprende los alias del proveedor y registra la compra, en una transacción. La compra es {@code actions[0].entityId}.
+     */
+    @PostMapping("/invoice/confirm")
+    @PreAuthorize("hasAuthority('PERM_AI_USE') and hasAuthority('PERM_PURCHASES_CREATE')")
+    public ResponseEntity<ChatResponse> confirmChatInvoice(@Valid @RequestBody ConfirmChatInvoiceRequest r,
+                                                           Authentication authentication) {
+        return ResponseEntity.ok(ChatResponse.from(chatInvoiceService.confirmChatInvoice(
+                new com.chefcontrol.application.service.ChatInvoiceService.InvoiceConfirmation(r.supplierId(),
+                        r.newSupplierName(), r.newSupplierCuit(), r.invoiceType(), r.invoiceNumber(), r.issuedOn(),
+                        r.pricesIncludeIva(), r.lines().stream().map(l ->
+                        new com.chefcontrol.application.service.ChatInvoiceService.ConfirmedLine(l.printedText(),
+                                l.productId(), l.newProductName(), l.newProductUnitId(), l.quantity(), l.unitId(),
+                                l.unitPrice(), l.ivaPercentage(), l.expirationDate(), l.unitsPerPrintedUnit())).toList()),
+                permissionsOf(authentication))));
+    }
+
+    record ConfirmChatInvoiceRequest(UUID supplierId, @Size(max = 255) String newSupplierName,
+                                     @Size(max = 13) String newSupplierCuit,
+                                     com.chefcontrol.domain.purchase.InvoiceType invoiceType,
+                                     @Size(max = 30) String invoiceNumber, java.time.LocalDate issuedOn,
+                                     boolean pricesIncludeIva,
+                                     @NotNull @Size(min = 1, max = 100) List<@Valid @NotNull ConfirmedInvoiceLine> lines) {}
+
+    /**
+     * @param productId           el insumo; si es null, {@code newProductName} y {@code newProductUnitId} lo dan de alta
+     * @param unitsPerPrintedUnit si la unidad impresa no se convertía: cuántas unidades del insumo trae. Con él, cantidad,
+     *                            precio y unidad van como están impresos y el back los pasa a la unidad del insumo; y lo
+     *                            aprende el alias
+     */
+    record ConfirmedInvoiceLine(@Size(max = 300) String printedText, UUID productId, @Size(max = 255) String newProductName,
+                                UUID newProductUnitId,
+                                @NotNull @jakarta.validation.constraints.Positive java.math.BigDecimal quantity,
+                                @NotNull UUID unitId,
+                                @NotNull @jakarta.validation.constraints.Positive java.math.BigDecimal unitPrice,
+                                java.math.BigDecimal ivaPercentage, java.time.LocalDate expirationDate,
+                                @jakarta.validation.constraints.Positive java.math.BigDecimal unitsPerPrintedUnit) {}
 
     /** 2000 y no los 500 de /ai/interpret: un audio de 2 minutos transcripto pasa los 500 caracteres. */
     record SendChatMessageRequest(@NotBlank @Size(max = 2000) String message) {}

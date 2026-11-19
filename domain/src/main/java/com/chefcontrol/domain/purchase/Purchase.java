@@ -25,6 +25,9 @@ public class Purchase {
     private PurchaseStatus status;
     /** Null = compra anterior al IVA (V32): no tiene neto ni IVA y no se recalcula. */
     private Boolean pricesIncludeIva;
+    /** El comprobante, si se cargó desde una factura o remito: para avisar si ya está cargado. */
+    private InvoiceType invoiceType;
+    private String invoiceNumber;
     private BigDecimal netTotal;
     private BigDecimal ivaTotal;
 

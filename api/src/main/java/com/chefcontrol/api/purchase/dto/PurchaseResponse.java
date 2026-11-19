@@ -17,9 +17,13 @@ public record PurchaseResponse(
         /** Los tres null en una compra anterior al IVA. */
         Boolean pricesIncludeIva,
         BigDecimal netTotal,
-        BigDecimal ivaTotal
+        BigDecimal ivaTotal,
+        com.chefcontrol.domain.purchase.InvoiceType invoiceType,
+        String invoiceNumber,
+        /** Cuántas facturas o remitos tiene adjuntos (GET /purchases/{id}/attachments). */
+        int attachmentCount
 ) {
-    public static PurchaseResponse from(Purchase purchase) {
+    public static PurchaseResponse from(Purchase purchase, int attachmentCount) {
         return new PurchaseResponse(
                 purchase.getId(),
                 purchase.getSupplierId(),
@@ -30,6 +34,9 @@ public record PurchaseResponse(
                 purchase.getCreatedAt(),
                 purchase.getPricesIncludeIva(),
                 purchase.getNetTotal(),
-                purchase.getIvaTotal());
+                purchase.getIvaTotal(),
+                purchase.getInvoiceType(),
+                purchase.getInvoiceNumber(),
+                attachmentCount);
     }
 }

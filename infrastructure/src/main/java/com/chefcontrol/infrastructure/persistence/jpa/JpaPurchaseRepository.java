@@ -24,6 +24,9 @@ public interface JpaPurchaseRepository extends JpaRepository<PurchaseJpaEntity, 
     @EntityGraph(attributePaths = {"supplier"})
     Optional<PurchaseJpaEntity> findByIdAndRestaurantId(UUID id, UUID restaurantId);
 
+    Optional<PurchaseJpaEntity> findFirstByRestaurantIdAndSupplierIdAndInvoiceNumberAndStatus(
+            UUID restaurantId, UUID supplierId, String invoiceNumber, com.chefcontrol.domain.purchase.PurchaseStatus status);
+
     @Query("SELECT p FROM PurchaseJpaEntity p LEFT JOIN FETCH p.supplier WHERE p.restaurantId = :restaurantId AND p.status = 'ACTIVE' AND p.purchasedAt BETWEEN :from AND :to ORDER BY p.purchasedAt")
     List<PurchaseJpaEntity> findActiveByRestaurantIdAndPurchasedAtBetween(
             @Param("restaurantId") UUID restaurantId,

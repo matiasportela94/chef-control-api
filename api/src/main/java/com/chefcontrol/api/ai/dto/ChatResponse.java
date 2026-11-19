@@ -22,7 +22,11 @@ import java.util.UUID;
 public record ChatResponse(ChatStatus status, String message, List<ChatActionResponse> actions,
                            List<ChatActionResponse> undone, List<ChatProposal> proposals, List<ChatSkip> skipped,
                            InterpretCatalogResult catalogImport,
-                           List<UUID> replaceRecipeMenuItemIds, List<UUID> replacePreparationProductIds) {
+                           List<UUID> replaceRecipeMenuItemIds, List<UUID> replacePreparationProductIds,
+                           /** La vista previa de una factura o un remito (POST /ai/chat/documents); null si no. */
+                           com.chefcontrol.application.service.ChatInvoiceService.InvoicePreview invoice,
+                           /** La vista previa de un cierre de caja (POST /ai/chat/documents); null si no. */
+                           com.chefcontrol.application.service.ChatSalesReportService.SalesReportPreview salesReport) {
 
     public static ChatResponse from(ChatService.ChatResult r) {
         var recipe = r.recipe();
@@ -33,6 +37,7 @@ public record ChatResponse(ChatStatus status, String message, List<ChatActionRes
                 r.skipped().stream().map(ChatSkip::from).toList(),
                 recipe == null ? null : InterpretCatalogResult.from(recipe.catalogImport()),
                 recipe == null ? List.of() : recipe.replaceRecipeMenuItemIds(),
-                recipe == null ? List.of() : recipe.replacePreparationProductIds());
+                recipe == null ? List.of() : recipe.replacePreparationProductIds(),
+                r.invoice(), r.salesReport());
     }
 }

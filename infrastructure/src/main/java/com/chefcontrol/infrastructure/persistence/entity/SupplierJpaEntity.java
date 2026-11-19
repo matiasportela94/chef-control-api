@@ -33,6 +33,8 @@ public class SupplierJpaEntity {
     @Column(name = "contact_info", columnDefinition = "jsonb")
     private ContactInfo contactInfo;
 
+    private String cuit;
+
     @Column(name = "is_active", nullable = false)
     private boolean isActive = true;
 
@@ -50,6 +52,7 @@ public class SupplierJpaEntity {
         e.setRestaurantId(domain.getRestaurantId());
         e.setName(domain.getName());
         e.setContactInfo(domain.getContactInfo());
+        e.setCuit(domain.getCuit());
         e.setActive(domain.isActive());
         e.setCreatedAt(domain.getCreatedAt());
         return e;
@@ -61,6 +64,7 @@ public class SupplierJpaEntity {
         s.setRestaurantId(restaurantId);
         s.setName(name);
         s.setContactInfo(contactInfo);
+        s.setCuit(cuit);
         s.setActive(isActive);
         s.setCreatedAt(createdAt);
         return s;

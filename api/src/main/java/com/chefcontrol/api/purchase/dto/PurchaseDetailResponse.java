@@ -21,6 +21,8 @@ public record PurchaseDetailResponse(
         Boolean pricesIncludeIva,
         BigDecimal netTotal,
         BigDecimal ivaTotal,
+        com.chefcontrol.domain.purchase.InvoiceType invoiceType,
+        String invoiceNumber,
         List<ItemDetail> items
 ) {
     public static PurchaseDetailResponse from(Purchase purchase, List<PurchaseItem> items) {
@@ -35,6 +37,8 @@ public record PurchaseDetailResponse(
                 purchase.getPricesIncludeIva(),
                 purchase.getNetTotal(),
                 purchase.getIvaTotal(),
+                purchase.getInvoiceType(),
+                purchase.getInvoiceNumber(),
                 items.stream().map(ItemDetail::from).toList());
     }
 

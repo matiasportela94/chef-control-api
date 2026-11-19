@@ -140,7 +140,7 @@ public class SaleService {
                 .map(r -> SaleItem.builder()
                         .menuItemId(r.menuItem().getId())
                         .quantity(r.cmd().quantity())
-                        .unitPrice(r.menuItem().getPrice())
+                        .unitPrice(r.cmd().unitPrice() != null ? r.cmd().unitPrice() : r.menuItem().getPrice())
                         .build())
                 .toList();
 
@@ -151,6 +151,7 @@ public class SaleService {
                 .userId(userId)
                 .source("manual")
                 .notes(cmd.notes())
+                .reportNumber(cmd.reportNumber())
                 .soldAt(soldAt)
                 .build();
         // La alícuota se congela acá, con la condición de hoy: la venta no se recalcula si el restaurante cambia.
@@ -239,9 +240,19 @@ public class SaleService {
 
     // ── Commands / Results ────────────────────────────────────────────────────
 
-    public record CreateSaleCommand(String notes, Instant soldAt, List<SaleItemCommand> items) {}
+    /** @param reportNumber el número del ticket Z, si la venta sale de un cierre de caja */
+    public record CreateSaleCommand(String notes, Instant soldAt, List<SaleItemCommand> items, String reportNumber) {
+        public CreateSaleCommand(String notes, Instant soldAt, List<SaleItemCommand> items) {
+            this(notes, soldAt, items, null);
+        }
+    }
 
-    public record SaleItemCommand(UUID menuItemId, int quantity) {}
+    /** @param unitPrice el precio cobrado (el del ticket Z); null = el de la carta, como en el formulario */
+    public record SaleItemCommand(UUID menuItemId, int quantity, BigDecimal unitPrice) {
+        public SaleItemCommand(UUID menuItemId, int quantity) {
+            this(menuItemId, quantity, null);
+        }
+    }
 
     private record ResolvedItem(MenuItem menuItem, SaleItemCommand cmd) {}
 

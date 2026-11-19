@@ -32,6 +32,9 @@ public class SaleJpaEntity {
 
     private String notes;
 
+    @Column(name = "report_number")
+    private String reportNumber;
+
     @Column(name = "sold_at", nullable = false)
     private Instant soldAt;
 
@@ -61,6 +64,7 @@ public class SaleJpaEntity {
                 .totalAmount(domain.getTotalAmount())
                 .source(domain.getSource())
                 .notes(domain.getNotes())
+                .reportNumber(domain.getReportNumber())
                 .soldAt(domain.getSoldAt())
                 .createdAt(domain.getCreatedAt())
                 .status(domain.getStatus() != null ? domain.getStatus() : SaleStatus.ACTIVE)
@@ -77,6 +81,7 @@ public class SaleJpaEntity {
                 .totalAmount(totalAmount)
                 .source(source)
                 .notes(notes)
+                .reportNumber(reportNumber)
                 .soldAt(soldAt)
                 .createdAt(createdAt)
                 .status(status)

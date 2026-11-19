@@ -13,4 +13,7 @@ public interface SupplierRepository {
     Optional<Supplier> findByIdAndRestaurantId(UUID id, UUID restaurantId);
 
     Supplier save(Supplier supplier);
+
+    /** El proveedor activo de ese local con ese CUIT (11 dígitos). */
+    Optional<Supplier> findActiveByRestaurantIdAndCuit(UUID restaurantId, String cuit);
 }

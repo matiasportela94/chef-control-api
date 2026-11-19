@@ -37,6 +37,59 @@ public interface AIService {
     CatalogSpreadsheetInterpretation interpretRecipeMessage(RecipeMessageRequest request);
 
     /**
+     * Un archivo del chat (fotos de sus hojas o un PDF) → qué es (una factura o remito, un cierre de caja u otra cosa) y
+     * lo que tiene impreso, tal cual: el modelo no hace cuentas ni elige el insumo o el plato (sugiere uno del catálogo,
+     * que el back valida). Con el modelo de imágenes, que se configura aparte del de texto. Lanza
+     * {@code AI_INTERPRETATION_FAILED} si el modelo no responde o no se le entiende.
+     */
+    DocumentReading interpretChatDocument(ChatDocumentRequest request);
+
+    record DocumentPage(byte[] bytes, String mediaType) {}
+
+    /** @param message lo que escribió el usuario junto con el archivo; puede ser null */
+    record ChatDocumentRequest(List<DocumentPage> pages, String message, List<ChatCatalogProduct> products,
+                               List<ChatCatalogMenuItem> menuItems, List<UnitOption> units) {}
+
+    enum DocumentKind { INVOICE, SALES_REPORT, RECIPE, OTHER }
+
+    /**
+     * Según {@code kind}, viene {@code invoice}, {@code salesReport} o {@code recipes} (una o varias recetas, con la forma
+     * del Excel con IA y {@code row} = la posición del ingrediente); los demás, null.
+     */
+    record DocumentReading(DocumentKind kind, InvoiceReading invoice, SalesReportReading salesReport,
+                           CatalogSpreadsheetInterpretation recipes) {
+        public DocumentReading(DocumentKind kind, InvoiceReading invoice, SalesReportReading salesReport) {
+            this(kind, invoice, salesReport, null);
+        }
+    }
+
+    /** @param invoiceType A, B, C o REMITO, como está impreso; null si no se ve */
+    record InvoiceReading(String supplierName, String supplierCuit, String invoiceType,
+                          String invoiceNumber, LocalDate issuedOn, BigDecimal printedTotal, List<InvoiceLineReading> lines) {}
+
+    /**
+     * Un cierre de caja (ticket Z o reporte del POS), tal como está impreso.
+     *
+     * @param printedTime la hora impresa, si se ve: un cierre de la madrugada suele ser el servicio del día anterior
+     */
+    record SalesReportReading(String reportNumber, LocalDate printedDate, java.time.LocalTime printedTime,
+                              BigDecimal printedTotal, List<SalesReportLineReading> lines) {}
+
+    /** @param catalogName el plato del menú que el modelo reconoce; el back verifica que exista */
+    record SalesReportLineReading(String printedText, BigDecimal quantity, BigDecimal unitPrice, BigDecimal lineTotal,
+                                  String catalogName) {}
+
+    /**
+     * Un renglón tal como está impreso.
+     *
+     * @param unit          una abreviatura de la lista de unidades si el renglón la dice; null si no
+     * @param catalogName   el insumo del catálogo que el modelo reconoce; el back verifica que exista
+     * @param suggestedName un nombre limpio, para proponer el insumo si no está en el catálogo
+     */
+    record InvoiceLineReading(String printedText, BigDecimal quantity, String unit, BigDecimal unitPrice,
+                              BigDecimal lineTotal, BigDecimal ivaPercentage, String catalogName, String suggestedName) {}
+
+    /**
      * @param today     la fecha argentina, para "vence el viernes"
      * @param products  los insumos activos del restaurante
      * @param menuItems los platos activos, para las ventas
@@ -188,8 +241,21 @@ public interface AIService {
         List<RecipeRow> recipes,
         List<ProductRow> proposedProducts,
         List<IngredientMatch> ingredientMatches,
-        List<String> warnings
-    ) {}
+        List<String> warnings,
+        List<DishServings> dishServings
+    ) {
+        public CatalogSpreadsheetInterpretation(List<ProductRow> products, List<PreparationRow> preparations,
+                                                List<RecipeRow> recipes, List<ProductRow> proposedProducts,
+                                                List<IngredientMatch> ingredientMatches, List<String> warnings) {
+            this(products, preparations, recipes, proposedProducts, ingredientMatches, warnings, List.of());
+        }
+    }
+
+    /**
+     * Un plato cuya receta dice para cuántas porciones es ("rinde 4 porciones"), con las cantidades como vinieron. Las
+     * divide el servicio (la IA no hace cuentas); lo que devuelve el servicio ya viene dividido y esta lista vacía.
+     */
+    record DishServings(String menuItem, BigDecimal servings) {}
 
     /**
      * @param row la fila de receta (o de preparación); {@code writtenName} como vino, {@code catalogName} el insumo que el

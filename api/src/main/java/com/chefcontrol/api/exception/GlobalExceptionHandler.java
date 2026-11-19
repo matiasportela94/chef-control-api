@@ -55,8 +55,10 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<ErrorResponse> handleUploadTooLarge(HttpServletRequest request) {
         // El límite es global: el código dice qué era lo que no entraba.
-        ErrorCode code = request.getRequestURI().endsWith("/ai/transcribe")
-                ? ErrorCode.AI_AUDIO_TOO_LARGE : ErrorCode.IMAGE_TOO_LARGE;
+        String uri = request.getRequestURI();
+        ErrorCode code = uri.endsWith("/ai/transcribe") ? ErrorCode.AI_AUDIO_TOO_LARGE
+                : uri.contains("/attachments") || uri.endsWith("/ai/chat/documents") ? ErrorCode.ATTACHMENT_TOO_LARGE
+                : ErrorCode.IMAGE_TOO_LARGE;
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(ErrorResponse.of(code, "The file is too large", request.getRequestURI()));

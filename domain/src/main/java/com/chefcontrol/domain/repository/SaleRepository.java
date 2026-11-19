@@ -16,6 +16,9 @@ public interface SaleRepository {
 
     Optional<Sale> findByIdAndRestaurantId(UUID id, UUID restaurantId);
 
+    /** La venta viva con ese número de Z: para avisar que ese cierre ya está cargado. */
+    Optional<Sale> findActiveByReportNumber(UUID restaurantId, String reportNumber);
+
     Sale save(Sale sale);
 
     /** Sin las revertidas, como todo lo que suma o cuenta ventas. */
