@@ -60,6 +60,7 @@ public class ChatInvoiceService {
     private static final BigDecimal TOLERANCE = new BigDecimal("0.01");
     private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("dd/MM");
 
+    private final com.chefcontrol.domain.repository.ProductRepository productRepository;
     private final UnitConversionService unitConversionService;
     private final SupplierRepository supplierRepository;
     private final SupplierService supplierService;
@@ -288,18 +289,38 @@ public class ChatInvoiceService {
         int lines = 0;
         for (ConfirmedLine l : c.lines()) {
             UUID productId = l.productId();
+            UUID productUnitId = null;
             if (productId == null && l.newProductName() != null) {
                 if (!permissions.contains(Permission.PRODUCTS_CREATE)) {
                     skipped.add(new Skipped(ChatOperationType.PURCHASE, l.newProductName(), ErrorCode.CHAT_PERMISSION_MISSING,
                             "No tenés permiso para dar de alta insumos: «" + l.newProductName() + "» no entró."));
                     continue;
                 }
-                productId = productService.createProduct(new ProductService.CreateProductCommand(
+                Product created = productService.createProduct(new ProductService.CreateProductCommand(
                         CatalogSpreadsheetService.capitalized(l.newProductName()), null, l.newProductUnitId(),
-                        null, null, null, null, null)).getId();
+                        null, null, null, null, null));
+                productId = created.getId();
+                productUnitId = created.getDefaultUnitId();
             }
             if (productId == null) continue;
-            items.add(new PurchaseService.PurchaseItemCommand(productId, l.unitId(), l.quantity(), l.unitPrice(),
+            UUID unitId = l.unitId();
+            BigDecimal quantity = l.quantity();
+            BigDecimal unitPrice = l.unitPrice();
+            BigDecimal factor = l.unitsPerPrintedUnit();
+            if (factor != null && factor.signum() > 0) {
+                // El renglón viene en la unidad impresa ("2 bolsas a $ 20.000") y el factor dice cuántas unidades del
+                // insumo trae cada una: la cuenta la hace el back, no el front (WhatsApp no tiene front).
+                if (productUnitId == null) {
+                    final UUID id = productId;
+                    productUnitId = productRepository.findByIdAndRestaurantId(id, restaurantId)
+                            .orElseThrow(() -> AppException.notFound(ErrorCode.PRODUCT_NOT_FOUND, "Product not found"))
+                            .getDefaultUnitId();
+                }
+                unitId = productUnitId;
+                quantity = l.quantity().multiply(factor);
+                unitPrice = l.unitPrice().divide(factor, 4, RoundingMode.HALF_UP);
+            }
+            items.add(new PurchaseService.PurchaseItemCommand(productId, unitId, quantity, unitPrice,
                     l.expirationDate(), forcedC ? BigDecimal.ZERO : l.ivaPercentage()));
             lines++;
             if (supplier != null && l.printedText() != null && !l.printedText().isBlank()) {
@@ -367,7 +388,9 @@ public class ChatInvoiceService {
 
     /**
      * @param productId           el insumo; si es null y viene {@code newProductName}, se da de alta (en {@code newProductUnitId})
-     * @param unitsPerPrintedUnit cuántas unidades del insumo trae la unidad impresa, si no se convertía: lo aprende el alias
+     * @param unitsPerPrintedUnit cuántas unidades del insumo trae la unidad impresa, si no se convertía. Con él,
+     *                            {@code quantity}, {@code unitPrice} y {@code unitId} vienen en la unidad impresa y el back
+     *                            los pasa a la del insumo (cantidad × factor, precio / factor); y lo aprende el alias
      */
     public record ConfirmedLine(String printedText, UUID productId, String newProductName, UUID newProductUnitId,
                                 BigDecimal quantity, UUID unitId, BigDecimal unitPrice, BigDecimal ivaPercentage,

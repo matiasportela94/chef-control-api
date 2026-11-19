@@ -109,7 +109,8 @@ class ChatInvoiceServiceTest {
         when(chatActionRepository.save(any())).thenAnswer(i -> i.getArgument(0));
         Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
         var history = new ChatHistoryService(chatExchangeRepository, chatActionRepository, currentUserProvider, clock);
-        service = new ChatInvoiceService(unitConversionService,
+        when(productRepository.findByIdAndRestaurantId(harina.getId(), R)).thenReturn(Optional.of(harina));
+        service = new ChatInvoiceService(productRepository, unitConversionService,
                 supplierRepository, supplierService, aliasRepository, purchaseRepository, purchaseService,
                 productService, chatActionRepository, history, currentUserProvider,
                 TransactionOperations.withoutTransaction(), clock);
@@ -245,8 +246,9 @@ class ChatInvoiceServiceTest {
 
         var result = service.confirmChatInvoice(new InvoiceConfirmation(null, "Almacén Nuevo", "30-71234567-9", InvoiceType.C,
                 "0002-00000077", LocalDate.of(2026, 11, 15), false, List.of(
-                new ConfirmedLine("HARINA BOLSA", harina.getId(), null, null, new BigDecimal("50"), kg.getId(),
-                        new BigDecimal("800"), new BigDecimal("21"), null, new BigDecimal("25")),
+                // 2 bolsas a $ 20.000, y la persona dijo que cada bolsa trae 25 kg: la cuenta la hace el back
+                new ConfirmedLine("HARINA BOLSA", harina.getId(), null, null, new BigDecimal("2"), bolsa.getId(),
+                        new BigDecimal("20000"), new BigDecimal("21"), null, new BigDecimal("25")),
                 new ConfirmedLine("ACEITE 900", null, "aceite de girasol", u.getId(), BigDecimal.ONE, u.getId(),
                         new BigDecimal("1000"), null, null, null))), ALL);
 
@@ -257,6 +259,10 @@ class ChatInvoiceServiceTest {
         assertEquals(InvoiceType.C, cmd.getValue().invoiceType());
         assertEquals("0002-00000077", cmd.getValue().invoiceNumber());
         assertEquals(Instant.parse("2026-11-15T03:00:00Z"), cmd.getValue().purchasedAt());   // el día de la factura, acá
+        var flour = cmd.getValue().items().getFirst();
+        assertEquals(0, new BigDecimal("50").compareTo(flour.quantity()));                 // 2 × 25 kg
+        assertEquals(0, new BigDecimal("800").compareTo(flour.pricePerUnit()));             // $ 20.000 / 25
+        assertEquals(kg.getId(), flour.unitId());
         assertTrue(cmd.getValue().pricesIncludeIva());                                       // C: con IVA incluido...
         assertTrue(cmd.getValue().items().stream().allMatch(i -> BigDecimal.ZERO.compareTo(i.ivaPercentage()) == 0)); // ...y 0%
         var learned = ArgumentCaptor.forClass(SupplierProductAlias.class);

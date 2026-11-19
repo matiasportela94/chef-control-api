@@ -172,7 +172,9 @@ public class AIChatController {
 
     /**
      * @param productId           el insumo; si es null, {@code newProductName} y {@code newProductUnitId} lo dan de alta
-     * @param unitsPerPrintedUnit si la unidad impresa no se convertía: cuántas unidades del insumo trae (lo aprende el alias)
+     * @param unitsPerPrintedUnit si la unidad impresa no se convertía: cuántas unidades del insumo trae. Con él, cantidad,
+     *                            precio y unidad van como están impresos y el back los pasa a la unidad del insumo; y lo
+     *                            aprende el alias
      */
     record ConfirmedInvoiceLine(@Size(max = 300) String printedText, UUID productId, @Size(max = 255) String newProductName,
                                 UUID newProductUnitId,
