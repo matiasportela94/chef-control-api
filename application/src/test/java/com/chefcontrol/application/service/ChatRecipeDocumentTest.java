@@ -70,7 +70,8 @@ class ChatRecipeDocumentTest {
                 List.of(new RecipeRow(1, "Ñoquis", null, null, "Papa", new BigDecimal("1"), "kg"),
                         new RecipeRow(2, "Ñoquis", null, null, "Huevo", new BigDecimal("2"), "u"),
                         new RecipeRow(3, "Flan", null, null, "Huevo", new BigDecimal("6"), "u")),
-                List.of(), List.of(), List.of(), List.of(new DishServings("ñoquis", new BigDecimal("4")))), List.of("Papa", "Huevo"));
+                List.of(), List.of(), List.of(), List.of(new DishServings("ñoquis", new BigDecimal("4")))), List.of("Papa", "Huevo"),
+                catalog.units());
 
         assertEquals(0, new BigDecimal("0.25").compareTo(r.recipes().get(0).quantity()));
         assertEquals(0, new BigDecimal("0.5").compareTo(r.recipes().get(1).quantity()));
@@ -157,18 +158,44 @@ class ChatRecipeDocumentTest {
         var r = new CatalogSpreadsheetInterpretation(List.of(), List.of(),
                 List.of(new RecipeRow(1, "Milanesa", BigDecimal.ZERO, null, "Tomate", new BigDecimal("300"), "g")),
                 List.of(), List.of(), List.of());
-        assertNull(ChatRecipeService.keepSaidPrice(r, "subile el tomate a 300 gramos").recipes().getFirst().price());
+        assertNull(ChatRecipeService.keepWhatTheMessageSays(r, "subile el tomate a 300 gramos").recipes().getFirst().price());
         var priced = new CatalogSpreadsheetInterpretation(List.of(), List.of(),
                 List.of(new RecipeRow(1, "Milanesa", new BigDecimal("9500"), null, "Tomate", new BigDecimal("300"), "g")),
                 List.of(), List.of(), List.of());
-        assertNull(ChatRecipeService.keepSaidPrice(priced, "la milanesa lleva 300 g de tomate").recipes().getFirst().price());
-        assertEquals(0, new BigDecimal("9500").compareTo(ChatRecipeService.keepSaidPrice(priced,
+        assertNull(ChatRecipeService.keepWhatTheMessageSays(priced, "la milanesa lleva 300 g de tomate").recipes().getFirst().price());
+        assertEquals(0, new BigDecimal("9500").compareTo(ChatRecipeService.keepWhatTheMessageSays(priced,
                 "la milanesa va a $9.500 y lleva 300 g de tomate").recipes().getFirst().price()));
         var mil = new CatalogSpreadsheetInterpretation(List.of(), List.of(),
                 List.of(new RecipeRow(1, "Milanesa", new BigDecimal("12000"), null, "Tomate", new BigDecimal("300"), "g")),
                 List.of(), List.of(), List.of());
-        assertEquals(0, new BigDecimal("12000").compareTo(ChatRecipeService.keepSaidPrice(mil,
+        assertEquals(0, new BigDecimal("12000").compareTo(ChatRecipeService.keepWhatTheMessageSays(mil,
                 "la milanesa a 12 mil, con 300 g de tomate").recipes().getFirst().price()));
+    }
+
+    @Test
+    void theChatRecipeKeepsASectionOnlyIfTheMessageNamesIt() {
+        var r = new CatalogSpreadsheetInterpretation(List.of(), List.of(),
+                List.of(new RecipeRow(1, "Napolitana", null, "Principales", "Tomate", new BigDecimal("150"), "g")),
+                List.of(), List.of(), List.of());
+        assertNull(ChatRecipeService.keepWhatTheMessageSays(r, "la napolitana lleva 150 gramos de tomate")
+                .recipes().getFirst().section());
+        assertEquals("Principales", ChatRecipeService.keepWhatTheMessageSays(r,
+                "la napolitana va en principales y lleva 150 gramos de tomate").recipes().getFirst().section());
+    }
+
+    @Test
+    void aProposedProductTakesTheRecipeUnitWhenItsOwnDoesNotConvert() {
+        var kg = catalog.units().get(0);
+        var g = catalog.units().get(1);
+        g.setBaseUnitId(kg.getId());   // g y kg convierten; u, con nada de eso
+        var r = CatalogSpreadsheetService.applyMatches(new CatalogSpreadsheetInterpretation(List.of(),
+                List.of(new PreparationRow(1, "Fileto", new BigDecimal("1.5"), "l", "Cebolla", BigDecimal.ONE, "u"),
+                        new PreparationRow(2, "Fileto", null, null, "Ajo", new BigDecimal("20"), "g")),
+                List.of(), List.of(new ProductRow(1, "Cebolla", "kg", null, null, null),
+                        new ProductRow(2, "Ajo", "kg", null, null, null)), List.of(), List.of()), List.of(), catalog.units());
+
+        assertEquals("u", r.proposedProducts().get(0).unit());       // "1 cebolla": se propone en u
+        assertEquals("kg", r.proposedProducts().get(1).unit());      // 20 g de ajo: kg convierte, se queda
     }
 
     private static com.chefcontrol.domain.product.Unit unit(String name, String abbreviation) {

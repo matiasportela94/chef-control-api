@@ -119,8 +119,9 @@ public class ChatRecipeService {
             skipped.add(new Skipped(null, name, e.getErrorCode(), "No pude armar la receta de «" + name + "». Probá de nuevo."));
             return null;
         }
-        answer = CatalogSpreadsheetService.applyMatches(answer, catalog.products().stream().map(Product::getName).toList());
-        answer = keepSaidPrice(answer, said);
+        answer = CatalogSpreadsheetService.applyMatches(answer, catalog.products().stream().map(Product::getName).toList(),
+                catalog.units());
+        answer = keepWhatTheMessageSays(answer, said);
         if (answer.recipes().isEmpty() && answer.preparations().isEmpty()) {
             skipped.add(new Skipped(null, name, ErrorCode.AI_INTERPRETATION_FAILED,
                     "No entendí los ingredientes de «" + name + "»."));
@@ -136,22 +137,25 @@ public class ChatRecipeService {
     private record Target(boolean preparation, MenuItem dish, Product product) {}
 
     /**
-     * El precio de venta que devolvió el modelo, solo si es positivo y ese número está en el mensaje ("9.500", "$9500",
-     * "9 mil"); si no, null. En la prueba del 2026-11-18 inventó un $ 0 para "subile el tomate a 300 gramos", el import
-     * rechazó la fila y la receta no se pisó.
+     * El precio de venta y el paso del menú que devolvió el modelo, solo si el mensaje los dice; si no, null. El precio,
+     * si es positivo y ese número está en el mensaje ("9.500", "$9500", "9 mil"); el paso, si el mensaje lo nombra. En la
+     * prueba del 2026-11-18 inventó un $ 0 para "subile el tomate a 300 gramos" (el import rechazó la fila y la receta no
+     * se pisó) y un paso "Principales" para una receta nueva, que el import creó.
      */
-    static CatalogSpreadsheetInterpretation keepSaidPrice(CatalogSpreadsheetInterpretation r, String said) {
+    static CatalogSpreadsheetInterpretation keepWhatTheMessageSays(CatalogSpreadsheetInterpretation r, String said) {
         String digits = said == null ? "" : said.replaceAll("[^0-9]", "");
+        String words = said == null ? "" : " " + CatalogImportService.key(said) + " ";
         boolean thousands = said != null && said.toLowerCase(java.util.Locale.ROOT).matches("(?s).*\\bmil\\b.*");
         List<CatalogImportService.RecipeRow> recipes = r.recipes().stream().map(x -> {
             BigDecimal p = x.price();
-            if (p == null) return x;
-            java.math.BigInteger whole = p.toBigInteger();
-            boolean said1 = p.signum() > 0 && (digits.contains(whole.toString()) || thousands
+            boolean priceSaid = p != null && p.signum() > 0 && (digits.contains(p.toBigInteger().toString()) || thousands
                     && p.remainder(BigDecimal.valueOf(1000)).signum() == 0
-                    && digits.contains(whole.divide(java.math.BigInteger.valueOf(1000)).toString()));
-            return said1 ? x : new CatalogImportService.RecipeRow(x.row(), x.menuItem(), null, x.section(), x.ingredient(),
-                    x.quantity(), x.unit());
+                    && digits.contains(p.toBigInteger().divide(java.math.BigInteger.valueOf(1000)).toString()));
+            boolean sectionSaid = x.section() != null && !CatalogImportService.key(x.section()).isBlank()
+                    && words.contains(" " + CatalogImportService.key(x.section()) + " ");
+            if ((p == null || priceSaid) && (x.section() == null || sectionSaid)) return x;
+            return new CatalogImportService.RecipeRow(x.row(), x.menuItem(), priceSaid ? p : null,
+                    sectionSaid ? x.section() : null, x.ingredient(), x.quantity(), x.unit());
         }).toList();
         return new CatalogSpreadsheetInterpretation(r.products(), r.preparations(), recipes, r.proposedProducts(),
                 r.ingredientMatches(), r.warnings(), r.dishServings());
@@ -192,7 +196,7 @@ public class ChatRecipeService {
     ChatService.ChatResult previewDocumentRecipes(CatalogSpreadsheetInterpretation reading, ChatCatalog catalog,
                                                   Set<Permission> permissions) {
         CatalogSpreadsheetInterpretation r = CatalogSpreadsheetService.applyMatches(reading,
-                catalog.products().stream().map(Product::getName).toList());
+                catalog.products().stream().map(Product::getName).toList(), catalog.units());
         List<String> warnings = new ArrayList<>(r.warnings());
         // Una taza o una cucharada no se convierten: el ingrediente queda afuera y se avisa que la receta queda
         // incompleta. Si no, se guardaría una receta con food cost de menos y nadie se enteraría.

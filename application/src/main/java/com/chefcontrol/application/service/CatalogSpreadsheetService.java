@@ -82,7 +82,7 @@ public class CatalogSpreadsheetService {
                 menuItemRepository.findByRestaurantIdAndActive(restaurantId, true, ALL).content().stream()
                         .map(MenuItem::getName).toList(),
                 menuSectionRepository.findAllByRestaurantId(restaurantId).stream().map(MenuSection::getName).toList()));
-        return applyMatches(result, productNames);
+        return applyMatches(result, productNames, unitRepository.findAll());
     }
 
     /**
@@ -99,7 +99,8 @@ public class CatalogSpreadsheetService {
      * <p>Lo mismo con un plural o singular que el modelo no marcó ("huevos" y "Huevo"): pasó en la prueba del 2026-11-18
      * con una receta por chat, y el "huevos" propuesto se habría creado duplicado.
      */
-    static CatalogSpreadsheetInterpretation applyMatches(CatalogSpreadsheetInterpretation r, List<String> catalog) {
+    static CatalogSpreadsheetInterpretation applyMatches(CatalogSpreadsheetInterpretation r, List<String> catalog,
+                                                         List<com.chefcontrol.domain.product.Unit> units) {
         r = perServing(r);
         Set<Integer> recipeRows = new HashSet<>();
         r.recipes().forEach(x -> recipeRows.add(x.row()));
@@ -176,7 +177,38 @@ public class CatalogSpreadsheetService {
                 .map(x -> new PreparationRow(x.row(), x.preparation(), x.yieldQuantity(), x.yieldUnit(),
                         spelled.apply(x.row(), x.ingredient()), x.quantity(), x.unit()))
                 .toList();
-        return new CatalogSpreadsheetInterpretation(products, preparations, recipes, proposed, List.of(), warnings);
+        return new CatalogSpreadsheetInterpretation(products, preparations, recipes,
+                inRecipeUnit(proposed, recipes, preparations, units), List.of(), warnings);
+    }
+
+    /**
+     * Un insumo propuesto cuya unidad no convierte con la de una receta que lo usa ("1 cebolla" y la cebolla propuesta en
+     * kg) va en la de la receta: si no, el import rechaza la fila con IMPORT_INCOMPATIBLE_UNIT. Pasó en la prueba del
+     * 2026-11-19 con una foto de receta; la unidad de compra la elige el modelo y a veces no cierra.
+     * ponytail: "convierte" = misma unidad base, el modelo de UnitConversionService; si alguna vez convierte por insumo
+     * (el peso de una unidad), esto tiene que preguntarle a él.
+     */
+    static List<ProductRow> inRecipeUnit(List<ProductRow> proposed, List<RecipeRow> recipes, List<PreparationRow> preparations,
+                                         List<com.chefcontrol.domain.product.Unit> units) {
+        Map<String, com.chefcontrol.domain.product.Unit> byName = new HashMap<>();
+        for (var u : units) {
+            if (u.getAbbreviation() != null) byName.putIfAbsent(CatalogImportService.key(u.getAbbreviation()), u);
+            if (u.getName() != null) byName.putIfAbsent(CatalogImportService.key(u.getName()), u);
+        }
+        java.util.function.Function<String, UUID> base = name -> {
+            var u = name == null ? null : byName.get(CatalogImportService.key(name));
+            return u == null ? null : u.getBaseUnitId() != null ? u.getBaseUnitId() : u.getId();
+        };
+        Map<String, String> usedIn = new HashMap<>();   // insumo → la unidad de la primera fila que lo usa
+        recipes.forEach(x -> { if (x.ingredient() != null && x.unit() != null) usedIn.putIfAbsent(CatalogImportService.key(x.ingredient()), x.unit()); });
+        preparations.forEach(x -> { if (x.ingredient() != null && x.unit() != null) usedIn.putIfAbsent(CatalogImportService.key(x.ingredient()), x.unit()); });
+        return proposed.stream().map(p -> {
+            String used = p.name() == null ? null : usedIn.get(CatalogImportService.key(p.name()));
+            UUID mine = base.apply(p.unit());
+            UUID theirs = base.apply(used);
+            return theirs == null || theirs.equals(mine) ? p
+                    : new ProductRow(p.row(), p.name(), used, p.category(), p.minStock(), p.yieldPercentage(), p.ivaPercentage());
+        }).toList();
     }
 
     /**
