@@ -49,7 +49,8 @@ class ChatRecipeDocumentTest {
     private final Product papa = product("Papa");
     private final Product fileto = product("Salsa fileto");
     private final MenuItem noquis = MenuItem.builder().id(UUID.randomUUID()).name("Ñoquis de papa").price(BigDecimal.TEN).build();
-    private final ChatCatalog catalog = new ChatCatalog(List.of(papa, fileto), List.of(noquis), List.of(), Set.of(fileto.getId()));
+    private final ChatCatalog catalog = new ChatCatalog(List.of(papa, fileto), List.of(noquis),
+            List.of(unit("Kilogramo", "kg"), unit("Gramo", "g"), unit("Unidad", "u"), unit("Litro", "l")), Set.of(fileto.getId()));
     private ChatRecipeService service;
 
     @BeforeEach
@@ -133,6 +134,49 @@ class ChatRecipeDocumentTest {
         var noPlan = service.previewDocumentRecipes(recipe, catalog, ALL);
         assertEquals(ChatStatus.NOT_REGISTERED, noPlan.status());
         assertEquals(ErrorCode.PLAN_FEATURE_REQUIRED, noPlan.skipped().getFirst().errorCode());
+    }
+
+    @Test
+    void aUnitOutsideTheListLeavesTheIngredientOutAndSaysTheRecipeIsIncomplete() {
+        var result = service.previewDocumentRecipes(new CatalogSpreadsheetInterpretation(List.of(), List.of(),
+                List.of(new RecipeRow(1, "Ñoquis de papa", null, null, "Papa", BigDecimal.ONE, "kg"),
+                        new RecipeRow(2, "Ñoquis de papa", null, null, "Harina", new BigDecimal("2"), "tazas"),
+                        new RecipeRow(3, "Ñoquis de papa", null, null, "Huevo", new BigDecimal("2"), "unidades")),
+                List.of(), List.of(), List.of()), catalog, ALL);
+
+        var rows = result.recipe().catalogImport().recipes();
+        assertEquals(List.of("Papa", "Huevo"), rows.stream().map(RecipeRow::ingredient).toList());
+        assertEquals("u", rows.get(1).unit());                                       // "unidades" es la de la lista
+        assertTrue(result.recipe().catalogImport().warnings().contains(
+                "«Harina» de «Ñoquis de papa»: 2 tazas no es una unidad que maneje; la dejé afuera, agregala a mano."),
+                result.recipe().catalogImport().warnings().toString());
+    }
+
+    @Test
+    void theChatRecipeKeepsAPriceOnlyIfTheMessageSaysIt() {
+        var r = new CatalogSpreadsheetInterpretation(List.of(), List.of(),
+                List.of(new RecipeRow(1, "Milanesa", BigDecimal.ZERO, null, "Tomate", new BigDecimal("300"), "g")),
+                List.of(), List.of(), List.of());
+        assertNull(ChatRecipeService.keepSaidPrice(r, "subile el tomate a 300 gramos").recipes().getFirst().price());
+        var priced = new CatalogSpreadsheetInterpretation(List.of(), List.of(),
+                List.of(new RecipeRow(1, "Milanesa", new BigDecimal("9500"), null, "Tomate", new BigDecimal("300"), "g")),
+                List.of(), List.of(), List.of());
+        assertNull(ChatRecipeService.keepSaidPrice(priced, "la milanesa lleva 300 g de tomate").recipes().getFirst().price());
+        assertEquals(0, new BigDecimal("9500").compareTo(ChatRecipeService.keepSaidPrice(priced,
+                "la milanesa va a $9.500 y lleva 300 g de tomate").recipes().getFirst().price()));
+        var mil = new CatalogSpreadsheetInterpretation(List.of(), List.of(),
+                List.of(new RecipeRow(1, "Milanesa", new BigDecimal("12000"), null, "Tomate", new BigDecimal("300"), "g")),
+                List.of(), List.of(), List.of());
+        assertEquals(0, new BigDecimal("12000").compareTo(ChatRecipeService.keepSaidPrice(mil,
+                "la milanesa a 12 mil, con 300 g de tomate").recipes().getFirst().price()));
+    }
+
+    private static com.chefcontrol.domain.product.Unit unit(String name, String abbreviation) {
+        var u = new com.chefcontrol.domain.product.Unit();
+        u.setId(UUID.randomUUID());
+        u.setName(name);
+        u.setAbbreviation(abbreviation);
+        return u;
     }
 
     private static Product product(String name) {

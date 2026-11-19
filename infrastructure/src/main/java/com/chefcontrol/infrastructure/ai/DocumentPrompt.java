@@ -87,8 +87,9 @@ final class DocumentPrompt {
             cuántas porciones son las cantidades, solo si lo dice. price y section solo si están escritos.
             12. Cada ingrediente con su cantidad y su unidad tal como están, SIN hacer cuentas: ni dividir por \
             porciones ni pasar de una unidad a otra (fracciones a número: "½ kg" → 0.5 y kg). unit es una abreviatura \
-            de UNIDADES; si la unidad no está en la lista (taza, cucharada), no la conviertas: dejá afuera el \
-            ingrediente y avisalo. Un ingrediente sin cantidad ("sal c/n", "a gusto") queda afuera, con su aviso.
+            de UNIDADES; si la unidad no está en la lista (taza, cucharada), no la conviertas: poné unit tal como \
+            está escrita ("tazas") y el sistema decide. Un ingrediente sin cantidad ("sal c/n", "a gusto") queda \
+            afuera, con su aviso.
             13. catalogName: el nombre EXACTO de un insumo del CATÁLOGO DE INSUMOS si el ingrediente es claramente ese \
             ("papas" → "Papa"); si dudás, null. Un ingrediente que no está en el catálogo y no es una preparación de \
             la foto va además una vez a proposedProducts, con su nombre y la unidad típica de compra (g → kg, ml → l, \
