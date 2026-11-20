@@ -15,6 +15,9 @@ public interface EmailService {
 
     void sendSetPasswordLink(String toEmail, String userName, String restaurantName, String setPasswordLink);
 
+    /** Aviso para alguien que ya usa Chef Control cuando lo suman a un local (no necesita crear contraseña). */
+    void sendAddedToRestaurant(String toEmail, String userName, String restaurantName, String appLink);
+
     /**
      * La suscripción quedó activa. Sale al autorizarse, antes del primer cobro (MP lo hace hasta una hora
      * después), así que describe lo contratado y no confirma un pago: el comprobante de cada cobro lo manda MP.
