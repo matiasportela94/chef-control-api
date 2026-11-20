@@ -6,8 +6,10 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 public interface JpaUserRestaurantRepository extends JpaRepository<UserRestaurantJpaEntity, UserRestaurantJpaId> {
@@ -34,4 +36,18 @@ public interface JpaUserRestaurantRepository extends JpaRepository<UserRestauran
             @Param("restaurantId") UUID restaurantId);
 
     boolean existsByRole_IdAndIsActiveTrue(UUID roleId);
+
+    @Query("SELECT CASE WHEN COUNT(ur) > 0 THEN true ELSE false END FROM UserRestaurantJpaEntity ur " +
+           "WHERE ur.user.id = :userId AND ur.isActive = true " +
+           "AND ur.restaurant.isActive = true AND ur.restaurant.accountId <> :accountId")
+    boolean existsActiveMembershipInOtherAccount(
+            @Param("userId") UUID userId,
+            @Param("accountId") UUID accountId);
+
+    @Query("SELECT DISTINCT ur.user.id FROM UserRestaurantJpaEntity ur " +
+           "WHERE ur.user.id IN :userIds AND ur.isActive = true " +
+           "AND ur.restaurant.isActive = true AND ur.restaurant.accountId <> :accountId")
+    Set<UUID> findUserIdsWithActiveMembershipInOtherAccount(
+            @Param("userIds") Collection<UUID> userIds,
+            @Param("accountId") UUID accountId);
 }

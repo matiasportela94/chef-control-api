@@ -33,6 +33,10 @@ public class UserRestaurant {
     private boolean isActive = true;
     private Instant createdAt;
 
+    public void activate() {
+        this.isActive = true;
+    }
+
     public void deactivate() {
         this.isActive = false;
     }

@@ -2,6 +2,7 @@ package com.chefcontrol.application.service;
 
 import com.chefcontrol.application.exception.AppException;
 import com.chefcontrol.application.port.AuditService;
+import com.chefcontrol.application.port.EmailService;
 import com.chefcontrol.application.port.PasswordEncoderPort;
 import com.chefcontrol.domain.audit.AuditAction;
 import com.chefcontrol.domain.context.TenantContext;
@@ -42,6 +43,7 @@ class UserManagementServicePermissionsTest {
     @Mock PermissionResolutionService permissionResolutionService;
     @Mock PasswordEncoderPort passwordEncoder;
     @Mock PasswordResetService passwordResetService;
+    @Mock EmailService emailService;
     @Mock AuditService auditService;
 
     private final UUID restaurantId = UUID.randomUUID();
@@ -51,7 +53,7 @@ class UserManagementServicePermissionsTest {
     private UserManagementService service() {
         return new UserManagementService(userRepository, userRestaurantRepository, roleRepository,
                 restaurantRepository, permissionOverrideRepository, permissionResolutionService,
-                passwordEncoder, passwordResetService, auditService);
+                passwordEncoder, passwordResetService, emailService, auditService);
     }
 
     @BeforeEach

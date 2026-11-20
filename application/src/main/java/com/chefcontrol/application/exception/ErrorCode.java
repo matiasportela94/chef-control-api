@@ -120,6 +120,8 @@ public enum ErrorCode {
     INVALID_EXPIRATION_DATE (Category.BAD_REQUEST),
     DUPLICATE_EMAIL         (Category.CONFLICT),
     DUPLICATE_PHONE         (Category.CONFLICT),
+    USER_ALREADY_IN_RESTAURANT (Category.CONFLICT),
+    USER_PROFILE_NOT_EDITABLE  (Category.FORBIDDEN),
     DUPLICATE_SLUG          (Category.CONFLICT),
     DUPLICATE_SKU           (Category.CONFLICT),
     INVALID_IVA_PERCENTAGE  (Category.BAD_REQUEST),     // fuera de 0, 2.5, 5, 10.5, 21, 27 (IvaRates)
