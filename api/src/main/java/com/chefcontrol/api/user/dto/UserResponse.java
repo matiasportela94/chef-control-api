@@ -14,9 +14,10 @@ public record UserResponse(
         String role,
         boolean roleIsSystem,
         boolean isActive,
+        boolean profileEditable,
         Instant memberSince
 ) {
-    public static UserResponse from(UserRestaurant membership) {
+    public static UserResponse from(UserRestaurant membership, boolean profileEditable) {
         return new UserResponse(
                 membership.getUserId(),
                 membership.getUserName(),
@@ -26,6 +27,7 @@ public record UserResponse(
                 membership.getRoleName(),
                 membership.isRoleIsSystem(),
                 membership.isActive(),
+                profileEditable,
                 membership.getCreatedAt());
     }
 }

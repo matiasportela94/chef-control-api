@@ -32,13 +32,16 @@ public class UserController {
     @PreAuthorize("hasAuthority('PERM_USERS_VIEW')")
     public ResponseEntity<List<UserResponse>> listUsers() {
         return ResponseEntity.ok(
-                userManagementService.listUsers().stream().map(UserResponse::from).toList());
+                userManagementService.listUsers().stream()
+                        .map(u -> UserResponse.from(u.membership(), u.profileEditable()))
+                        .toList());
     }
 
     @GetMapping("/{id}")
     @PreAuthorize("hasAuthority('PERM_USERS_VIEW')")
     public ResponseEntity<UserResponse> getUser(@PathVariable UUID id) {
-        return ResponseEntity.ok(UserResponse.from(userManagementService.getUser(id)));
+        var user = userManagementService.getUser(id);
+        return ResponseEntity.ok(UserResponse.from(user.membership(), user.profileEditable()));
     }
 
     @PostMapping
@@ -52,7 +55,7 @@ public class UserController {
                 request.roleId());
         var result = userManagementService.createUser(command);
         return ResponseEntity.status(HttpStatus.CREATED).body(
-                new CreateUserResponse(UserResponse.from(result.membership())));
+                new CreateUserResponse(UserResponse.from(result.membership(), result.profileEditable())));
     }
 
     @PutMapping("/{id}")
@@ -61,7 +64,8 @@ public class UserController {
             @PathVariable UUID id,
             @Valid @RequestBody UpdateUserRequest request) {
         var command = new UpdateUserCommand(request.name(), request.phone(), request.roleId());
-        return ResponseEntity.ok(UserResponse.from(userManagementService.updateUser(id, command)));
+        var updated = userManagementService.updateUser(id, command);
+        return ResponseEntity.ok(UserResponse.from(updated.membership(), updated.profileEditable()));
     }
 
     @DeleteMapping("/{id}")

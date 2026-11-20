@@ -47,6 +47,18 @@ public class TransactionalEmailService implements EmailService {
     }
 
     @Override
+    public void sendAddedToRestaurant(String toEmail, String userName, String restaurantName, String appLink) {
+        deliver(new EmailMessage(toEmail,
+                "Te sumaron a " + restaurantName + " en Chef Control",
+                layout("Hola " + esc(userName) + ",",
+                        "Te sumaron a <b>" + esc(restaurantName) + "</b>. Entrá con tu cuenta de siempre para verlo "
+                                + "en tu selector de locales.",
+                        "Ir a Chef Control", appLink, ACCESS_FOOTER),
+                "Hola " + userName + ",\n\nTe sumaron a " + restaurantName
+                        + ". Entrá con tu cuenta de siempre acá: " + appLink));
+    }
+
+    @Override
     public void sendSubscriptionWelcome(String toEmail, String userName, String planName, BigDecimal amountArs,
                                         BillingPeriod billingPeriod, String appLink) {
         String charge = ars(amountArs) + (billingPeriod == BillingPeriod.ANNUAL ? " por año" : " por mes");
@@ -178,6 +190,7 @@ public class TransactionalEmailService implements EmailService {
             """.replace("{FONT}", FONT);
 
     private static final String LINK_FOOTER = "Si no fuiste vos, ignorá este mensaje: no pasa nada hasta que uses el enlace.";
+    private static final String ACCESS_FOOTER = "Si no reconocés este local, avisale a su administrador para que te dé de baja.";
     private static final String BILLING_FOOTER = "Te escribimos porque sos el titular de la cuenta en Chef Control.";
 
     /** {@code greeting}/{@code body} may contain markup, so callers escape user data with {@link #esc}. */

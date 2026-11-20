@@ -12,8 +12,10 @@ import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -65,5 +67,18 @@ public class UserRestaurantRepositoryAdapter implements UserRestaurantRepository
     @Override
     public boolean existsByRoleIdAndIsActiveTrue(UUID roleId) {
         return jpa.existsByRole_IdAndIsActiveTrue(roleId);
+    }
+
+    @Override
+    public boolean existsActiveMembershipInOtherAccount(UUID userId, UUID accountId) {
+        return jpa.existsActiveMembershipInOtherAccount(userId, accountId);
+    }
+
+    @Override
+    public Set<UUID> findUserIdsWithActiveMembershipInOtherAccount(Collection<UUID> userIds, UUID accountId) {
+        if (userIds == null || userIds.isEmpty()) {
+            return Set.of();
+        }
+        return jpa.findUserIdsWithActiveMembershipInOtherAccount(userIds, accountId);
     }
 }

@@ -33,6 +33,27 @@ class TransactionalEmailServiceTest {
     }
 
     @Test
+    void addedToRestaurantMailEscapesNamesAndPointsToApp() {
+        List<EmailMessage> sent = new ArrayList<>();
+        var service = new TransactionalEmailService(sent::add);
+
+        service.sendAddedToRestaurant("a@b.com", "<b>Ana</b>", "<script>x</script>", "https://app/login");
+
+        EmailMessage m = sent.get(0);
+        assertEquals("a@b.com", m.to());
+        assertTrue(m.subject().contains("<script>x</script>"));
+        assertFalse(m.html().contains("<b>Ana</b>"));
+        assertTrue(m.html().contains("&lt;b&gt;Ana&lt;/b&gt;"));
+        assertFalse(m.html().contains("<script>"));
+        assertTrue(m.html().contains("&lt;script&gt;"));
+        assertTrue(m.html().contains("https://app/login"));
+        assertTrue(m.text().contains("https://app/login"));
+        assertFalse(m.html().contains("no pasa nada hasta que uses el enlace"),
+                "el acceso ya fue otorgado: el pie de enlaces de un solo uso no aplica");
+        assertFalse(m.html().matches("(?s).*\\{[A-Z]+\\}.*"), "placeholder sin reemplazar");
+    }
+
+    @Test
     void paymentReminderShowsTheDeadlineInArgentineTimeWithTheBillingFooter() {
         List<EmailMessage> sent = new ArrayList<>();
         var service = new TransactionalEmailService(sent::add);
