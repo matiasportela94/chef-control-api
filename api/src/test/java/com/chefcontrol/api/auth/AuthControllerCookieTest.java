@@ -73,7 +73,7 @@ class AuthControllerCookieTest {
         when(membership.getRoleName()).thenReturn("SUPERADMIN");
         when(userRepository.findByEmailAndIsActiveTrue("a@b.c")).thenReturn(Optional.of(user));
         when(userRestaurantRepository.findActiveByUserId(any())).thenReturn(List.of(membership));
-        when(jwtTokenProvider.generateToken(eq(user), eq(restaurantId), anyList())).thenReturn("jwt");
+        when(jwtTokenProvider.generateToken(eq(user), eq(restaurantId), anyList(), anyList())).thenReturn("jwt");
 
         var response = new MockHttpServletResponse();
         controller.login(new LoginRequest("a@b.c", "secret"), response);

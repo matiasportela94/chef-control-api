@@ -1,6 +1,5 @@
 package com.chefcontrol.infrastructure.security;
 
-import com.chefcontrol.application.service.PermissionResolutionService;
 import com.chefcontrol.domain.user.User;
 import com.chefcontrol.domain.user.UserRestaurant;
 import io.jsonwebtoken.Claims;
@@ -26,7 +25,6 @@ import java.util.UUID;
 @Slf4j
 public class JwtTokenProvider {
 
-    private final PermissionResolutionService permissionResolutionService;
 
     @Value("${app.jwt.secret}")
     private String secret;
@@ -41,7 +39,9 @@ public class JwtTokenProvider {
         this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
     }
 
-    public String generateToken(User user, UUID activeRestaurantId, List<UserRestaurant> memberships) {
+    /** @param permissions los efectivos del local activo, ya resueltos (los mismos que van en la respuesta del login) */
+    public String generateToken(User user, UUID activeRestaurantId, List<UserRestaurant> memberships,
+                                List<String> permissions) {
         List<String> restaurantIds = memberships.stream()
                 .map(ur -> ur.getRestaurantId().toString())
                 .toList();
@@ -50,10 +50,6 @@ public class JwtTokenProvider {
                 .filter(ur -> ur.getRestaurantId().equals(activeRestaurantId))
                 .findFirst()
                 .orElseThrow(() -> new IllegalStateException("No membership for active restaurant"));
-
-        List<String> permissions = permissionResolutionService
-                .resolveEffectivePermissions(user.getId(), activeRestaurantId, activeMembership.getRoleId())
-                .stream().map(Enum::name).toList();
 
         return Jwts.builder()
                 .subject(user.getEmail())

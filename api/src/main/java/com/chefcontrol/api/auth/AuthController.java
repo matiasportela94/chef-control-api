@@ -157,8 +157,10 @@ public class AuthController {
 
     private LoginResponse openSession(User user, UUID restaurantId, List<UserRestaurant> memberships,
                                       HttpServletResponse response) {
-        setAuthCookie(response, jwtTokenProvider.generateToken(user, restaurantId, memberships));
-        return buildLoginResponse(user, restaurantId, memberships);
+        // Los permisos se resuelven una vez: van en la respuesta y en el token.
+        LoginResponse loginResponse = buildLoginResponse(user, restaurantId, memberships);
+        setAuthCookie(response, jwtTokenProvider.generateToken(user, restaurantId, memberships, loginResponse.permissions()));
+        return loginResponse;
     }
 
     @PostMapping("/switch-restaurant")
@@ -179,13 +181,15 @@ public class AuthController {
             throw AppException.forbidden(ErrorCode.RESTAURANT_ACCESS_DENIED, "No access to requested restaurant");
         }
 
-        String token = jwtTokenProvider.generateToken(user, request.restaurantId(), memberships);
+        LoginResponse loginResponse = buildLoginResponse(user, request.restaurantId(), memberships);
+        String token = jwtTokenProvider.generateToken(user, request.restaurantId(), memberships,
+                loginResponse.permissions());
 
         auditService.log(AuditAction.USER_RESTAURANT_SWITCHED, "Restaurant", request.restaurantId(),
                 Map.of("from", principal.activeRestaurantId(), "to", request.restaurantId()));
 
         setAuthCookie(response, token);
-        return ResponseEntity.ok(buildLoginResponse(user, request.restaurantId(), memberships));
+        return ResponseEntity.ok(loginResponse);
     }
 
     @PostMapping("/logout")
@@ -240,12 +244,12 @@ public class AuthController {
 
         // Los nombres de cuenta se resuelven de una y se reusan: un usuario tiene una o dos
         // cuentas, no cien, así que un mapa alcanza y evita una consulta por restaurante.
-        Map<UUID, String> accountNames = memberships.stream()
+        Map<UUID, com.chefcontrol.domain.account.Account> accounts = memberships.stream()
                 .map(UserRestaurant::getRestaurantAccountId)
                 .filter(Objects::nonNull)
                 .distinct()
                 .collect(HashMap::new,
-                        (m, id) -> accountRepository.findById(id).ifPresent(a -> m.put(id, a.getName())),
+                        (m, id) -> accountRepository.findById(id).ifPresent(a -> m.put(id, a)),
                         HashMap::putAll);
 
         List<LoginResponse.RestaurantSummary> restaurants = memberships.stream()
@@ -254,7 +258,8 @@ public class AuthController {
                         ur.getRestaurantName(),
                         ur.getRoleName(),
                         ur.getRestaurantAccountId(),
-                        accountNames.get(ur.getRestaurantAccountId()),
+                        java.util.Optional.ofNullable(accounts.get(ur.getRestaurantAccountId()))
+                                .map(com.chefcontrol.domain.account.Account::getName).orElse(null),
                         ur.getRestaurantTaxCondition()))
                 .toList();
 
@@ -264,7 +269,7 @@ public class AuthController {
                 .resolveEffectivePermissions(user.getId(), activeRestaurantId, active.getRoleId())
                 .stream().map(Enum::name).toList();
 
-        List<String> features = accountRepository.findById(active.getRestaurantAccountId())
+        List<String> features = java.util.Optional.ofNullable(accounts.get(active.getRestaurantAccountId()))
                 .map(a -> a.effectivePlan(ChefControlTime.nowInstant()).getFeatures().stream().map(Enum::name).toList())
                 .orElse(List.of());
 
