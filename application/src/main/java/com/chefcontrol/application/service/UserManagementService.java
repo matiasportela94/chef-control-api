@@ -19,6 +19,7 @@ import com.chefcontrol.domain.user.Role;
 import com.chefcontrol.domain.user.User;
 import com.chefcontrol.domain.user.UserRestaurant;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,6 +30,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class UserManagementService {
@@ -104,7 +106,8 @@ public class UserManagementService {
         try {
             passwordResetService.createAndSendSetPasswordToken(user, restaurant);
         } catch (Exception e) {
-            // Notification failure must not block user creation
+            // Que falle el mail no frena el alta: el invitado puede pedir "olvidé mi contraseña".
+            log.warn("Set-password email for new user {} failed", user.getId(), e);
         }
 
         auditService.log(AuditAction.USER_CREATED, "User", user.getId(),
@@ -151,7 +154,7 @@ public class UserManagementService {
             emailService.sendAddedToRestaurant(
                     existingUser.getEmail(), existingUser.getName(), restaurant.getName(), frontendUrl);
         } catch (Exception e) {
-            // Notification failure must not block user addition
+            log.warn("Added-to-restaurant email for user {} failed", existingUser.getId(), e);
         }
 
         AuditAction action = reactivating ? AuditAction.USER_REACTIVATED : AuditAction.USER_CREATED;
@@ -202,6 +205,35 @@ public class UserManagementService {
                 Map.of("role", role.getName(), "restaurantId", restaurantId));
 
         return new ManagedUser(membership, profileEditable);
+    }
+
+    // ── El perfil propio (/profile) ───────────────────────────────────────────
+
+    /** El usuario de la sesión: nombre, teléfono y email son suyos en toda la plataforma, no de un local. */
+    public User getOwnProfile(UUID userId) {
+        return userRepository.findById(userId)
+                .orElseThrow(() -> AppException.notFound(ErrorCode.USER_NOT_FOUND, "User not found"));
+    }
+
+    /**
+     * Cada uno edita su nombre y su teléfono. Sin la regla de /users (que bloquea a quien trabaja en otra cuenta): ahí el
+     * que edita es un admin; acá es la persona. El email no se edita: es su login.
+     */
+    @Transactional
+    public User updateOwnProfile(UUID userId, String name, String phone) {
+        User user = getOwnProfile(userId);
+        String newPhone = normalizeBlank(phone);
+        if (newPhone != null && !newPhone.equals(user.getPhone()) && userRepository.existsByPhone(newPhone)) {
+            throw AppException.conflict(ErrorCode.DUPLICATE_PHONE, "Phone number already registered");
+        }
+        user.setName(name.trim());
+        user.setPhone(newPhone);
+        user = userRepository.save(user);
+        Map<String, Object> payload = new java.util.HashMap<>();   // HashMap: el teléfono puede ser null
+        payload.put("name", user.getName());
+        payload.put("phone", user.getPhone());
+        auditService.log(AuditAction.USER_PROFILE_UPDATED, "User", userId, payload);
+        return user;
     }
 
     private boolean isProfileEditable(UUID userId, UUID accountId) {

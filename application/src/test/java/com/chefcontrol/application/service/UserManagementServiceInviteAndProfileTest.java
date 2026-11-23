@@ -414,4 +414,66 @@ class UserManagementServiceInviteAndProfileTest {
         assertThat(ownUser.getPhone()).isEqualTo("+5491122222222");
         verify(userRepository).save(ownUser);
     }
+
+    @Test
+    void updatesOwnProfileTrimmingNameAndClearingABlankPhone() {
+        UUID userId = UUID.randomUUID();
+        User user = existingUser(userId, "juan@cuenta.com", "Juan", "+5491111111111", true);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(userRepository.save(user)).thenReturn(user);
+
+        var updated = service().updateOwnProfile(userId, "  Juan Pérez ", "   ");
+
+        assertThat(updated.getName()).isEqualTo("Juan Pérez");
+        assertThat(updated.getPhone()).isNull();
+        assertThat(updated.getEmail()).isEqualTo("juan@cuenta.com");
+        verify(auditService).log(eq(AuditAction.USER_PROFILE_UPDATED), eq("User"), eq(userId), any());
+    }
+
+    @Test
+    void rejectsOwnProfilePhoneThatAnotherUserHas() {
+        UUID userId = UUID.randomUUID();
+        User user = existingUser(userId, "juan@cuenta.com", "Juan", "+5491111111111", true);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(userRepository.existsByPhone("+5491122222222")).thenReturn(true);
+
+        assertThatThrownBy(() -> service().updateOwnProfile(userId, "Juan", " +5491122222222 "))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.DUPLICATE_PHONE);
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void keepingTheOwnPhoneIsNotADuplicate() {
+        UUID userId = UUID.randomUUID();
+        User user = existingUser(userId, "juan@cuenta.com", "Juan", "+5491111111111", true);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(userRepository.save(user)).thenReturn(user);
+
+        var updated = service().updateOwnProfile(userId, "Juan Nuevo", "+5491111111111");
+
+        assertThat(updated.getName()).isEqualTo("Juan Nuevo");
+        verify(userRepository, never()).existsByPhone(any());
+    }
+
+    @Test
+    void anInvitationWithAnotherCaseStoresTheEmailNormalized() {
+        UUID newUserId = UUID.randomUUID();
+        when(userRepository.findByEmail("Nuevo@Ejemplo.com")).thenReturn(Optional.empty());
+        when(restaurantRepository.findByIdAndIsActiveTrue(restaurantId)).thenReturn(Optional.of(activeRestaurant()));
+        when(roleRepository.findByIdAndAccountId(roleId, accountId)).thenReturn(Optional.of(assignableRole()));
+        when(passwordEncoder.encode(any())).thenReturn("hashed");
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> {
+            User u = inv.getArgument(0);
+            u.setId(newUserId);
+            return u;
+        });
+        when(userRestaurantRepository.save(any(UserRestaurant.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service().createUser(new UserManagementService.CreateUserCommand("Ana", "Nuevo@Ejemplo.com", null, roleId));
+
+        verify(userRepository).save(argThat(u -> "nuevo@ejemplo.com".equals(u.getEmail())));
+    }
 }
+

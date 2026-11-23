@@ -23,7 +23,7 @@ public class UserRepositoryAdapter implements UserRepository {
 
     @Override
     public Optional<User> findByEmailAndIsActiveTrue(String email) {
-        return jpa.findByEmailAndIsActiveTrue(email).map(UserJpaEntity::toDomain);
+        return jpa.findByEmailAndIsActiveTrue(User.normalizeEmail(email)).map(UserJpaEntity::toDomain);
     }
 
     @Override
@@ -33,7 +33,7 @@ public class UserRepositoryAdapter implements UserRepository {
 
     @Override
     public Optional<User> findByEmail(String email) {
-        return jpa.findByEmail(email).map(UserJpaEntity::toDomain);
+        return jpa.findByEmail(User.normalizeEmail(email)).map(UserJpaEntity::toDomain);
     }
 
     @Override
@@ -43,7 +43,7 @@ public class UserRepositoryAdapter implements UserRepository {
 
     @Override
     public boolean existsByEmail(String email) {
-        return jpa.existsByEmail(email);
+        return jpa.existsByEmail(User.normalizeEmail(email));
     }
 
     @Override
