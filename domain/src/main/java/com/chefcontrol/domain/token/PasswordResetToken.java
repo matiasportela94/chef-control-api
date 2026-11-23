@@ -12,7 +12,8 @@ public class PasswordResetToken {
 
     private UUID id;
     private UUID userId;
-    private UUID token;
+    /** SHA-256 en hex del token del link: la base nunca guarda el token, así un volcado no da links que sirvan. */
+    private String tokenHash;
     private TokenType type;
     private Instant expiresAt;
     private Instant usedAt;
@@ -28,5 +29,14 @@ public class PasswordResetToken {
 
     public void markUsed() {
         this.usedAt = Instant.now();
+    }
+
+    public static String hash(UUID token) {
+        try {
+            return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(token.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);   // toda JVM trae SHA-256
+        }
     }
 }

@@ -17,8 +17,8 @@ public class PasswordResetTokenRepositoryAdapter implements PasswordResetTokenRe
     private final JpaPasswordResetTokenRepository jpa;
 
     @Override
-    public Optional<PasswordResetToken> findByToken(UUID token) {
-        return jpa.findByToken(token).map(PasswordResetTokenJpaEntity::toDomain);
+    public Optional<PasswordResetToken> findByTokenHash(String tokenHash) {
+        return jpa.findByTokenHash(tokenHash).map(PasswordResetTokenJpaEntity::toDomain);
     }
 
     @Override

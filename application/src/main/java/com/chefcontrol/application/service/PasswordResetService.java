@@ -14,15 +14,20 @@ import com.chefcontrol.domain.token.PasswordResetToken;
 import com.chefcontrol.domain.token.TokenType;
 import com.chefcontrol.domain.user.User;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class PasswordResetService {
@@ -48,11 +53,16 @@ public class PasswordResetService {
      */
     @Transactional
     public void requestPasswordReset(String email) {
+        // Pasado el límite, nada: ni token ni mail. La respuesta es la misma, así no dice si el email existe.
+        if (!resetLimiter.allow(User.normalizeEmail(email), Instant.now())) {
+            log.info("[AUTH] password reset throttled");
+            return;
+        }
         userRepository.findByEmailAndIsActiveTrue(email).ifPresent(user -> {
-            PasswordResetToken prt = buildAndSaveToken(user, TokenType.PASSWORD_RESET,
+            UUID token = buildAndSaveToken(user, TokenType.PASSWORD_RESET,
                     Duration.ofMinutes(passwordResetExpirationMinutes));
 
-            String link = frontendUrl + "/reset-password?token=" + prt.getToken();
+            String link = frontendUrl + "/reset-password?token=" + token;
 
             emailService.sendPasswordResetLink(user.getEmail(), user.getName(), link);
 
@@ -71,7 +81,7 @@ public class PasswordResetService {
      */
     @Transactional
     public void resetPassword(UUID token, String newPassword) {
-        PasswordResetToken prt = tokenRepository.findByToken(token)
+        PasswordResetToken prt = tokenRepository.findByTokenHash(PasswordResetToken.hash(token))
                 .orElseThrow(() -> AppException.badRequest(ErrorCode.INVALID_TOKEN, "Invalid or unknown token"));
 
         if (prt.isExpired()) {
@@ -100,10 +110,9 @@ public class PasswordResetService {
      */
     @Transactional
     public void createAndSendSetPasswordToken(User user, Restaurant restaurant) {
-        PasswordResetToken prt = buildAndSaveToken(user, TokenType.SET_PASSWORD,
-                Duration.ofHours(setPasswordExpirationHours));
+        UUID token = buildAndSaveToken(user, TokenType.SET_PASSWORD, Duration.ofHours(setPasswordExpirationHours));
 
-        String link = frontendUrl + "/set-password?token=" + prt.getToken();
+        String link = frontendUrl + "/set-password?token=" + token;
 
         emailService.sendSetPasswordLink(user.getEmail(), user.getName(), restaurant.getName(), link);
 
@@ -112,14 +121,52 @@ public class PasswordResetService {
         }
     }
 
-    private PasswordResetToken buildAndSaveToken(User user, TokenType type, Duration duration) {
+    /** Guarda el hash y devuelve el token, que va solo en el link. */
+    private UUID buildAndSaveToken(User user, TokenType type, Duration duration) {
         tokenRepository.deleteByUserId(user.getId());
 
+        UUID token = UUID.randomUUID();
         PasswordResetToken prt = new PasswordResetToken();
         prt.setUserId(user.getId());
-        prt.setToken(UUID.randomUUID());
+        prt.setTokenHash(PasswordResetToken.hash(token));
         prt.setType(type);
         prt.setExpiresAt(Instant.now().plus(duration));
-        return tokenRepository.save(prt);
+        tokenRepository.save(prt);
+        return token;
+    }
+
+    private final ResetLimiter resetLimiter = new ResetLimiter();
+
+    /**
+     * Pedidos de "olvidé mi contraseña" por email: uno por minuto y cinco por hora. Sin esto, cualquiera podía llenarle la
+     * casilla a otro.
+     * ponytail: en memoria y por instancia (con dos instancias del back cada una cuenta aparte) y la limpieza recorre
+     * todo en cada pedido; con más de una instancia o mucho tráfico, a la base o a Redis.
+     */
+    static final class ResetLimiter {
+        private static final Duration MIN_GAP = Duration.ofMinutes(1);
+        private static final Duration WINDOW = Duration.ofHours(1);
+        private static final int MAX_PER_WINDOW = 5;
+
+        private final Map<String, List<Instant>> attempts = new HashMap<>();
+
+        synchronized boolean allow(String key, Instant now) {
+            Instant windowStart = now.minus(WINDOW);
+            // Solo quedan los pedidos de la última hora: el mapa no crece más que eso.
+            attempts.values().removeIf(times -> {
+                times.removeIf(t -> !t.isAfter(windowStart));
+                return times.isEmpty();
+            });
+            List<Instant> recent = attempts.computeIfAbsent(key, k -> new ArrayList<>());
+            if (recent.size() >= MAX_PER_WINDOW || (!recent.isEmpty() && recent.getLast().isAfter(now.minus(MIN_GAP)))) {
+                return false;
+            }
+            recent.add(now);
+            return true;
+        }
+
+        synchronized int trackedKeys() {
+            return attempts.size();
+        }
     }
 }

@@ -26,8 +26,8 @@ public class PasswordResetTokenJpaEntity {
     @JoinColumn(name = "user_id", insertable = false, updatable = false)
     private UserJpaEntity user;
 
-    @Column(nullable = false, unique = true)
-    private UUID token;
+    @Column(name = "token_hash", nullable = false, unique = true, length = 64)
+    private String tokenHash;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -46,7 +46,7 @@ public class PasswordResetTokenJpaEntity {
         PasswordResetTokenJpaEntity e = new PasswordResetTokenJpaEntity();
         e.setId(domain.getId());
         e.setUserId(domain.getUserId());
-        e.setToken(domain.getToken());
+        e.setTokenHash(domain.getTokenHash());
         e.setType(domain.getType());
         e.setExpiresAt(domain.getExpiresAt());
         e.setUsedAt(domain.getUsedAt());
@@ -58,7 +58,7 @@ public class PasswordResetTokenJpaEntity {
         PasswordResetToken t = new PasswordResetToken();
         t.setId(id);
         t.setUserId(userId);
-        t.setToken(token);
+        t.setTokenHash(tokenHash);
         t.setType(type);
         t.setExpiresAt(expiresAt);
         t.setUsedAt(usedAt);

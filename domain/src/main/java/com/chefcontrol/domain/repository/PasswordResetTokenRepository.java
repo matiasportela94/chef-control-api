@@ -7,7 +7,7 @@ import java.util.UUID;
 
 public interface PasswordResetTokenRepository {
 
-    Optional<PasswordResetToken> findByToken(UUID token);
+    Optional<PasswordResetToken> findByTokenHash(String tokenHash);
 
     PasswordResetToken save(PasswordResetToken token);
 
