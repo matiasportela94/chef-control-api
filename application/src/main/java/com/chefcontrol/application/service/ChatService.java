@@ -541,19 +541,27 @@ public class ChatService {
     }
 
     /**
-     * Si ese número está escrito en el texto: "9.500", "$9500", "9500,50" o "9 mil". Lo usan el precio de una compra
-     * por chat y el de una receta por chat: un precio que no está en ningún texto lo calculó o lo inventó el modelo.
+     * Si ese número está escrito en el texto: "9.500", "$9500", "9500,50" (= 9500), "120 mil" o "12,5 mil". Lo usan el
+     * precio de una compra por chat y el de una receta por chat: un precio que no está en ningún texto lo calculó o lo
+     * inventó el modelo. Se compara contra cada número escrito por separado: con todos los dígitos juntos, "10 kg de
+     * harina, 1000 en total" quedaba "101000" y un 100 calculado por el modelo pasaba el control.
      * ponytail: no lee números en palabras ("ciento veinte mil"); el dictado los escribe con cifras.
      */
     static boolean numberSaid(String text, BigDecimal n) {
         if (text == null || n == null || n.signum() <= 0) return false;
-        String digits = text.replaceAll("[^0-9]", "");
         java.math.BigInteger whole = n.toBigInteger();
-        if (digits.contains(whole.toString())) return true;
-        return text.toLowerCase(java.util.Locale.ROOT).matches("(?s).*\\bmil\\b.*")
-                && n.remainder(BigDecimal.valueOf(1000)).signum() == 0
-                && digits.contains(whole.divide(java.math.BigInteger.valueOf(1000)).toString());
+        java.util.regex.Matcher m = WRITTEN_NUMBER.matcher(text);
+        while (m.find()) {
+            BigDecimal value = new BigDecimal(m.group(1).replace(".", "") + (m.group(2) == null ? "" : "." + m.group(2)));
+            if (m.group(3) != null) value = value.multiply(BigDecimal.valueOf(1000));
+            if (value.toBigInteger().equals(whole)) return true;
+        }
+        return false;
     }
+
+    /** Un número como se escribe en es-AR: punto de miles, coma decimal y, si sigue, "mil". */
+    private static final java.util.regex.Pattern WRITTEN_NUMBER = java.util.regex.Pattern.compile(
+            "(\\d{1,3}(?:\\.\\d{3})+|\\d+)(?:,(\\d+))?(\\s*mil\\b)?", java.util.regex.Pattern.CASE_INSENSITIVE);
 
     /** Con la acción que corrige: "corregila" y "es otra" contestan alternativas distintas del resguardo. */
     private static List<String> keys(List<Operation> operations) {

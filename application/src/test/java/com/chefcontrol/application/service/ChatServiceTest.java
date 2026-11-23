@@ -604,6 +604,21 @@ class ChatServiceTest {
     }
 
     @Test
+    void aPriceIsComparedAgainstEachWrittenNumber() {
+        // Con los dígitos de todo el texto juntos quedaba "101000", y un 100 calculado por el modelo pasaba.
+        assertFalse(ChatService.numberSaid("10 kg de harina, 1000 en total", new BigDecimal("100")));
+        assertTrue(ChatService.numberSaid("10 kg de harina, 1000 en total", new BigDecimal("1000")));
+        assertTrue(ChatService.numberSaid("a 9.500", new BigDecimal("9500")));
+        assertTrue(ChatService.numberSaid("a $9500", new BigDecimal("9500")));
+        assertTrue(ChatService.numberSaid("a 9500,50", new BigDecimal("9500")));
+        assertTrue(ChatService.numberSaid("a 1.200.000 el lote", new BigDecimal("1200000")));
+        assertTrue(ChatService.numberSaid("a 12,5 mil", new BigDecimal("12500")));
+        assertTrue(ChatService.numberSaid("a 120 MIL", new BigDecimal("120000")));
+        assertFalse(ChatService.numberSaid("a 120 mil", new BigDecimal("120")));
+        assertFalse(ChatService.numberSaid("2 milanesas a 9", new BigDecimal("2000")));
+    }
+
+    @Test
     void aYesAloneIsAnAffirmationAndOnlyThat() {
         assertTrue(ChatService.isAffirmation("Sí, dale"));
         assertTrue(ChatService.isAffirmation("ok confirmo"));
