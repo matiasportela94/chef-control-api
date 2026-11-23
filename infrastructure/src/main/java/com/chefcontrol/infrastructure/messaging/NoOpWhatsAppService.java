@@ -37,11 +37,12 @@ public class NoOpWhatsAppService implements WhatsAppService {
 
     @Override
     public void sendSetPasswordLink(String toPhone, String userName, String restaurantName, String setPasswordLink) {
-        log.warn("[WA no-op] Set-password link for {} ({}) — link: {}", toPhone, restaurantName, setPasswordLink);
+        // El link lleva el token: en el log alcanzaría para elegir la contraseña de otro.
+        log.warn("[WA no-op] Set-password link for {} ({}) not sent (link omitted)", toPhone, restaurantName);
     }
 
     @Override
     public void sendPasswordResetLink(String toPhone, String userName, String resetLink) {
-        log.warn("[WA no-op] Password reset link for {} — link: {}", toPhone, resetLink);
+        log.warn("[WA no-op] Password reset link for {} not sent (link omitted)", toPhone);
     }
 }
