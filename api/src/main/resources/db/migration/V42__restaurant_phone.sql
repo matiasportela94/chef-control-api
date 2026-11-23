@@ -8,8 +8,8 @@
 
 ALTER TABLE user_restaurants ADD COLUMN phone VARCHAR(20);
 
--- Así /users muestra lo mismo que antes. No choca: hasta acá users.phone era único.
-UPDATE user_restaurants ur SET phone = u.phone FROM users u WHERE u.id = ur.user_id AND u.phone IS NOT NULL;
+-- Sin backfill, a propósito (Mati, 2026-11-23): las membresías que ya existían quedan en null y heredan el personal.
+-- Copiarlo dejaría números viejos pegados en silencio cuando alguien cambia su personal en /profile.
 
 -- El índice users_phone_idx queda.
 ALTER TABLE users DROP CONSTRAINT users_phone_key;
