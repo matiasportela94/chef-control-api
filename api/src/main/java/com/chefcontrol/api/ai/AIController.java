@@ -2,35 +2,26 @@ package com.chefcontrol.api.ai;
 
 import com.chefcontrol.api.ai.dto.InterpretCatalogResult;
 import com.chefcontrol.api.plan.RequiresFeature;
-import com.chefcontrol.application.exception.AppException;
-import com.chefcontrol.application.exception.ErrorCode;
 import com.chefcontrol.application.port.AIService.SpreadsheetRow;
 import com.chefcontrol.application.port.AIService.SpreadsheetSheet;
 import com.chefcontrol.application.service.CatalogSpreadsheetService;
 import com.chefcontrol.domain.plan.Feature;
-import com.chefcontrol.application.service.AIExecuteService;
-import com.chefcontrol.application.service.TextInterpretService;
 import com.chefcontrol.application.service.TranscriptionService;
 import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 
 import java.util.List;
-import java.util.Map;
-
-import static com.chefcontrol.api.shared.Authorities.hasAuthority;
 
 @RestController
 @RequestMapping("/ai")
@@ -38,38 +29,8 @@ import static com.chefcontrol.api.shared.Authorities.hasAuthority;
 @RequiredArgsConstructor
 public class AIController {
 
-    private final TextInterpretService textInterpretService;
-    private final AIExecuteService     aiExecuteService;
     private final CatalogSpreadsheetService catalogSpreadsheetService;
     private final TranscriptionService transcriptionService;
-
-    @PostMapping("/interpret")
-    @PreAuthorize("hasAuthority('PERM_AI_USE')")
-    public ResponseEntity<InterpretResponse> interpret(@Valid @RequestBody InterpretRequest request) {
-        var r = textInterpretService.interpret(request.message());
-        return ResponseEntity.ok(new InterpretResponse(
-                r.intent(), r.confidence(), r.needsConfirmation(), r.extractedData(), r.responseToUser()));
-    }
-
-    /**
-     * Deprecado: lo reemplaza /ai/chat, se borra cuando el front migre. Hasta entonces pide además el permiso de la
-     * pantalla de esa operación (antes solo AI_USE: alguien sin PURCHASES_CREATE cargaba compras por acá).
-     */
-    @PostMapping("/execute")
-    @PreAuthorize("hasAuthority('PERM_AI_USE')")
-    public ResponseEntity<ExecuteResponse> execute(@Valid @RequestBody ExecuteRequest request,
-                                                   Authentication authentication) {
-        String needed = switch (request.intent()) {
-            case "purchase" -> "PERM_PURCHASES_CREATE";
-            case "waste" -> "PERM_WASTE_CREATE";
-            default -> null;   // el resto no ejecuta nada
-        };
-        if (needed != null && !hasAuthority(authentication, needed)) {
-            throw AppException.forbidden(ErrorCode.FORBIDDEN, "Missing " + needed);
-        }
-        var result = aiExecuteService.execute(request.intent(), request.data());
-        return ResponseEntity.ok(new ExecuteResponse(result.success(), result.message(), result.created(), result.skipped()));
-    }
 
     /**
      * La IA traduce un Excel de catálogo armado como sea al cuerpo de /catalog-import, sin escribir nada: después
@@ -90,7 +51,7 @@ public class AIController {
 
     /**
      * Audio (webm, mp4/m4a u ogg, detectado por magic bytes) a texto en castellano. Solo transcribe: el texto vuelve al
-     * front, que lo manda a /ai/interpret como si se hubiera escrito. Más de 4 MB → AI_AUDIO_TOO_LARGE.
+     * front, que lo manda a /ai/chat como si se hubiera escrito. Más de 4 MB → AI_AUDIO_TOO_LARGE.
      */
     @PostMapping(value = "/transcribe", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasAuthority('PERM_AI_USE')")
@@ -100,14 +61,6 @@ public class AIController {
     }
 
     record TranscriptionResponse(String text) {}
-
-    record InterpretRequest(@NotBlank @Size(max = 500) String message) {}
-
-    record InterpretResponse(String intent, int confidence, boolean needsConfirmation, Object data, String responseToUser) {}
-
-    record ExecuteRequest(@NotBlank String intent, Map<String, Object> data) {}
-
-    record ExecuteResponse(boolean success, String message, int created, int skipped) {}
 
     record InterpretCatalogRequest(@NotNull @Size(max = 20) List<@Valid @NotNull SpreadsheetSheetRequest> sheets) {}
 

@@ -227,11 +227,6 @@ class CatalogSpreadsheetServiceTest {
         CatalogSpreadsheetInterpretation answer = interpretation(List.of(), List.of(), List.of(), List.of(), List.of());
 
         @Override
-        public AIInterpretation interpret(InterpretRequest request) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
         public CatalogSpreadsheetInterpretation interpretCatalogSpreadsheet(CatalogSpreadsheetRequest request) {
             requests.add(request);
             return answer;

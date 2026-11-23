@@ -184,7 +184,7 @@ public class AIChatController {
                                 java.math.BigDecimal ivaPercentage, java.time.LocalDate expirationDate,
                                 @jakarta.validation.constraints.Positive java.math.BigDecimal unitsPerPrintedUnit) {}
 
-    /** 2000 y no los 500 de /ai/interpret: un audio de 2 minutos transcripto pasa los 500 caracteres. */
+    /** 2000: un audio de 2 minutos transcripto pasa los 500 caracteres. */
     record SendChatMessageRequest(@NotBlank @Size(max = 2000) String message) {}
 
     record ConfirmChatOperationsRequest(@NotNull @Size(min = 1, max = 20) List<@Valid @NotNull ChatOperation> operations) {}

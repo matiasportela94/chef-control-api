@@ -16,12 +16,6 @@ import org.springframework.stereotype.Service;
 public class NoOpAIService implements AIService {
 
     @Override
-    public AIInterpretation interpret(InterpretRequest request) {
-        log.warn("[AI no-op] interpret called — Fase 2 not implemented yet");
-        return new AIInterpretation("unknown", 0, false, null, "Lo siento, el servicio de IA no está disponible.");
-    }
-
-    @Override
     public CatalogSpreadsheetInterpretation interpretCatalogSpreadsheet(CatalogSpreadsheetRequest request) {
         log.warn("[AI no-op] interpretCatalogSpreadsheet called without an AI provider configured");
         throw new AppException(ErrorCode.AI_INTERPRETATION_FAILED, "No AI provider configured");

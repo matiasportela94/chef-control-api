@@ -11,8 +11,6 @@ import java.util.UUID;
 
 public interface AIService {
 
-    AIInterpretation interpret(InterpretRequest request);
-
     /**
      * Traduce una planilla de catálogo armada como sea a las filas de /catalog-import. No escribe nada: lo que
      * devuelve pasa después por la vista previa (dryRun) y la confirmación de siempre. Lanza
@@ -193,21 +191,6 @@ public interface AIService {
     record InterpretedItem(UUID productId, UUID menuItemId, String name, BigDecimal quantity, String unit,
                            BigDecimal price, String priceBasis, String priceUnit, LocalDate expirationDate,
                            String wasteReason) {}
-
-    record InterpretRequest(
-        String message,
-        UUID restaurantId,
-        UUID sessionId,
-        String catalog
-    ) {}
-
-    record AIInterpretation(
-        String intent,
-        int confidence,
-        boolean needsConfirmation,
-        Object extractedData,
-        String responseToUser
-    ) {}
 
     /** Lo que ya existe va para que el modelo reconozca qué es cada cosa, no para renombrar. */
     record CatalogSpreadsheetRequest(
