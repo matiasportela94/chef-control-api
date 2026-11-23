@@ -11,11 +11,13 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authorization.AuthorizationDeniedException;
 import org.springframework.validation.FieldError;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.stream.Collectors;
 
@@ -102,6 +104,18 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(ErrorResponse.of(ErrorCode.VALIDATION_ERROR, detail, request.getRequestURI()));
+    }
+
+    /**
+     * Una ruta que no existe, o un método que esa ruta no acepta: 404 y no el 500 del genérico. Sin sesión ni llega acá
+     * (401). En WARN: con sesión, casi siempre es un front viejo llamando a algo que se borró.
+     */
+    @ExceptionHandler({NoResourceFoundException.class, HttpRequestMethodNotSupportedException.class})
+    public ResponseEntity<ErrorResponse> handleNoEndpoint(Exception ex, HttpServletRequest request) {
+        log.warn("No endpoint for {} {}", request.getMethod(), request.getRequestURI());
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.of(ErrorCode.NOT_FOUND, "Endpoint not found", request.getRequestURI()));
     }
 
     @ExceptionHandler(Exception.class)
