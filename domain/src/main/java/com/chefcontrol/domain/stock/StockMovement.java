@@ -7,7 +7,7 @@ import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.UUID;
 
-@Getter @Builder @NoArgsConstructor @AllArgsConstructor
+@Getter @Builder(toBuilder = true) @NoArgsConstructor @AllArgsConstructor
 public class StockMovement {
 
     private UUID id;

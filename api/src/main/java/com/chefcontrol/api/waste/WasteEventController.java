@@ -40,6 +40,13 @@ public class WasteEventController {
                 !wasteService.findUndoneWasteEventIds(java.util.List.of(event.getId())).isEmpty()));
     }
 
+    /** Deshace la merma (vuelve el stock y sus lotes). Mismo permiso que revertir un movimiento. */
+    @PostMapping("/{id}/reverse")
+    @PreAuthorize("hasAuthority('PERM_STOCK_DELETE')")
+    public ResponseEntity<WasteEventResponse> reverseWasteEvent(@PathVariable UUID id) {
+        return ResponseEntity.ok(WasteEventResponse.from(wasteService.reverseWasteEvent(id), true));
+    }
+
     @PostMapping
     @PreAuthorize("hasAuthority('PERM_WASTE_CREATE')")
     public ResponseEntity<WasteEventResponse> createWasteEvent(

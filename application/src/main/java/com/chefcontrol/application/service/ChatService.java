@@ -23,12 +23,9 @@ import com.chefcontrol.domain.repository.MenuItemRepository;
 import com.chefcontrol.domain.plan.Feature;
 import com.chefcontrol.domain.repository.ProductRepository;
 import com.chefcontrol.domain.repository.RecipeRepository;
-import com.chefcontrol.domain.repository.StockMovementRepository;
 import com.chefcontrol.domain.repository.UnitRepository;
 import com.chefcontrol.domain.shared.PageRequest;
 import com.chefcontrol.domain.shared.time.ChefControlTime;
-import com.chefcontrol.domain.stock.MovementType;
-import com.chefcontrol.domain.stock.StockMovement;
 import com.chefcontrol.domain.user.Permission;
 import com.chefcontrol.domain.waste.WasteReason;
 import lombok.RequiredArgsConstructor;
@@ -100,8 +97,6 @@ public class ChatService {
     private final ProductionService productionService;
     private final RecipeRepository recipeRepository;
     private final AccountService accountService;
-    private final StockService stockService;
-    private final StockMovementRepository stockMovementRepository;
     private final ChatActionRepository chatActionRepository;
     private final CurrentUserProvider currentUserProvider;
     private final TransactionOperations transactions;
@@ -363,24 +358,14 @@ public class ChatService {
     private ChatAction revert(ChatAction action) {
         switch (action.getType()) {
             case PURCHASE -> purchaseService.reversePurchase(action.getEntityId());
-            case WASTE -> stockService.reverseMovement(wasteMovementOf(action.getEntityId()).getId());
+            case WASTE -> wasteService.reverseWasteEvent(action.getEntityId());
             case SALE -> saleService.reverseSale(action.getEntityId());
             case PRODUCTION -> productionService.reverseProduction(action.getEntityId());
             // Un conteo sin diferencias no movió nada: no hay qué revertir, pero queda deshecho igual.
-            case STOCK_ADJUSTMENT -> stockMovementRepository
-                    .findByReferenceIdAndReferenceType(action.getEntityId(), "stock_count").stream()
-                    .filter(m -> m.getType() != MovementType.REVERSAL && m.getReversedBy() == null)
-                    .forEach(m -> stockService.reverseMovement(m.getId()));
+            case STOCK_ADJUSTMENT -> stockCountService.reverseStockCount(action.getEntityId());
         }
         action.markUndone(clock.instant());
         return chatActionRepository.save(action);
-    }
-
-    private StockMovement wasteMovementOf(UUID wasteEventId) {
-        return stockMovementRepository.findByReferenceIdAndReferenceType(wasteEventId, "waste_event").stream()
-                .filter(m -> m.getType() == MovementType.WASTE)
-                .findFirst()
-                .orElseThrow(() -> AppException.notFound(ErrorCode.MOVEMENT_NOT_FOUND, "Waste movement not found"));
     }
 
     // ── Registrar ──────────────────────────────────────────────────────────────

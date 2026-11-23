@@ -37,4 +37,9 @@ public class StockCountRepositoryAdapter implements StockCountRepository {
     public StockCount save(StockCount count) {
         return jpa.save(StockCountJpaEntity.from(count)).toDomain();
     }
+
+    @Override
+    public java.util.Set<UUID> findReversedIds(java.util.Collection<UUID> ids) {
+        return ids.isEmpty() ? java.util.Set.of() : java.util.Set.copyOf(jpa.findReversedIds(ids));
+    }
 }

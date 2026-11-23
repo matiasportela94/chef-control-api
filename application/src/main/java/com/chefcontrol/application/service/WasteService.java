@@ -14,6 +14,7 @@ import com.chefcontrol.domain.repository.UnitRepository;
 import com.chefcontrol.domain.repository.WasteEventRepository;
 import com.chefcontrol.domain.shared.Page;
 import com.chefcontrol.domain.shared.PageRequest;
+import com.chefcontrol.domain.stock.MovementType;
 import com.chefcontrol.domain.stock.StockMovement;
 import com.chefcontrol.domain.waste.WasteEvent;
 import com.chefcontrol.domain.waste.WasteReason;
@@ -35,6 +36,7 @@ public class WasteService {
     private final ProductRepository productRepository;
     private final UnitRepository unitRepository;
     private final StockBatchService stockBatchService;
+    private final StockService stockService;
     private final UnitConversionService unitConversionService;
     private final AlertEvaluationService alertEvaluationService;
     private final AuditService auditService;
@@ -101,6 +103,23 @@ public class WasteService {
         auditService.log(AuditAction.WASTE_EVENT_CREATED, "WasteEvent", event.getId(),
                 Map.of("product", product.getName(), "quantity", quantity));
 
+        return event;
+    }
+
+    /**
+     * Deshace la merma: revierte su movimiento, y con él vuelven los lotes que consumió. El evento queda (se lista como
+     * deshecho) y ya no suma en la merma del período. Ya deshecha → 409 MOVEMENT_ALREADY_REVERSED.
+     */
+    @Transactional
+    public WasteEvent reverseWasteEvent(UUID id) {
+        WasteEvent event = getWasteEvent(id);
+        StockMovement movement = stockMovementRepository.findByReferenceIdAndReferenceType(id, "waste_event").stream()
+                .filter(m -> m.getType() == MovementType.WASTE)
+                .findFirst()
+                .orElseThrow(() -> AppException.notFound(ErrorCode.MOVEMENT_NOT_FOUND, "Waste movement not found"));
+        stockService.reverseMovement(movement.getId());
+        auditService.log(AuditAction.WASTE_REVERSED, "WasteEvent", id,
+                Map.of("productId", event.getProductId(), "quantity", event.getQuantity()));
         return event;
     }
 

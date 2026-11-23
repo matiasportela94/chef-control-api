@@ -28,14 +28,22 @@ public class StockCountController {
     public ResponseEntity<PagedResponse<StockCountResponse>> listStockCounts(
                                                                              @RequestParam(defaultValue = "0") int page,
                                                                              @RequestParam(defaultValue = "20") int size) {
-        return ResponseEntity.ok(PagedResponse.of(
-                stockCountService.listCounts(PageRequest.of(page, size)).map(StockCountResponse::summary)));
+        var counts = stockCountService.listCounts(PageRequest.of(page, size));
+        var reversed = stockCountService.findReversedStockCountIds(counts.content().stream().map(c -> c.getId()).toList());
+        return ResponseEntity.ok(PagedResponse.of(counts.map(c -> StockCountResponse.summary(c, reversed.contains(c.getId())))));
     }
 
     @GetMapping("/{id}")
     @PreAuthorize("hasAuthority('PERM_STOCK_COUNTS_VIEW')")
     public ResponseEntity<StockCountResponse> getStockCount(@PathVariable UUID id) {
         return ResponseEntity.ok(StockCountResponse.from(stockCountService.getCount(id)));
+    }
+
+    /** Devuelve el stock a como estaba antes de contar. Mismo permiso que revertir un movimiento. */
+    @PostMapping("/{id}/reverse")
+    @PreAuthorize("hasAuthority('PERM_STOCK_DELETE')")
+    public ResponseEntity<StockCountResponse> reverseStockCount(@PathVariable UUID id) {
+        return ResponseEntity.ok(StockCountResponse.from(stockCountService.reverseStockCount(id)));
     }
 
     @PostMapping

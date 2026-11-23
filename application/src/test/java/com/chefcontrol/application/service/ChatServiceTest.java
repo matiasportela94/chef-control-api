@@ -43,7 +43,6 @@ import com.chefcontrol.domain.plan.Feature;
 import com.chefcontrol.domain.stock.Production;
 import com.chefcontrol.domain.repository.ProductRepository;
 import com.chefcontrol.domain.repository.RecipeRepository;
-import com.chefcontrol.domain.repository.StockMovementRepository;
 import com.chefcontrol.domain.repository.UnitRepository;
 import com.chefcontrol.domain.shared.Page;
 import com.chefcontrol.domain.sale.Sale;
@@ -98,7 +97,6 @@ class ChatServiceTest {
     @Mock RecipeRepository recipeRepository;
     @Mock AccountService accountService;
     @Mock StockService stockService;
-    @Mock StockMovementRepository stockMovementRepository;
     @Mock ChatActionRepository chatActionRepository;
     @Mock CurrentUserProvider currentUserProvider;
     @Mock ChatExchangeRepository chatExchangeRepository;
@@ -170,8 +168,7 @@ class ChatServiceTest {
         service = new ChatService(aiService, new ChatRecipeService(aiService, recipeRepository, accountService), history,
                 queries, productRepository, menuItemRepository, unitRepository,
                 unitConversionService, purchaseService, wasteService, saleService, stockCountService,
-                productionService, recipeRepository, accountService, stockService,
-                stockMovementRepository, chatActionRepository, currentUserProvider,
+                productionService, recipeRepository, accountService, chatActionRepository, currentUserProvider,
                 TransactionOperations.withoutTransaction(), Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
@@ -1215,18 +1212,12 @@ class ChatServiceTest {
     }
 
     @Test
-    void undoingAnAdjustmentReversesEachMovementOfTheCountThatIsStillThere() {
+    void undoingAnAdjustmentReversesTheCountLikeTheStockCountsScreen() {
         ChatAction action = stored(ChatOperationType.STOCK_ADJUSTMENT, USER, NOW);
-        StockMovement live = StockMovement.builder().id(UUID.randomUUID()).type(MovementType.COUNT).build();
-        StockMovement reversedElsewhere = StockMovement.builder().id(UUID.randomUUID()).type(MovementType.COUNT)
-                .reversedBy(UUID.randomUUID()).build();
-        when(stockMovementRepository.findByReferenceIdAndReferenceType(action.getEntityId(), "stock_count"))
-                .thenReturn(List.of(live, reversedElsewhere));
 
         service.undoChatAction(action.getId(), Set.of());
 
-        verify(stockService).reverseMovement(live.getId());
-        verify(stockService, never()).reverseMovement(reversedElsewhere.getId());
+        verify(stockCountService).reverseStockCount(action.getEntityId());
     }
 
     @Test
@@ -1302,16 +1293,13 @@ class ChatServiceTest {
     @Test
     void someoneElsesNeedsTheDeletePermissionEvenRightAway() {
         ChatAction action = stored(ChatOperationType.WASTE, UUID.randomUUID(), NOW);
-        StockMovement movement = StockMovement.builder().id(UUID.randomUUID()).type(MovementType.WASTE).build();
-        when(stockMovementRepository.findByReferenceIdAndReferenceType(action.getEntityId(), "waste_event"))
-                .thenReturn(List.of(movement));
 
         var e = assertThrows(AppException.class,
                 () -> service.undoChatAction(action.getId(), Set.of(Permission.PURCHASES_DELETE)));
         assertEquals(ErrorCode.CHAT_UNDO_NOT_ALLOWED, e.getErrorCode());
 
         service.undoChatAction(action.getId(), Set.of(Permission.STOCK_DELETE));
-        verify(stockService).reverseMovement(movement.getId());
+        verify(wasteService).reverseWasteEvent(action.getEntityId());
     }
 
     @Test

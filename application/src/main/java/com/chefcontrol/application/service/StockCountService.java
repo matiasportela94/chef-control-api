@@ -30,12 +30,18 @@ public class StockCountService {
     private final ProductRepository productRepository;
     private final UnitRepository unitRepository;
     private final StockBatchService stockBatchService;
+    private final StockService stockService;
     private final AlertEvaluationService alertEvaluationService;
     private final AuditService auditService;
     private final CurrentUserProvider currentUserProvider;
 
     public Page<StockCount> listCounts(PageRequest pageRequest) {
         return stockCountRepository.findByRestaurantIdOrderByCountedAtDesc(TenantContext.require(), pageRequest);
+    }
+
+    /** De esos conteos, los revertidos (el listado no trae los movimientos). */
+    public java.util.Set<UUID> findReversedStockCountIds(java.util.Collection<UUID> ids) {
+        return stockCountRepository.findReversedIds(ids);
     }
 
     public StockCountResult getCount(UUID id) {
@@ -104,11 +110,38 @@ public class StockCountService {
         return new StockCountResult(count, movements);
     }
 
+    /**
+     * Devuelve el stock a como estaba antes de contar: revierte cada ajuste que siga en pie, y los lotes se mueven con él
+     * (lo que consumió vuelve; el sobrante que creó sale). Un conteo sin diferencias no movió nada: no hay qué revertir.
+     * Ya revertido → 409 MOVEMENT_ALREADY_REVERSED.
+     */
+    @Transactional
+    public StockCountResult reverseStockCount(UUID id) {
+        StockCountResult current = getCount(id);
+        if (current.reversed()) {
+            throw AppException.conflict(ErrorCode.MOVEMENT_ALREADY_REVERSED, "Stock count already reversed");
+        }
+        // Las copias llevan su reversión: releerlos en la misma transacción los traería sin ella (markReversed es un UPDATE).
+        List<StockMovement> movements = current.movements().stream()
+                .map(m -> m.getReversedBy() != null ? m
+                        : m.toBuilder().reversedBy(stockService.reverseMovement(m.getId()).getId()).build())
+                .toList();
+        if (!movements.isEmpty()) {
+            auditService.log(AuditAction.STOCK_COUNT_REVERSED, "StockCount", id, Map.of("adjustments", movements.size()));
+        }
+        return new StockCountResult(current.count(), movements);
+    }
+
     // ── Commands / Results ────────────────────────────────────────────────────
 
     public record CreateStockCountCommand(String notes, List<StockCountItemCommand> items) {}
 
     public record StockCountItemCommand(UUID productId, UUID unitId, BigDecimal countedQuantity) {}
 
-    public record StockCountResult(StockCount count, List<StockMovement> movements) {}
+    public record StockCountResult(StockCount count, List<StockMovement> movements) {
+        /** Tenía ajustes y no queda ninguno en pie. */
+        public boolean reversed() {
+            return !movements.isEmpty() && movements.stream().allMatch(m -> m.getReversedBy() != null);
+        }
+    }
 }

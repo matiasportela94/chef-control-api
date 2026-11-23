@@ -102,7 +102,10 @@ public class StockBatchService {
             stockBatchRepository.findByIdAndRestaurantId(original.getStockBatchId(), restaurantId)
                     .ifPresent(batch -> {
                         BigDecimal inverse = original.getQuantity().negate();
-                        batch.replenish(inverse);
+                        // Revertir una entrada (el sobrante de un conteo) saca del lote lo que le queda, nunca más: si ya
+                        // se usó, el lote queda en 0 y no negativo, como al revertir una compra.
+                        if (inverse.signum() < 0) inverse = batch.consume(inverse.negate()).negate();
+                        else batch.replenish(inverse);
                         stockBatchRepository.save(batch);
                         allocate(reversalMovementId, batch.getId(), inverse);
                     });

@@ -14,4 +14,7 @@ public interface StockCountRepository {
     Optional<StockCount> findByIdAndRestaurantId(UUID id, UUID restaurantId);
 
     StockCount save(StockCount count);
+
+    /** De esos conteos, los que tenían ajustes y ya no les queda ninguno en pie. */
+    java.util.Set<UUID> findReversedIds(java.util.Collection<UUID> ids);
 }
