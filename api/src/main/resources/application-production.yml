@@ -34,6 +34,11 @@ app:
     password-reset-expiration-minutes: ${TOKEN_RESET_EXPIRATION_MINUTES:15}
     set-password-expiration-hours: ${TOKEN_SET_PASSWORD_EXPIRATION_HOURS:48}
 
+  mail:
+    # Railway Hobby bloquea el SMTP saliente (25/465/587): acá se manda por la API HTTPS de SendGrid.
+    # Ojo: una MAIL_PROVIDER=smtp suelta en Railway le gana a este default.
+    provider: ${MAIL_PROVIDER:sendgrid}
+
   ai-service:
     url: ${AI_SERVICE_URL}
     secret: ${AI_SERVICE_SECRET}

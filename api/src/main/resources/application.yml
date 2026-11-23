@@ -18,7 +18,7 @@ spring:
       max-file-size: 4MB
       max-request-size: 12MB   # cinco fotos de una factura (F19, tanda 7); cada archivo, 4 MB
 
-  # Obligatorio con app.mail.provider=smtp (el default): sin usuario/clave la app no arranca. Gmail: puerto 587 + STARTTLS + contraseña de aplicación.
+  # Obligatorio con app.mail.provider=smtp (el default; staging y producción usan sendgrid): sin usuario/clave la app no arranca. Gmail: puerto 587 + STARTTLS + contraseña de aplicación.
   mail:
     host: ${MAIL_HOST:smtp.gmail.com}
     port: ${MAIL_PORT:587}
@@ -72,10 +72,14 @@ app:
     waste-sweep-cron: ${WASTE_SWEEP_CRON:0 0 7 * * MON}
 
   mail:
-    # smtp (default). Un proveedor nuevo (ej. sendgrid) = una clase EmailSender + su valor acá.
+    # smtp (default, local) o sendgrid (staging y producción: Railway Hobby bloquea el SMTP saliente).
     provider: ${MAIL_PROVIDER:smtp}
     # Gmail exige que sea la cuenta autenticada (o un alias suyo). Vacío = usa MAIL_USERNAME.
+    # Con sendgrid es obligatorio y tiene que ser un remitente verificado en SendGrid (si no, cada envío da 403).
     from: ${MAIL_FROM:}
+    sendgrid:
+      # Obligatoria con provider=sendgrid: sin ella la app no arranca.
+      api-key: ${SENDGRID_API_KEY:}
 
   payments:
     mercadopago:
