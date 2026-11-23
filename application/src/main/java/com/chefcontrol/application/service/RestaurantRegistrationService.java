@@ -75,9 +75,6 @@ public class RestaurantRegistrationService {
         if (userRepository.existsByEmail(cmd.ownerEmail())) {
             throw AppException.conflict(ErrorCode.DUPLICATE_EMAIL, "Email already in use");
         }
-        if (cmd.ownerPhone() != null && userRepository.existsByPhone(cmd.ownerPhone())) {
-            throw AppException.conflict(ErrorCode.DUPLICATE_PHONE, "Phone number already registered");
-        }
 
         User owner = new User();
         owner.setName(cmd.ownerName());

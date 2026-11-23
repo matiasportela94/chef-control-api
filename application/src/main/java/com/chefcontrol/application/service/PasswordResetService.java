@@ -107,17 +107,19 @@ public class PasswordResetService {
      * Creates a SET_PASSWORD token for a newly invited user and sends the link
      * via all available channels.
      * Called within the user creation transaction.
+     *
+     * @param phone el teléfono efectivo de la membresía nueva (el del local o el personal); null = sin WhatsApp
      */
     @Transactional
-    public void createAndSendSetPasswordToken(User user, Restaurant restaurant) {
+    public void createAndSendSetPasswordToken(User user, Restaurant restaurant, String phone) {
         UUID token = buildAndSaveToken(user, TokenType.SET_PASSWORD, Duration.ofHours(setPasswordExpirationHours));
 
         String link = frontendUrl + "/set-password?token=" + token;
 
         emailService.sendSetPasswordLink(user.getEmail(), user.getName(), restaurant.getName(), link);
 
-        if (user.getPhone() != null) {
-            whatsAppService.sendSetPasswordLink(user.getPhone(), user.getName(), restaurant.getName(), link);
+        if (phone != null) {
+            whatsAppService.sendSetPasswordLink(phone, user.getName(), restaurant.getName(), link);
         }
     }
 

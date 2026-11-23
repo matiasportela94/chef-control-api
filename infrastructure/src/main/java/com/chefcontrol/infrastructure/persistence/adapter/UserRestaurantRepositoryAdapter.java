@@ -60,8 +60,14 @@ public class UserRestaurantRepositoryAdapter implements UserRestaurantRepository
         entity.setRestaurant(em.getReference(RestaurantJpaEntity.class, domain.getRestaurantId()));
         entity.setRole(em.getReference(RoleJpaEntity.class, domain.getRoleId()));
         entity.setActive(domain.isActive());
+        entity.setPhone(domain.getPhone());
         entity.setCreatedAt(domain.getCreatedAt());
         return jpa.save(entity).toDomain();
+    }
+
+    @Override
+    public boolean phoneTakenInRestaurant(UUID restaurantId, String phone, UUID excludingUserId) {
+        return jpa.phoneTakenInRestaurant(restaurantId, phone, excludingUserId);
     }
 
     @Override

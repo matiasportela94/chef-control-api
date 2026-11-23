@@ -30,6 +30,9 @@ public class UserRestaurantJpaEntity {
     @JoinColumn(name = "role_id", nullable = false)
     private RoleJpaEntity role;
 
+    @Column(length = 20)
+    private String phone;
+
     @Column(name = "is_active", nullable = false)
     private boolean isActive = true;
 
@@ -56,6 +59,7 @@ public class UserRestaurantJpaEntity {
                 .userEmail(user != null ? user.getEmail() : null)
                 .userName(user != null ? user.getName() : null)
                 .userPhone(user != null ? user.getPhone() : null)
+                .phone(phone)
                 .isActive(isActive)
                 .createdAt(createdAt)
                 .build();

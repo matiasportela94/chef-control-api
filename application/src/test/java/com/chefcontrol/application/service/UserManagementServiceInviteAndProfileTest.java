@@ -99,7 +99,6 @@ class UserManagementServiceInviteAndProfileTest {
         Role role = assignableRole();
 
         when(userRepository.findByEmail("nuevo@ejemplo.com")).thenReturn(Optional.empty());
-        when(userRepository.existsByPhone("+5491112345678")).thenReturn(false);
         when(restaurantRepository.findByIdAndIsActiveTrue(restaurantId)).thenReturn(Optional.of(restaurant));
         when(roleRepository.findByIdAndAccountId(roleId, accountId)).thenReturn(Optional.of(role));
         when(passwordEncoder.encode(any())).thenReturn("hashed");
@@ -115,7 +114,10 @@ class UserManagementServiceInviteAndProfileTest {
 
         assertThat(created.membership().getUserId()).isEqualTo(newUserId);
         assertThat(created.membership().getRoleId()).isEqualTo(roleId);
-        verify(passwordResetService).createAndSendSetPasswordToken(any(User.class), eq(restaurant));
+        assertThat(created.membership().getPhone()).isEqualTo("+5491112345678");
+        verify(userRepository).save(argThat(u -> u.getPhone() == null));   // el personal lo carga la persona
+        verify(userRestaurantRepository).phoneTakenInRestaurant(restaurantId, "+5491112345678", newUserId);
+        verify(passwordResetService).createAndSendSetPasswordToken(any(User.class), eq(restaurant), eq("+5491112345678"));
         verify(auditService).log(eq(AuditAction.USER_CREATED), eq("User"), eq(newUserId), any());
     }
 
@@ -166,7 +168,7 @@ class UserManagementServiceInviteAndProfileTest {
     }
 
     @Test
-    void addsExistingUserToRestaurantIgnoringSubmittedNameAndPhone() {
+    void addsExistingUserToRestaurantIgnoringTheNameButKeepingThePhoneForThisRestaurant() {
         UUID existingUserId = UUID.randomUUID();
         User existing = existingUser(existingUserId, "dueno@otracuenta.com", "Sofía Real", "+5491122223333", true);
         Restaurant restaurant = activeRestaurant();
@@ -194,9 +196,11 @@ class UserManagementServiceInviteAndProfileTest {
         assertThat(created.membership().isActive()).isTrue();
         assertThat(created.membership().getUserName()).isEqualTo("Sofía Real");
         assertThat(created.membership().getUserPhone()).isEqualTo("+5491122223333");
+        assertThat(created.membership().getPhone()).isEqualTo("+5491199990000");
+        assertThat(existing.getPhone()).isEqualTo("+5491122223333");   // su personal no se toca
 
         verify(userRepository, never()).save(any());
-        verify(userRepository, never()).existsByPhone(any());
+        verify(userRestaurantRepository).phoneTakenInRestaurant(restaurantId, "+5491199990000", existingUserId);
         verifyNoInteractions(passwordResetService);
         verify(emailService).sendAddedToRestaurant(
                 eq("dueno@otracuenta.com"), eq("Sofía Real"), eq("La Parrilla"), any());
@@ -235,6 +239,7 @@ class UserManagementServiceInviteAndProfileTest {
         assertThat(created.membership().isActive()).isTrue();
         assertThat(created.membership().getRoleId()).isEqualTo(roleId);
         assertThat(created.membership().getRoleName()).isEqualTo("KITCHEN");
+        assertThat(created.membership().getPhone()).isEqualTo("+5491100000000");
 
         verify(permissionOverrideRepository).replaceAll(existingUserId, restaurantId, List.of());
         verify(userRepository, never()).save(any());
@@ -326,8 +331,9 @@ class UserManagementServiceInviteAndProfileTest {
 
         assertThat(updated.profileEditable()).isFalse();
         assertThat(updated.membership().getRoleId()).isEqualTo(roleId);
+        assertThat(updated.membership().getPhone()).isNull();
         verify(userRepository, never()).save(any());
-        verify(userRepository, never()).existsByPhone(any());
+        verify(userRestaurantRepository, never()).phoneTakenInRestaurant(any(), any(), any());
         verify(auditService).log(eq(AuditAction.USER_UPDATED), eq("User"), eq(sharedUserId), any());
     }
 
@@ -360,7 +366,7 @@ class UserManagementServiceInviteAndProfileTest {
     }
 
     @Test
-    void rejectsPhoneChangeWhenProfileIsNotEditable() {
+    void thePhoneOfThisRestaurantIsEditableEvenWhenTheProfileIsShared() {
         UUID sharedUserId = UUID.randomUUID();
         Restaurant restaurant = activeRestaurant();
         Role role = assignableRole();
@@ -375,15 +381,73 @@ class UserManagementServiceInviteAndProfileTest {
         when(userRepository.findById(sharedUserId)).thenReturn(Optional.of(sharedUser));
         when(userRestaurantRepository.existsActiveMembershipInOtherAccount(sharedUserId, accountId))
                 .thenReturn(true);
+        when(userRestaurantRepository.save(any(UserRestaurant.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        var cmd = new UserManagementService.UpdateUserCommand("Sofía", "+5491199999999", roleId);
+        var updated = service().updateUser(sharedUserId,
+                new UserManagementService.UpdateUserCommand("Sofía", "+5491199999999", roleId));
 
-        assertThatThrownBy(() -> service().updateUser(sharedUserId, cmd))
+        assertThat(updated.membership().getPhone()).isEqualTo("+5491199999999");
+        assertThat(sharedUser.getPhone()).isEqualTo("+5491122223333");   // el personal es de ella
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void aBlankPhoneInheritsThePersonalAndCollidesIfThePersonalDoes() {
+        UUID userId = UUID.randomUUID();
+        User user = existingUser(userId, "juan@cuenta.com", "Juan", "+5491155556666", true);
+        UserRestaurant membership = UserRestaurant.builder()
+                .userId(userId).restaurantId(restaurantId).roleId(roleId).roleName("KITCHEN").isActive(true).build();
+        when(userRestaurantRepository.findByUserIdAndRestaurantId(userId, restaurantId)).thenReturn(Optional.of(membership));
+        when(restaurantRepository.findByIdAndIsActiveTrue(restaurantId)).thenReturn(Optional.of(activeRestaurant()));
+        when(roleRepository.findByIdAndAccountId(roleId, accountId)).thenReturn(Optional.of(assignableRole()));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(userRestaurantRepository.phoneTakenInRestaurant(restaurantId, "+5491155556666", userId)).thenReturn(true);
+
+        assertThatThrownBy(() -> service().updateUser(userId, new UserManagementService.UpdateUserCommand("Juan", " ", roleId)))
                 .isInstanceOf(AppException.class)
                 .extracting(e -> ((AppException) e).getErrorCode())
-                .isEqualTo(ErrorCode.USER_PROFILE_NOT_EDITABLE);
+                .isEqualTo(ErrorCode.DUPLICATE_PHONE);
+        verify(userRestaurantRepository, never()).save(any());
+    }
 
-        verify(userRepository, never()).save(any());
+    @Test
+    void invitingANewPersonWithAPhoneAnotherPersonUsesHereIsDuplicate() {
+        UUID newUserId = UUID.randomUUID();
+        when(userRepository.findByEmail("nuevo@ejemplo.com")).thenReturn(Optional.empty());
+        when(restaurantRepository.findByIdAndIsActiveTrue(restaurantId)).thenReturn(Optional.of(activeRestaurant()));
+        when(roleRepository.findByIdAndAccountId(roleId, accountId)).thenReturn(Optional.of(assignableRole()));
+        when(passwordEncoder.encode(any())).thenReturn("hashed");
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> {
+            User u = inv.getArgument(0);
+            u.setId(newUserId);
+            return u;
+        });
+        when(userRestaurantRepository.phoneTakenInRestaurant(restaurantId, "+5491177778888", newUserId)).thenReturn(true);
+
+        assertThatThrownBy(() -> service().createUser(
+                new UserManagementService.CreateUserCommand("Ana", "nuevo@ejemplo.com", "+5491177778888", roleId)))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.DUPLICATE_PHONE);
+        verify(userRestaurantRepository, never()).save(any());
+        verifyNoInteractions(passwordResetService);
+    }
+
+    @Test
+    void invitingSomeoneWhoExistsWithoutAPhoneChecksTheirPersonal() {
+        UUID existingUserId = UUID.randomUUID();
+        User existing = existingUser(existingUserId, "ya@ejemplo.com", "Juan", "+5491100001111", true);
+        when(userRepository.findByEmail("ya@ejemplo.com")).thenReturn(Optional.of(existing));
+        when(userRestaurantRepository.findByUserIdAndRestaurantId(existingUserId, restaurantId)).thenReturn(Optional.empty());
+        when(restaurantRepository.findByIdAndIsActiveTrue(restaurantId)).thenReturn(Optional.of(activeRestaurant()));
+        when(roleRepository.findByIdAndAccountId(roleId, accountId)).thenReturn(Optional.of(assignableRole()));
+        when(userRestaurantRepository.phoneTakenInRestaurant(restaurantId, "+5491100001111", existingUserId)).thenReturn(true);
+
+        assertThatThrownBy(() -> service().createUser(
+                new UserManagementService.CreateUserCommand("Juan", "ya@ejemplo.com", "", roleId)))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.DUPLICATE_PHONE);
         verify(userRestaurantRepository, never()).save(any());
     }
 
@@ -403,7 +467,6 @@ class UserManagementServiceInviteAndProfileTest {
         when(userRepository.findById(ownUserId)).thenReturn(Optional.of(ownUser));
         when(userRestaurantRepository.existsActiveMembershipInOtherAccount(ownUserId, accountId))
                 .thenReturn(false);
-        when(userRepository.existsByPhone("+5491122222222")).thenReturn(false);
         when(userRestaurantRepository.save(any(UserRestaurant.class))).thenAnswer(inv -> inv.getArgument(0));
 
         var cmd = new UserManagementService.UpdateUserCommand("Juan Nuevo", "+5491122222222", roleId);
@@ -411,8 +474,10 @@ class UserManagementServiceInviteAndProfileTest {
 
         assertThat(updated.profileEditable()).isTrue();
         assertThat(ownUser.getName()).isEqualTo("Juan Nuevo");
-        assertThat(ownUser.getPhone()).isEqualTo("+5491122222222");
+        assertThat(updated.membership().getPhone()).isEqualTo("+5491122222222");
+        assertThat(ownUser.getPhone()).isEqualTo("+5491111111111");   // el personal no lo edita el admin
         verify(userRepository).save(ownUser);
+        verify(userRestaurantRepository).phoneTakenInRestaurant(restaurantId, "+5491122222222", ownUserId);
     }
 
     @Test
@@ -431,17 +496,22 @@ class UserManagementServiceInviteAndProfileTest {
     }
 
     @Test
-    void rejectsOwnProfilePhoneThatAnotherUserHas() {
+    void ownProfilePhoneCollidesWhereTheMembershipInheritsIt() {
         UUID userId = UUID.randomUUID();
+        UUID otherRestaurant = UUID.randomUUID();
         User user = existingUser(userId, "juan@cuenta.com", "Juan", "+5491111111111", true);
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));
-        when(userRepository.existsByPhone("+5491122222222")).thenReturn(true);
+        when(userRestaurantRepository.findActiveByUserId(userId)).thenReturn(List.of(
+                UserRestaurant.builder().userId(userId).restaurantId(otherRestaurant).phone("+5491100000000").isActive(true).build(),
+                UserRestaurant.builder().userId(userId).restaurantId(restaurantId).isActive(true).build()));
+        when(userRestaurantRepository.phoneTakenInRestaurant(restaurantId, "+5491122222222", userId)).thenReturn(true);
 
         assertThatThrownBy(() -> service().updateOwnProfile(userId, "Juan", " +5491122222222 "))
                 .isInstanceOf(AppException.class)
                 .extracting(e -> ((AppException) e).getErrorCode())
                 .isEqualTo(ErrorCode.DUPLICATE_PHONE);
         verify(userRepository, never()).save(any());
+        verify(userRestaurantRepository, never()).phoneTakenInRestaurant(eq(otherRestaurant), any(), any());
     }
 
     @Test
@@ -451,10 +521,14 @@ class UserManagementServiceInviteAndProfileTest {
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));
         when(userRepository.save(user)).thenReturn(user);
 
+        when(userRestaurantRepository.findActiveByUserId(userId)).thenReturn(List.of(
+                UserRestaurant.builder().userId(userId).restaurantId(restaurantId).isActive(true).build()));
+
         var updated = service().updateOwnProfile(userId, "Juan Nuevo", "+5491111111111");
 
         assertThat(updated.getName()).isEqualTo("Juan Nuevo");
-        verify(userRepository, never()).existsByPhone(any());
+        // La persona misma no cuenta: la consulta la excluye.
+        verify(userRestaurantRepository).phoneTakenInRestaurant(restaurantId, "+5491111111111", userId);
     }
 
     @Test

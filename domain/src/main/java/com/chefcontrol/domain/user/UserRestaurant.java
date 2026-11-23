@@ -28,7 +28,11 @@ public class UserRestaurant {
     // Denormalized from user join (populated when querying by restaurant)
     private String userEmail;
     private String userName;
+    /** El personal de la persona (users.phone). No se muestra fuera de su cuenta: /users muestra {@link #phone}. */
     private String userPhone;
+
+    /** El teléfono de la persona en este local, lo carga el admin en /users. Null = usa el personal. */
+    private String phone;
 
     private boolean isActive = true;
     private Instant createdAt;

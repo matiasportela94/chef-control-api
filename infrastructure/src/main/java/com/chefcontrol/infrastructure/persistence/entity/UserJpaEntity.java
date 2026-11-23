@@ -29,7 +29,7 @@ public class UserJpaEntity {
     @Column(nullable = false)
     private String name;
 
-    @Column(unique = true)
+    @Column(length = 20)
     private String phone;
 
     @Column(name = "google_subject", unique = true)

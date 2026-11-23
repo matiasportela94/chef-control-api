@@ -27,11 +27,6 @@ public class UserRepositoryAdapter implements UserRepository {
     }
 
     @Override
-    public Optional<User> findByPhoneAndIsActiveTrue(String phone) {
-        return jpa.findByPhoneAndIsActiveTrue(phone).map(UserJpaEntity::toDomain);
-    }
-
-    @Override
     public Optional<User> findByEmail(String email) {
         return jpa.findByEmail(User.normalizeEmail(email)).map(UserJpaEntity::toDomain);
     }
@@ -44,11 +39,6 @@ public class UserRepositoryAdapter implements UserRepository {
     @Override
     public boolean existsByEmail(String email) {
         return jpa.existsByEmail(User.normalizeEmail(email));
-    }
-
-    @Override
-    public boolean existsByPhone(String phone) {
-        return jpa.existsByPhone(phone);
     }
 
     @Override

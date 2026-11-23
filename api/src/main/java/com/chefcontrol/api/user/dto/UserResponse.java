@@ -22,7 +22,7 @@ public record UserResponse(
                 membership.getUserId(),
                 membership.getUserName(),
                 membership.getUserEmail(),
-                membership.getUserPhone(),
+                membership.getPhone(),   // el de este local; null = usa el personal, que no se muestra
                 membership.getRoleId(),
                 membership.getRoleName(),
                 membership.isRoleIsSystem(),

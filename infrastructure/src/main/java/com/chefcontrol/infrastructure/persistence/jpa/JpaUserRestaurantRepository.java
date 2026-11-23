@@ -37,6 +37,13 @@ public interface JpaUserRestaurantRepository extends JpaRepository<UserRestauran
 
     boolean existsByRole_IdAndIsActiveTrue(UUID roleId);
 
+    // ponytail: compara el texto tal cual ("+54 9 11…" y "11…" son distintos); WhatsApp (F20) va a necesitar E.164.
+    @Query("SELECT CASE WHEN COUNT(ur) > 0 THEN true ELSE false END FROM UserRestaurantJpaEntity ur JOIN ur.user u " +
+           "WHERE ur.id.restaurantId = :restaurantId AND ur.isActive = true AND u.id <> :excludingUserId " +
+           "AND COALESCE(ur.phone, u.phone) = :phone")
+    boolean phoneTakenInRestaurant(@Param("restaurantId") UUID restaurantId, @Param("phone") String phone,
+                                   @Param("excludingUserId") UUID excludingUserId);
+
     @Query("SELECT CASE WHEN COUNT(ur) > 0 THEN true ELSE false END FROM UserRestaurantJpaEntity ur " +
            "WHERE ur.user.id = :userId AND ur.isActive = true " +
            "AND ur.restaurant.isActive = true AND ur.restaurant.accountId <> :accountId")

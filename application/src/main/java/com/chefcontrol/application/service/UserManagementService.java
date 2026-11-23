@@ -75,13 +75,11 @@ public class UserManagementService {
     public CreatedUser createUser(CreateUserCommand cmd) {
         UUID restaurantId = TenantContext.require();
 
+        // El teléfono que carga el admin es el de este local: el personal lo carga la persona (registro o /profile).
+        String phone = normalizeBlank(cmd.phone());
         var existingUser = userRepository.findByEmail(cmd.email());
         if (existingUser.isPresent()) {
-            return addExistingUserToRestaurant(existingUser.get(), restaurantId, cmd.roleId());
-        }
-        String phone = normalizeBlank(cmd.phone());
-        if (phone != null && userRepository.existsByPhone(phone)) {
-            throw AppException.conflict(ErrorCode.DUPLICATE_PHONE, "Phone number already registered");
+            return addExistingUserToRestaurant(existingUser.get(), restaurantId, cmd.roleId(), phone);
         }
 
         var restaurant = requireActiveRestaurant(restaurantId);
@@ -90,21 +88,23 @@ public class UserManagementService {
         User user = new User();
         user.setEmail(cmd.email());
         user.setName(cmd.name());
-        user.setPhone(phone);
         user.setPasswordHash(passwordEncoder.encode(UUID.randomUUID().toString()));
         user = userRepository.save(user);
+        // Recién acá hay id; si choca, la transacción se lleva el usuario.
+        requirePhoneFreeInRestaurant(restaurantId, phone, user.getId());
 
         UserRestaurant membership = UserRestaurant.builder()
                 .userId(user.getId())
                 .restaurantId(restaurantId)
                 .roleId(role.getId())
                 .roleName(role.getName())
+                .phone(phone)
                 .isActive(true)
                 .build();
         membership = userRestaurantRepository.save(membership);
 
         try {
-            passwordResetService.createAndSendSetPasswordToken(user, restaurant);
+            passwordResetService.createAndSendSetPasswordToken(user, restaurant, phone);
         } catch (Exception e) {
             // Que falle el mail no frena el alta: el invitado puede pedir "olvidé mi contraseña".
             log.warn("Set-password email for new user {} failed", user.getId(), e);
@@ -116,7 +116,7 @@ public class UserManagementService {
         return new CreatedUser(membership, true);
     }
 
-    private CreatedUser addExistingUserToRestaurant(User existingUser, UUID restaurantId, UUID roleId) {
+    private CreatedUser addExistingUserToRestaurant(User existingUser, UUID restaurantId, UUID roleId, String phone) {
         if (!existingUser.isActive()) {
             throw AppException.forbidden(ErrorCode.USER_INACTIVE, "User is inactive");
         }
@@ -129,6 +129,8 @@ public class UserManagementService {
 
         var restaurant = requireActiveRestaurant(restaurantId);
         Role role = resolveAssignableRole(roleId, restaurant.getAccountId());
+        // Sin teléfono para este local, vale su personal: ese es el que no puede chocar.
+        requirePhoneFreeInRestaurant(restaurantId, phone != null ? phone : existingUser.getPhone(), existingUser.getId());
 
         boolean reactivating = existingMembership.isPresent();
         UserRestaurant membership;
@@ -138,6 +140,7 @@ public class UserManagementService {
             membership.setRoleId(role.getId());
             membership.setRoleName(role.getName());
             membership.setRoleIsSystem(false);
+            membership.setPhone(phone);
             permissionOverrideRepository.replaceAll(existingUser.getId(), restaurantId, List.of());
         } else {
             membership = UserRestaurant.builder()
@@ -145,6 +148,7 @@ public class UserManagementService {
                     .restaurantId(restaurantId)
                     .roleId(role.getId())
                     .roleName(role.getName())
+                    .phone(phone)
                     .isActive(true)
                     .build();
         }
@@ -178,53 +182,54 @@ public class UserManagementService {
 
         boolean profileEditable = isProfileEditable(userId, restaurant.getAccountId());
 
-        if (!profileEditable) {
-            if (profileChanged(user, cmd)) {
+        // El nombre es de toda la plataforma: solo se edita acá si la persona no trabaja en otra cuenta. El teléfono de
+        // este local, siempre.
+        if (!Objects.equals(cmd.name(), user.getName())) {
+            if (!profileEditable) {
                 throw AppException.forbidden(ErrorCode.USER_PROFILE_NOT_EDITABLE,
                         "User profile is shared with another account and cannot be edited here");
             }
-        } else {
             user.setName(cmd.name());
-            String phone = normalizeBlank(cmd.phone());
-            if (phone != null && !phone.equals(user.getPhone())) {
-                if (userRepository.existsByPhone(phone)) {
-                    throw AppException.conflict(ErrorCode.DUPLICATE_PHONE, "Phone number already registered");
-                }
-                user.setPhone(phone);
-            } else if (phone == null) {
-                user.setPhone(null);
-            }
             userRepository.save(user);
         }
+        String phone = normalizeBlank(cmd.phone());
+        requirePhoneFreeInRestaurant(restaurantId, phone != null ? phone : user.getPhone(), userId);
 
         membership.setRoleId(role.getId());
         membership.setRoleName(role.getName());
+        membership.setPhone(phone);
         membership = userRestaurantRepository.save(membership);
 
-        auditService.log(AuditAction.USER_UPDATED, "User", userId,
-                Map.of("role", role.getName(), "restaurantId", restaurantId));
+        Map<String, Object> payload = new java.util.HashMap<>();   // HashMap: el teléfono puede ser null
+        payload.put("role", role.getName());
+        payload.put("restaurantId", restaurantId);
+        payload.put("phone", phone);
+        auditService.log(AuditAction.USER_UPDATED, "User", userId, payload);
 
         return new ManagedUser(membership, profileEditable);
     }
 
     // ── El perfil propio (/profile) ───────────────────────────────────────────
 
-    /** El usuario de la sesión: nombre, teléfono y email son suyos en toda la plataforma, no de un local. */
+    /** El usuario de la sesión: nombre, teléfono personal y email son suyos en toda la plataforma, no de un local. */
     public User getOwnProfile(UUID userId) {
         return userRepository.findById(userId)
                 .orElseThrow(() -> AppException.notFound(ErrorCode.USER_NOT_FOUND, "User not found"));
     }
 
     /**
-     * Cada uno edita su nombre y su teléfono. Sin la regla de /users (que bloquea a quien trabaja en otra cuenta): ahí el
-     * que edita es un admin; acá es la persona. El email no se edita: es su login.
+     * Cada uno edita su nombre y su teléfono personal. Sin la regla de /users (que bloquea a quien trabaja en otra cuenta):
+     * ahí el que edita es un admin; acá es la persona. El email no se edita: es su login. El personal vale en cada local
+     * donde la membresía no tiene teléfono propio: ahí no puede chocar con otra persona.
      */
     @Transactional
     public User updateOwnProfile(UUID userId, String name, String phone) {
         User user = getOwnProfile(userId);
         String newPhone = normalizeBlank(phone);
-        if (newPhone != null && !newPhone.equals(user.getPhone()) && userRepository.existsByPhone(newPhone)) {
-            throw AppException.conflict(ErrorCode.DUPLICATE_PHONE, "Phone number already registered");
+        if (newPhone != null) {
+            for (UserRestaurant m : userRestaurantRepository.findActiveByUserId(userId)) {
+                if (m.getPhone() == null) requirePhoneFreeInRestaurant(m.getRestaurantId(), newPhone, userId);
+            }
         }
         user.setName(name.trim());
         user.setPhone(newPhone);
@@ -240,9 +245,11 @@ public class UserManagementService {
         return !userRestaurantRepository.existsActiveMembershipInOtherAccount(userId, accountId);
     }
 
-    private boolean profileChanged(User user, UpdateUserCommand cmd) {
-        return !Objects.equals(cmd.name(), user.getName())
-                || !Objects.equals(normalizeBlank(cmd.phone()), normalizeBlank(user.getPhone()));
+    /** La única regla del teléfono: en un local, dos personas no pueden tener el mismo efectivo. Null no choca. */
+    private void requirePhoneFreeInRestaurant(UUID restaurantId, String phone, UUID userId) {
+        if (phone != null && userRestaurantRepository.phoneTakenInRestaurant(restaurantId, phone, userId)) {
+            throw AppException.conflict(ErrorCode.DUPLICATE_PHONE, "Another person in this restaurant uses that phone");
+        }
     }
 
     private String normalizeBlank(String value) {

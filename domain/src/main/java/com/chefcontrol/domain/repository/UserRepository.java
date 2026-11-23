@@ -11,7 +11,6 @@ public interface UserRepository {
 
     Optional<User> findByEmailAndIsActiveTrue(String email);
 
-    Optional<User> findByPhoneAndIsActiveTrue(String phone);
 
     Optional<User> findByEmail(String email);
 
@@ -19,7 +18,6 @@ public interface UserRepository {
 
     boolean existsByEmail(String email);
 
-    boolean existsByPhone(String phone);
 
     User save(User user);
 }
