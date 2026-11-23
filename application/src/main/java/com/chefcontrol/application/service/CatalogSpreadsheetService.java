@@ -177,8 +177,14 @@ public class CatalogSpreadsheetService {
                 .map(x -> new PreparationRow(x.row(), x.preparation(), x.yieldQuantity(), x.yieldUnit(),
                         spelled.apply(x.row(), x.ingredient()), x.quantity(), x.unit()))
                 .toList();
+        // Un ingrediente que quedó afuera ("nuez moscada c/n", una taza) no se propone: se crearía un insumo que no usa
+        // nadie (pasó con la foto de una receta, 2026-11-19).
+        Set<String> used = new HashSet<>();
+        recipes.forEach(x -> { if (x.ingredient() != null) used.add(CatalogImportService.key(x.ingredient())); });
+        preparations.forEach(x -> { if (x.ingredient() != null) used.add(CatalogImportService.key(x.ingredient())); });
+        List<ProductRow> usedProposed = proposed.stream().filter(p -> used.contains(CatalogImportService.key(p.name()))).toList();
         return new CatalogSpreadsheetInterpretation(products, preparations, recipes,
-                inRecipeUnit(proposed, recipes, preparations, units), List.of(), warnings);
+                inRecipeUnit(usedProposed, recipes, preparations, units), List.of(), warnings);
     }
 
     /**

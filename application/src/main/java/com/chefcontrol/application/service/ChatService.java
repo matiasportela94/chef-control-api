@@ -124,6 +124,10 @@ public class ChatService {
         if (!conversation.pendingProposals().isEmpty() && isCancellation(message)) {
             return ChatResult.of(ChatStatus.NOT_REGISTERED, ChatHistoryService.CANCELLED);
         }
+        // "Sí" sin nada pendiente no dice qué registrar: el modelo lo completaba con lo que encontrara en el historial.
+        if (conversation.pendingProposals().isEmpty() && isAffirmation(message)) {
+            return ChatResult.of(ChatStatus.NOT_REGISTERED, NOTHING_PENDING);
+        }
         UUID restaurantId = TenantContext.require();
         List<Product> products = productRepository
                 .findByRestaurantIdAndIsActiveTrue(restaurantId, PageRequest.of(0, MAX_CATALOG)).content();
@@ -146,7 +150,8 @@ public class ChatService {
                     + "Probá de nuevo.");
         }
 
-        Resolution resolution = new Resolution(products, menuItems, units, preparations);
+        Resolution resolution = new Resolution(products, menuItems, units, preparations,
+                message + " " + history.userMessages());
         List<Skipped> skipped = new ArrayList<>();
         List<Operation> operations = new ArrayList<>();
         List<ChatRecipeService.RecipeRequest> recipes = new ArrayList<>();
@@ -516,10 +521,47 @@ public class ChatService {
 
     /** "No, eran 5 kg" no es cancelar: trae algo más, y lo interpreta el modelo como siempre. */
     static boolean isCancellation(String message) {
+        return onlyWords(message, CANCEL_WORDS);
+    }
+
+    /** Las palabras de un "sí" que no trae nada más: el mensaje entero tiene que ser solo esto ("dale", "sí, confirmo"). */
+    static final Set<String> CONFIRM_WORDS = Set.of("si", "dale", "ok", "okey", "okay", "confirmo", "confirma",
+            "confirmar", "confirmado", "correcto", "perfecto", "bueno", "listo", "va", "claro", "exacto", "eso");
+
+    static final String NOTHING_PENDING = "No tengo nada pendiente para confirmar.";
+
+    static boolean isAffirmation(String message) {
+        return onlyWords(message, CONFIRM_WORDS);
+    }
+
+    private static boolean onlyWords(String message, Set<String> allowed) {
         List<String> words = java.util.Arrays.stream(CatalogImportService.key(message).split("[^a-z]+"))
                 .filter(w -> !w.isEmpty()).toList();
-        return !words.isEmpty() && CANCEL_WORDS.containsAll(words);
+        return !words.isEmpty() && allowed.containsAll(words);
     }
+
+    /**
+     * Si ese número está escrito en el texto: "9.500", "$9500", "9500,50" (= 9500), "120 mil" o "12,5 mil". Lo usan el
+     * precio de una compra por chat y el de una receta por chat: un precio que no está en ningún texto lo calculó o lo
+     * inventó el modelo. Se compara contra cada número escrito por separado: con todos los dígitos juntos, "10 kg de
+     * harina, 1000 en total" quedaba "101000" y un 100 calculado por el modelo pasaba el control.
+     * ponytail: no lee números en palabras ("ciento veinte mil"); el dictado los escribe con cifras.
+     */
+    static boolean numberSaid(String text, BigDecimal n) {
+        if (text == null || n == null || n.signum() <= 0) return false;
+        java.math.BigInteger whole = n.toBigInteger();
+        java.util.regex.Matcher m = WRITTEN_NUMBER.matcher(text);
+        while (m.find()) {
+            BigDecimal value = new BigDecimal(m.group(1).replace(".", "") + (m.group(2) == null ? "" : "." + m.group(2)));
+            if (m.group(3) != null) value = value.multiply(BigDecimal.valueOf(1000));
+            if (value.toBigInteger().equals(whole)) return true;
+        }
+        return false;
+    }
+
+    /** Un número como se escribe en es-AR: punto de miles, coma decimal y, si sigue, "mil". */
+    private static final java.util.regex.Pattern WRITTEN_NUMBER = java.util.regex.Pattern.compile(
+            "(\\d{1,3}(?:\\.\\d{3})+|\\d+)(?:,(\\d+))?(\\s*mil\\b)?", java.util.regex.Pattern.CASE_INSENSITIVE);
 
     /** Con la acción que corrige: "corregila" y "es otra" contestan alternativas distintas del resguardo. */
     private static List<String> keys(List<Operation> operations) {
@@ -612,9 +654,16 @@ public class ChatService {
         final List<String> questions = new ArrayList<>();
         /** Los ítems con un precio de dos lecturas (por identidad): cada lectura es una alternativa para confirmar. */
         final Map<OperationItem, Readings> readings = new IdentityHashMap<>();
+        /**
+         * Lo que escribió el usuario: el mensaje y los de la conversación que vio el modelo. Un precio tiene que estar
+         * ahí; contestar una pregunta ("es el total") o corregir ("no, eran 5 kg") usa el que ya se había dicho.
+         */
+        final String writtenByUser;
 
-        Resolution(List<Product> catalog, List<MenuItem> dishes, List<Unit> all, Set<UUID> preparations) {
+        Resolution(List<Product> catalog, List<MenuItem> dishes, List<Unit> all, Set<UUID> preparations,
+                   String writtenByUser) {
             this.preparations = preparations;
+            this.writtenByUser = writtenByUser;
             catalog.forEach(p -> products.put(p.getId(), p));
             dishes.forEach(m -> menuItems.put(m.getId(), m));
             all.forEach(u -> {
@@ -662,7 +711,9 @@ public class ChatService {
                     return null;
                 }
                 if (type == ChatOperationType.PURCHASE) {
-                    if (!positive(item.price())) {
+                    // Un precio que no está en ningún texto lo calculó o lo inventó el modelo: después de un "Cancelar",
+                    // un "sí" registró $ 40.000 (120 mil / 3 kg), y por ser bajo pasó el control de precio alto.
+                    if (!positive(item.price()) || !numberSaid(writtenByUser, item.price())) {
                         skipped.add(skip(type, product.getName(), ErrorCode.CHAT_MISSING_PRICE));
                         return null;
                     }

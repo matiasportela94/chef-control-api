@@ -172,10 +172,25 @@ public class ChatHistoryService {
          * no ids: el modelo copia mal un UUID. Solo se puede corregir una acción que se le mostró.
          */
         PromptHistory promptHistory() {
+            // Lo cancelado no vuelve al prompt, ni la pregunta ni el intercambio que la canceló: con la pregunta en el
+            // historial, un "sí" después la revivió y registró la compra cancelada (e2e del 2026-11-19).
+            List<ChatExchange> remembered = new ArrayList<>();
+            for (ChatExchange e : exchanges) {
+                if (!cancelled(e)) {
+                    remembered.add(e);
+                    continue;
+                }
+                for (int i = remembered.size() - 1; i >= 0; i--) {
+                    ChatService.ChatStatus status = remembered.get(i).status();
+                    if (status == ChatService.ChatStatus.NOT_UNDERSTOOD) continue;
+                    if (status == ChatService.ChatStatus.NEEDS_CONFIRMATION) remembered.remove(i);
+                    break;
+                }
+            }
             List<ChatHistoryTurn> turns = new ArrayList<>();
             Map<Integer, UUID> numbers = new HashMap<>();
             int n = 0;
-            for (ChatExchange e : exchanges.subList(Math.max(0, exchanges.size() - REMEMBERED_EXCHANGES), exchanges.size())) {
+            for (ChatExchange e : remembered.subList(Math.max(0, remembered.size() - REMEMBERED_EXCHANGES), remembered.size())) {
                 List<HistoryAction> listed = new ArrayList<>();
                 for (UUID id : e.reply().actionIds()) {
                     ChatAction a = actions.get(id);
@@ -189,5 +204,17 @@ public class ChatHistoryService {
         }
     }
 
-    record PromptHistory(List<ChatHistoryTurn> turns, Map<Integer, UUID> actionNumbers) {}
+    /** Un "Cancelar" (el botón) o un "no" por texto contra la pregunta pendiente. */
+    private static boolean cancelled(ChatExchange e) {
+        return e.kind() == Kind.CANCELLATION || e.kind() == Kind.MESSAGE && e.reply() != null
+                && e.status() == ChatService.ChatStatus.NOT_REGISTERED && CANCELLED.equals(e.reply().message());
+    }
+
+    record PromptHistory(List<ChatHistoryTurn> turns, Map<Integer, UUID> actionNumbers) {
+
+        /** Lo que escribió el usuario en los intercambios que vio el modelo: de ahí puede salir un precio ya dicho. */
+        String userMessages() {
+            return String.join(" ", turns.stream().map(ChatHistoryTurn::userMessage).filter(Objects::nonNull).toList());
+        }
+    }
 }

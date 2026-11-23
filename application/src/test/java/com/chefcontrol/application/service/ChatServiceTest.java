@@ -564,8 +564,66 @@ class ChatServiceTest {
 
         var result = service.sendChatMessage("sí", ALL);
 
-        assertEquals(ChatStatus.NEEDS_CONFIRMATION, result.status());   // ya no contesta nada: vuelve a preguntar
+        // Ya no contesta nada y no va al modelo: con la pregunta cancelada en el historial, el "sí" la revivía.
+        assertEquals(ChatStatus.NOT_REGISTERED, result.status());
+        assertEquals("No tengo nada pendiente para confirmar.", result.message());
+        verify(aiService, never()).interpretChatMessage(any());
         verify(purchaseService, never()).createPurchase(any());
+    }
+
+    @Test
+    void aCancelledQuestionDoesNotGoBackToThePrompt() {
+        conversation(pending());
+        var cancelled = ArgumentCaptor.forClass(ChatExchange.class);
+        history.cancelChatProposal();
+        verify(chatExchangeRepository).saveChatExchange(cancelled.capture());
+        conversation(exchange("compré 3 kg de tomate a 3000", List.of()), pending(), cancelled.getValue());
+        answer(95, false);
+
+        service.sendChatMessage("es por kilo", ALL);
+
+        var request = ArgumentCaptor.forClass(AIService.ChatMessageRequest.class);
+        verify(aiService).interpretChatMessage(request.capture());
+        assertEquals(List.of("compré 3 kg de tomate a 3000"),
+                request.getValue().history().stream().map(AIService.ChatHistoryTurn::userMessage).toList());
+    }
+
+    @Test
+    void aPriceThatIsNotInAnyTextIsNotRegistered() {
+        // Lo que pasó después de un "Cancelar": el modelo devolvió $ 40.000 (120 mil / 3 kg), un número que nadie escribió.
+        answer(95, false, op("purchase", item(comino, "3", "kg", "40000", null)));
+
+        var result = service.sendChatMessage("compré 3 kg de comino a 120 mil", ALL);
+
+        assertEquals(ErrorCode.CHAT_MISSING_PRICE, result.skipped().getFirst().errorCode());
+        verify(purchaseService, never()).createPurchase(any());
+        assertTrue(ChatService.numberSaid("a $120.000", new BigDecimal("120000")));
+        assertTrue(ChatService.numberSaid("a 120 mil", new BigDecimal("120000")));
+        assertTrue(ChatService.numberSaid("a 1500,50 el kilo", new BigDecimal("1500.5")));
+        assertFalse(ChatService.numberSaid("sí", new BigDecimal("40000")));
+    }
+
+    @Test
+    void aPriceIsComparedAgainstEachWrittenNumber() {
+        // Con los dígitos de todo el texto juntos quedaba "101000", y un 100 calculado por el modelo pasaba.
+        assertFalse(ChatService.numberSaid("10 kg de harina, 1000 en total", new BigDecimal("100")));
+        assertTrue(ChatService.numberSaid("10 kg de harina, 1000 en total", new BigDecimal("1000")));
+        assertTrue(ChatService.numberSaid("a 9.500", new BigDecimal("9500")));
+        assertTrue(ChatService.numberSaid("a $9500", new BigDecimal("9500")));
+        assertTrue(ChatService.numberSaid("a 9500,50", new BigDecimal("9500")));
+        assertTrue(ChatService.numberSaid("a 1.200.000 el lote", new BigDecimal("1200000")));
+        assertTrue(ChatService.numberSaid("a 12,5 mil", new BigDecimal("12500")));
+        assertTrue(ChatService.numberSaid("a 120 MIL", new BigDecimal("120000")));
+        assertFalse(ChatService.numberSaid("a 120 mil", new BigDecimal("120")));
+        assertFalse(ChatService.numberSaid("2 milanesas a 9", new BigDecimal("2000")));
+    }
+
+    @Test
+    void aYesAloneIsAnAffirmationAndOnlyThat() {
+        assertTrue(ChatService.isAffirmation("Sí, dale"));
+        assertTrue(ChatService.isAffirmation("ok confirmo"));
+        assertFalse(ChatService.isAffirmation("sí, 3 kg de tomate"));
+        assertFalse(ChatService.isAffirmation("gracias"));
     }
 
     @Test
@@ -585,7 +643,7 @@ class ChatServiceTest {
         // El modelo contestó "Registrado." sin ninguna operación: el texto no depende de él.
         when(aiService.interpretChatMessage(any())).thenReturn(new ChatInterpretation(90, false, "Registrado.", List.of()));
         assertEquals("No registré nada: no entendí el mensaje. Podés registrar algo («compré 10 kg de harina a $2.000») "
-                + "o preguntar («¿cuánto vendimos ayer?»).", service.sendChatMessage("sí", ALL).message());
+                + "o preguntar («¿cuánto vendimos ayer?»).", service.sendChatMessage("registralo", ALL).message());
 
         when(aiService.interpretChatMessage(any())).thenReturn(new ChatInterpretation(90, false, "¿De qué plato hablás?",
                 List.of()));

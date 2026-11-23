@@ -143,14 +143,10 @@ public class ChatRecipeService {
      * se pisó) y un paso "Principales" para una receta nueva, que el import creó.
      */
     static CatalogSpreadsheetInterpretation keepWhatTheMessageSays(CatalogSpreadsheetInterpretation r, String said) {
-        String digits = said == null ? "" : said.replaceAll("[^0-9]", "");
         String words = said == null ? "" : " " + CatalogImportService.key(said) + " ";
-        boolean thousands = said != null && said.toLowerCase(java.util.Locale.ROOT).matches("(?s).*\\bmil\\b.*");
         List<CatalogImportService.RecipeRow> recipes = r.recipes().stream().map(x -> {
             BigDecimal p = x.price();
-            boolean priceSaid = p != null && p.signum() > 0 && (digits.contains(p.toBigInteger().toString()) || thousands
-                    && p.remainder(BigDecimal.valueOf(1000)).signum() == 0
-                    && digits.contains(p.toBigInteger().divide(java.math.BigInteger.valueOf(1000)).toString()));
+            boolean priceSaid = ChatService.numberSaid(said, p);
             boolean sectionSaid = x.section() != null && !CatalogImportService.key(x.section()).isBlank()
                     && words.contains(" " + CatalogImportService.key(x.section()) + " ");
             if ((p == null || priceSaid) && (x.section() == null || sectionSaid)) return x;
@@ -195,16 +191,16 @@ public class ChatRecipeService {
      */
     ChatService.ChatResult previewDocumentRecipes(CatalogSpreadsheetInterpretation reading, ChatCatalog catalog,
                                                   Set<Permission> permissions) {
-        CatalogSpreadsheetInterpretation r = CatalogSpreadsheetService.applyMatches(reading,
-                catalog.products().stream().map(Product::getName).toList(), catalog.units());
-        List<String> warnings = new ArrayList<>(r.warnings());
         // Una taza o una cucharada no se convierten: el ingrediente queda afuera y se avisa que la receta queda
-        // incompleta. Si no, se guardaría una receta con food cost de menos y nadie se enteraría.
+        // incompleta. Si no, se guardaría una receta con food cost de menos y nadie se enteraría. Antes de dividir por
+        // porciones: el aviso dice lo que está impreso ("2 tazas", no "0,5 tazas").
+        CatalogSpreadsheetInterpretation r = reading;
+        List<String> unitWarnings = new ArrayList<>();
         List<CatalogImportService.RecipeRow> dishRows = new ArrayList<>();
         for (CatalogImportService.RecipeRow x : r.recipes()) {
             String unit = x.unit() == null ? null : knownUnit(x.unit(), catalog);
             if (x.unit() != null && unit == null) {
-                warnings.add(unknownUnitWarning(x.ingredient(), x.menuItem(), x.quantity(), x.unit()));
+                unitWarnings.add(unknownUnitWarning(x.ingredient(), x.menuItem(), x.quantity(), x.unit()));
                 continue;
             }
             dishRows.add(unit == null ? x : new CatalogImportService.RecipeRow(x.row(), x.menuItem(), x.price(),
@@ -214,14 +210,17 @@ public class ChatRecipeService {
         for (PreparationRow x : r.preparations()) {
             String unit = x.unit() == null ? null : knownUnit(x.unit(), catalog);
             if (x.unit() != null && unit == null) {
-                warnings.add(unknownUnitWarning(x.ingredient(), x.preparation(), x.quantity(), x.unit()));
+                unitWarnings.add(unknownUnitWarning(x.ingredient(), x.preparation(), x.quantity(), x.unit()));
                 continue;
             }
             prepRows.add(unit == null ? x : new PreparationRow(x.row(), x.preparation(), x.yieldQuantity(), x.yieldUnit(),
                     x.ingredient(), x.quantity(), unit));
         }
-        r = new CatalogSpreadsheetInterpretation(r.products(), prepRows, dishRows, r.proposedProducts(),
-                r.ingredientMatches(), r.warnings(), r.dishServings());
+        r = CatalogSpreadsheetService.applyMatches(new CatalogSpreadsheetInterpretation(r.products(), prepRows, dishRows,
+                r.proposedProducts(), r.ingredientMatches(), r.warnings(), r.dishServings()),
+                catalog.products().stream().map(Product::getName).toList(), catalog.units());
+        List<String> warnings = new ArrayList<>(r.warnings());
+        warnings.addAll(unitWarnings);
         List<CatalogImportService.RecipeRow> recipes = new ArrayList<>();
         List<PreparationRow> preparations = new ArrayList<>();
         List<UUID> dishIds = new ArrayList<>();

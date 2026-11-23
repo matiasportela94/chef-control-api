@@ -119,7 +119,7 @@ class CatalogSpreadsheetServiceTest {
     void aProposedProductThatAlreadyExistsOrRepeatsIsDropped() {
         ai.answer = interpretation(
                 List.of(new ProductRow(2, "Cebolla", "kg", null, null, null)),
-                List.of(),
+                List.of(recipe(12, "Ajo")),
                 List.of(new ProductRow(10, "PAPÁ", "kg", null, null, null),     // = "Papa" del catálogo
                         new ProductRow(11, "cebolla ", "kg", null, null, null), // = la de las filas de insumos
                         new ProductRow(12, "Ajo", "kg", null, null, null),
@@ -161,7 +161,7 @@ class CatalogSpreadsheetServiceTest {
                 List.of(new ProductRow(13, "limon", "kg", null, null, null),   // pasó así en la prueba real
                         new ProductRow(14, "Azúcar", "kg", null, null, null),
                         new ProductRow(2, "Harina", "kg", null, null, null)),  // fila de insumos de verdad
-                List.of(recipe(13, "papa"), recipe(14, "Azúcar")),
+                List.of(recipe(13, "papa"), recipe(14, "Azúcar"), recipe(15, "limon")),
                 List.of(), List.of(), List.of());
 
         var result = service.interpretCatalogSpreadsheet(List.of(new SpreadsheetSheet("Recetas", List.of(row(1, "x")))));
@@ -169,6 +169,19 @@ class CatalogSpreadsheetServiceTest {
         assertEquals(List.of("Harina"), result.products().stream().map(ProductRow::name).toList());
         // Un propuesto sale con mayúscula: "limon" se habría creado así.
         assertEquals(List.of("Limon", "Azúcar"), result.proposedProducts().stream().map(ProductRow::name).toList());
+    }
+
+    @Test
+    void aProposedProductNoRecipeUsesIsDropped() {
+        // La nuez moscada "c/n" quedó afuera de la receta pero el modelo la propuso: se habría creado sin que nadie la use.
+        ai.answer = interpretation(List.of(), List.of(recipe(1, "Ajo")),
+                List.of(new ProductRow(1, "Ajo", "kg", null, null, null),
+                        new ProductRow(2, "Nuez moscada", "kg", null, null, null)),
+                List.of(), List.of());
+
+        var result = service.interpretCatalogSpreadsheet(List.of(new SpreadsheetSheet("Recetas", List.of(row(1, "x")))));
+
+        assertEquals(List.of("Ajo"), result.proposedProducts().stream().map(ProductRow::name).toList());
     }
 
     @Test

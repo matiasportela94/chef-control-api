@@ -143,11 +143,14 @@ class ChatRecipeDocumentTest {
                 List.of(new RecipeRow(1, "Ñoquis de papa", null, null, "Papa", BigDecimal.ONE, "kg"),
                         new RecipeRow(2, "Ñoquis de papa", null, null, "Harina", new BigDecimal("2"), "tazas"),
                         new RecipeRow(3, "Ñoquis de papa", null, null, "Huevo", new BigDecimal("2"), "unidades")),
-                List.of(), List.of(), List.of()), catalog, ALL);
+                List.of(new ProductRow(2, "Harina", "kg", null, null, null)), List.of(), List.of(),
+                List.of(new DishServings("Ñoquis de papa", new BigDecimal("4")))), catalog, ALL);
 
         var rows = result.recipe().catalogImport().recipes();
         assertEquals(List.of("Papa", "Huevo"), rows.stream().map(RecipeRow::ingredient).toList());
         assertEquals("u", rows.get(1).unit());                                       // "unidades" es la de la lista
+        assertTrue(result.recipe().catalogImport().proposedProducts().isEmpty());   // la harina no la usa nadie: no se propone
+        // El aviso dice lo impreso, no lo dividido por las 4 porciones.
         assertTrue(result.recipe().catalogImport().warnings().contains(
                 "«Harina» de «Ñoquis de papa»: 2 tazas no es una unidad que maneje; la dejé afuera, agregala a mano."),
                 result.recipe().catalogImport().warnings().toString());
